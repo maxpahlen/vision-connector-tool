@@ -6,6 +6,25 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+interface PdfCandidate {
+  url: string;
+  score: number;
+  signals: string[];
+  penalties: string[];
+  linkText: string;
+  filename: string;
+  location: string;
+}
+
+interface PdfExtractionResult {
+  bestPdf: string | null;
+  confidence: number;
+  reasoning: string[];
+  allCandidates: PdfCandidate[];
+  extractionLog: string[];
+  htmlSnapshot: string | null;
+}
+
 interface DocumentMetadata {
   docType: 'sou' | 'directive' | 'ds' | 'unknown';
   docNumber: string;
@@ -14,6 +33,14 @@ interface DocumentMetadata {
   ministry: string;
   pdfUrl: string | null;
   url: string;
+  // Enhanced PDF extraction fields
+  pdf_status: 'found' | 'missing' | 'multiple_candidates' | 'extraction_failed';
+  pdf_confidence_score: number;
+  pdf_reasoning: string[];
+  pdf_candidates: PdfCandidate[];
+  extraction_log: string[];
+  html_snapshot?: string;
+  last_extraction_attempt: string;
 }
 
 // Detect document type from HTML content
@@ -131,33 +158,317 @@ function extractPublicationDate(doc: Document): string | null {
   return null;
 }
 
-// Extract PDF URL
-function extractPdfUrl(doc: Document, baseUrl: string): string | null {
-  // Look for PDF links in the download section
-  const pdfLinks = Array.from(doc.querySelectorAll('a[href*=".pdf"]'));
+// ============================================
+// Enhanced PDF Extraction with Scoring System
+// ============================================
+
+function determineLocation(link: Element, doc: Document): string {
+  let current = link.parentElement;
+  let depth = 0;
   
-  if (pdfLinks.length === 0) return null;
+  while (current && depth < 10) {
+    const heading = current.querySelector('h2, h3, h4');
+    if (heading?.textContent?.toLowerCase().includes('ladda ner')) {
+      return 'download_section';
+    }
+    
+    if (current.classList?.contains('main-content') || 
+        current.classList?.contains('article-content')) {
+      return 'main_content';
+    }
+    
+    current = current.parentElement;
+    depth++;
+  }
   
-  // Prefer links in the "Ladda ner" section
-  const downloadSection = doc.querySelector('.list--icons');
-  if (downloadSection) {
-    const link = downloadSection.querySelector('a[href*=".pdf"]');
-    if (link) {
-      const href = (link as Element).getAttribute('href');
-      if (href) {
-        return href.startsWith('http') ? href : new URL(href, baseUrl).toString();
+  if (link.closest('aside, footer, .sidebar')) {
+    return 'sidebar';
+  }
+  
+  return 'body_text';
+}
+
+function isInDownloadSection(link: Element, doc: Document): boolean {
+  let current = link.parentElement;
+  let depth = 0;
+  
+  while (current && depth < 8) {
+    const headings = current.querySelectorAll('h2, h3, h4');
+    for (const heading of headings) {
+      const text = heading.textContent?.toLowerCase() || '';
+      if (text.includes('ladda ner') || 
+          text.includes('dokument') || 
+          text.includes('publicering')) {
+        return true;
+      }
+    }
+    current = current.parentElement;
+    depth++;
+  }
+  
+  return false;
+}
+
+function captureRelevantHtml(doc: Document): string {
+  const sections: string[] = [];
+  
+  // Capture "Ladda ner" section
+  const allHeadings = doc.querySelectorAll('h2, h3, h4');
+  for (const heading of allHeadings) {
+    const text = heading.textContent?.toLowerCase() || '';
+    if (text.includes('ladda ner')) {
+      const parent = heading.parentElement;
+      if (parent) {
+        sections.push(`=== Download Section ===\n${parent.outerHTML}`);
       }
     }
   }
   
-  // Fallback: use first PDF link found
-  const href = (pdfLinks[0] as Element).getAttribute('href');
-  if (!href) return null;
+  // Capture any .list--icons or .download sections
+  const listSections = doc.querySelectorAll('.list--icons, .download, .file-list');
+  for (const section of Array.from(listSections).slice(0, 2)) {
+    sections.push(`=== List Section ===\n${(section as Element).outerHTML}`);
+  }
   
-  return href.startsWith('http') ? href : new URL(href, baseUrl).toString();
+  // Capture all PDF links with context
+  const pdfLinks = doc.querySelectorAll('a[href*=".pdf" i], a[href*=".PDF"]');
+  if (pdfLinks.length > 0) {
+    sections.push(`=== Found ${pdfLinks.length} PDF Links ===`);
+    for (const link of Array.from(pdfLinks).slice(0, 5)) {
+      const href = (link as Element).getAttribute('href');
+      const text = (link as Element).textContent?.trim();
+      sections.push(`Link: ${text}\nURL: ${href}`);
+    }
+  }
+  
+  const combined = sections.join('\n\n---\n\n');
+  return combined.length > 3000 
+    ? combined.substring(0, 3000) + '\n\n... [truncated for storage]'
+    : combined;
 }
 
-// Parse HTML page and extract metadata
+function scorePdfCandidate(
+  link: Element,
+  doc: Document,
+  docNumber: string,
+  docType: string,
+  baseUrl: string,
+  log: string[]
+): PdfCandidate | null {
+  const href = link.getAttribute('href');
+  if (!href) return null;
+  
+  const fullUrl = href.startsWith('http') ? href : new URL(href, baseUrl).toString();
+  const linkText = (link.textContent || '').toLowerCase().trim();
+  const filename = fullUrl.split('/').pop() || '';
+  const filenameClean = filename.toLowerCase();
+  
+  let score = 0;
+  const signals: string[] = [];
+  const penalties: string[] = [];
+  
+  // Normalize document number for matching
+  const normalizedDocNum = docNumber.replace(/[^\d:]/g, '').toLowerCase();
+  const compactDocNum = normalizedDocNum.replace(':', '');
+  
+  // === STRONG SIGNALS (+10 points each) ===
+  const location = determineLocation(link, doc);
+  
+  if (location === 'download_section' || location === 'main_content') {
+    if (href.toLowerCase().includes(normalizedDocNum) || 
+        href.toLowerCase().includes(compactDocNum)) {
+      score += 10;
+      signals.push('doc_number_in_url');
+    }
+    
+    if (linkText.includes(normalizedDocNum) || linkText.includes(compactDocNum)) {
+      score += 10;
+      signals.push('doc_number_in_text');
+    }
+  }
+  
+  if (isInDownloadSection(link, doc)) {
+    score += 10;
+    signals.push('in_download_section');
+  }
+  
+  // === MODERATE SIGNALS (+5 points each) ===
+  if (link.closest('.list--icons, .download, .file-list')) {
+    score += 5;
+    signals.push('in_structured_section');
+  }
+  
+  if (fullUrl.includes('contentassets')) {
+    score += 5;
+    signals.push('regeringen_cdn');
+  }
+  
+  if (linkText.includes('pdf') || link.querySelector('.icon-pdf, .fa-file-pdf')) {
+    score += 3;
+    signals.push('explicit_pdf_indicator');
+  }
+  
+  // === SWEDISH FULL REPORT RULE (+8 points) ===
+  const isFullReport = !filenameClean.includes('kortversion') &&
+                       !filenameClean.includes('sammanfattning') &&
+                       !filenameClean.includes('summary') &&
+                       !filenameClean.includes('english') &&
+                       !linkText.includes('kortversion') &&
+                       !linkText.includes('sammanfattning') &&
+                       !linkText.includes('summary');
+  
+  if (isFullReport) {
+    score += 8;
+    signals.push('swedish_full_report');
+  }
+  
+  // === PENALTIES (-5 to -10 points) ===
+  if (filenameClean.includes('kortversion') || linkText.includes('kortversion')) {
+    score -= 5;
+    penalties.push('kortversion');
+  }
+  
+  if (filenameClean.includes('sammanfattning') || linkText.includes('sammanfattning')) {
+    score -= 5;
+    penalties.push('sammanfattning');
+  }
+  
+  if (filenameClean.includes('english') || filenameClean.includes('summary') || 
+      linkText.includes('english') || linkText.includes('in english')) {
+    score -= 5;
+    penalties.push('english_version');
+  }
+  
+  if (filenameClean.includes('faktablad') || linkText.includes('faktablad') ||
+      (filenameClean.includes('fact') && filenameClean.includes('sheet'))) {
+    score -= 7;
+    penalties.push('fact_sheet');
+  }
+  
+  if (!docType.includes('bilaga') && 
+      (filenameClean.includes('bilaga') || linkText.includes('bilaga'))) {
+    score -= 3;
+    penalties.push('appendix');
+  }
+  
+  // === DISQUALIFIERS (score = -999) ===
+  if (!fullUrl.includes('regeringen.se') && !fullUrl.includes('contentassets')) {
+    score = -999;
+    penalties.push('DISQUALIFIED:external_domain');
+  }
+  
+  if (linkText.includes('omslag') || linkText.includes('cover')) {
+    score = -999;
+    penalties.push('DISQUALIFIED:cover_page_only');
+  }
+  
+  if (location === 'body_text' && 
+      (href.toLowerCase().includes(normalizedDocNum) || 
+       linkText.includes(normalizedDocNum))) {
+    score = -999;
+    penalties.push('DISQUALIFIED:doc_number_in_wrong_context');
+  }
+  
+  log.push(
+    `  Candidate: ${filename.substring(0, 40)}... ` +
+    `(score: ${score}, location: ${location})`
+  );
+  
+  return {
+    url: fullUrl,
+    score,
+    signals,
+    penalties,
+    linkText,
+    filename,
+    location,
+  };
+}
+
+function extractAndScorePdfs(
+  doc: Document, 
+  baseUrl: string, 
+  docNumber: string,
+  docType: string
+): PdfExtractionResult {
+  const extractionLog: string[] = [];
+  const allCandidates: PdfCandidate[] = [];
+  
+  // Collect all PDF links (case-insensitive)
+  const pdfLinks = Array.from(doc.querySelectorAll('a[href*=".pdf" i], a[href*=".PDF"]'));
+  extractionLog.push(`Found ${pdfLinks.length} PDF links on page`);
+  extractionLog.push(`Looking for document: ${docNumber} (${docType})`);
+  
+  if (pdfLinks.length === 0) {
+    return {
+      bestPdf: null,
+      confidence: 0,
+      reasoning: ['No PDF links found on page'],
+      allCandidates: [],
+      extractionLog,
+      htmlSnapshot: captureRelevantHtml(doc),
+    };
+  }
+  
+  // Score each candidate
+  for (const link of pdfLinks) {
+    const candidate = scorePdfCandidate(
+      link as Element, 
+      doc, 
+      docNumber, 
+      docType, 
+      baseUrl,
+      extractionLog
+    );
+    if (candidate) {
+      allCandidates.push(candidate);
+    }
+  }
+  
+  // Sort by score descending
+  allCandidates.sort((a, b) => b.score - a.score);
+  
+  const bestCandidate = allCandidates[0];
+  
+  if (!bestCandidate || bestCandidate.score < 0) {
+    extractionLog.push('❌ No suitable PDF found after scoring');
+    return {
+      bestPdf: null,
+      confidence: 0,
+      reasoning: ['All PDF candidates were disqualified or had negative scores'],
+      allCandidates: allCandidates.slice(0, 5),
+      extractionLog,
+      htmlSnapshot: captureRelevantHtml(doc),
+    };
+  }
+  
+  // Calculate confidence (0-100)
+  const confidence = Math.min(100, Math.max(0, (bestCandidate.score / 25) * 100));
+  
+  // Build reasoning
+  const reasoning = [
+    `Selected: ${bestCandidate.filename}`,
+    `Confidence: ${confidence.toFixed(0)}/100`,
+    `Positive signals: ${bestCandidate.signals.join(', ') || 'none'}`,
+    bestCandidate.penalties.length > 0 
+      ? `Penalties applied: ${bestCandidate.penalties.join(', ')}` 
+      : 'No penalties',
+  ];
+  
+  extractionLog.push(`✓ Selected PDF: ${bestCandidate.url}`);
+  extractionLog.push(`  Score: ${bestCandidate.score}, Confidence: ${confidence.toFixed(0)}%`);
+  
+  return {
+    bestPdf: bestCandidate.url,
+    confidence,
+    reasoning,
+    allCandidates: allCandidates.slice(0, 5),
+    extractionLog,
+    htmlSnapshot: null,
+  };
+}
+
+// Parse regeringen.se document page with enhanced PDF extraction
 function parseRegeringenDocument(html: string, url: string): DocumentMetadata {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   if (!doc) {
@@ -165,15 +476,28 @@ function parseRegeringenDocument(html: string, url: string): DocumentMetadata {
   }
   
   const docTypeInfo = detectDocumentType(html, doc);
+  const docNumber = docTypeInfo?.number || '';
+  const docType = docTypeInfo?.type || 'unknown';
+  
+  // Use enhanced PDF extraction
+  const pdfResult = extractAndScorePdfs(doc, url, docNumber, docType);
   
   return {
-    docType: (docTypeInfo?.type as 'sou' | 'directive' | 'ds') || 'unknown',
-    docNumber: docTypeInfo?.number || '',
+    docType: (docType as 'sou' | 'directive' | 'ds') || 'unknown',
+    docNumber,
     title: extractTitle(doc),
     publicationDate: extractPublicationDate(doc),
     ministry: extractMinistry(doc),
-    pdfUrl: extractPdfUrl(doc, url),
+    pdfUrl: pdfResult.bestPdf,
     url,
+    // Enhanced PDF extraction metadata
+    pdf_status: pdfResult.bestPdf ? 'found' : 'missing',
+    pdf_confidence_score: pdfResult.confidence,
+    pdf_reasoning: pdfResult.reasoning,
+    pdf_candidates: pdfResult.allCandidates,
+    extraction_log: pdfResult.extractionLog,
+    html_snapshot: pdfResult.htmlSnapshot || undefined,
+    last_extraction_attempt: new Date().toISOString(),
   };
 }
 
@@ -236,6 +560,15 @@ Deno.serve(async (req) => {
           pdf_url: metadata.pdfUrl,
           publication_date: metadata.publicationDate,
           ministry: metadata.ministry,
+          metadata: {
+            pdf_status: metadata.pdf_status,
+            pdf_confidence_score: metadata.pdf_confidence_score,
+            pdf_reasoning: metadata.pdf_reasoning,
+            pdf_candidates: metadata.pdf_candidates,
+            extraction_log: metadata.extraction_log,
+            html_snapshot: metadata.html_snapshot,
+            last_extraction_attempt: metadata.last_extraction_attempt,
+          },
           updated_at: new Date().toISOString(),
         })
         .eq('id', existingDoc.id)
@@ -258,6 +591,15 @@ Deno.serve(async (req) => {
           pdf_url: metadata.pdfUrl,
           publication_date: metadata.publicationDate,
           ministry: metadata.ministry,
+          metadata: {
+            pdf_status: metadata.pdf_status,
+            pdf_confidence_score: metadata.pdf_confidence_score,
+            pdf_reasoning: metadata.pdf_reasoning,
+            pdf_candidates: metadata.pdf_candidates,
+            extraction_log: metadata.extraction_log,
+            html_snapshot: metadata.html_snapshot,
+            last_extraction_attempt: metadata.last_extraction_attempt,
+          },
         })
         .select()
         .single();
@@ -318,9 +660,9 @@ Deno.serve(async (req) => {
       }
     }
     
-    // Create PDF processing task if PDF URL exists
-    if (metadata.pdfUrl) {
-      console.log('Creating PDF processing task...');
+    // CRITICAL: Only create PDF processing task if PDF was found and confidence >= 30
+    if (metadata.pdfUrl && metadata.pdf_confidence_score >= 30) {
+      console.log(`✓ Creating PDF processing task (confidence: ${metadata.pdf_confidence_score}%)...`);
       
       const { error: taskError } = await supabase
         .from('agent_tasks')
@@ -331,14 +673,21 @@ Deno.serve(async (req) => {
           input_data: {
             pdf_url: metadata.pdfUrl,
             doc_number: metadata.docNumber,
+            confidence: metadata.pdf_confidence_score,
           },
           status: 'pending',
-          priority: metadata.docType === 'sou' ? 2 : 1,
+          priority: metadata.pdf_confidence_score >= 80 ? 10 : metadata.docType === 'sou' ? 8 : 5,
         });
       
       if (taskError) {
         console.error('Error creating PDF task:', taskError);
       }
+    } else if (!metadata.pdfUrl) {
+      console.warn(`⚠️ No PDF found for ${metadata.docNumber} - task not created`);
+      console.warn(`Reason: ${metadata.pdf_reasoning.join('; ')}`);
+    } else {
+      console.warn(`⚠️ Low confidence PDF for ${metadata.docNumber} (${metadata.pdf_confidence_score}%) - task not created`);
+      console.warn(`Candidate details: ${JSON.stringify(metadata.pdf_candidates[0], null, 2)}`);
     }
     
     // Update original task status if task_id provided
@@ -360,13 +709,25 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        document_id: documentId,
-        doc_type: metadata.docType,
-        doc_number: metadata.docNumber,
-        title: metadata.title,
-        pdf_url: metadata.pdfUrl,
-        stage_updated: metadata.docType === 'sou',
-      }),
+        document: {
+          id: documentId,
+          doc_type: metadata.docType,
+          doc_number: metadata.docNumber,
+          title: metadata.title,
+        },
+        pdf_extraction: {
+          status: metadata.pdf_status,
+          url: metadata.pdfUrl,
+          confidence_score: metadata.pdf_confidence_score,
+          reasoning: metadata.pdf_reasoning,
+          candidate_count: metadata.pdf_candidates?.length || 0,
+          task_created: !!metadata.pdfUrl && metadata.pdf_confidence_score >= 30,
+        },
+        process: {
+          id: process_id,
+          stage_updated: metadata.docType === 'sou',
+        },
+      }, null, 2),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
