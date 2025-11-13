@@ -209,3 +209,128 @@ Reference: `docs/technical/testing-strategy.md` (to be created if not exists)
 - `documents.doc_type` = document type ('directive', 'sou', 'ds')
 - `process_documents.role` = relationship type ('directive', 'main_sou', 'reference_sou', etc.)
 - `agent_tasks` = async work queue for document fetching and PDF processing
+
+## PDF Extraction Architecture
+
+### Core Principle
+**"Be explicit about what we know, what we don't know, and never pretend."**
+
+### PDF Scoring System
+
+The scraper uses an intelligent scoring system to select the correct PDF when multiple candidates exist:
+
+**Strong Signals (+10 points each):**
+- Document number appears in URL or filename (within primary sections only)
+- Document number appears in link text (within primary sections only)
+- Link is inside a section with "Ladda ner" heading
+
+**Moderate Signals (+5 points):**
+- Link is in `.list--icons` or structured download section
+- URL is from regeringen's CDN (contentassets)
+- Link text explicitly indicates PDF
+
+**Swedish Full Report Rule (+8 points):**
+- Primary PDF should always be the Swedish full report
+- Not kortversion, sammanfattning, English, or faktablad
+
+**Penalties (-5 to -10 points):**
+- Kortversion / sammanfattning (-5 each)
+- English version / summary (-5)
+- Faktablad / fact sheet (-7)
+- Bilaga / appendix when document is not appendix type (-3)
+
+**Disqualifiers (score = -999):**
+- External domain (not regeringen.se)
+- Cover page only indicators
+- Document number found in wrong context (body text instead of primary sections)
+
+### PDF Extraction Metadata
+
+All documents store rich extraction metadata in `documents.metadata`:
+
+```typescript
+{
+  pdf_status: 'found' | 'missing' | 'multiple_candidates' | 'extraction_failed',
+  pdf_confidence_score: 0-100,  // Higher = more confident
+  pdf_reasoning: string[],       // Why this PDF was selected
+  pdf_candidates: PdfCandidate[], // Top 5 alternatives found
+  extraction_log: string[],      // Full decision trail
+  html_snapshot?: string,        // Captured HTML when extraction failed
+  last_extraction_attempt: string // ISO timestamp
+}
+```
+
+### Confidence Score Interpretation
+
+- **80-100**: High confidence - Swedish full report with doc number match
+- **60-79**: Medium confidence - Likely correct but may need verification  
+- **30-59**: Low confidence - Ambiguous, requires review
+- **0-29**: Very low - PDF found but uncertain if correct (no task created)
+
+**Critical Rule:** PDF processing tasks are ONLY created when:
+- `pdf_status = 'found'` AND
+- `pdf_confidence_score >= 30`
+
+## AI Agent Integration Guidelines
+
+### Usage Guidelines for Future AI Agents
+
+**Head Detective Agent:**
+- If `pdf_status = 'missing'`, create verification task
+- If `pdf_confidence_score < 60`, flag for manual review
+- If `pdf_status = 'multiple_candidates'` and count > 3, create disambiguation task
+
+**Timeline Agent:**
+- Only process documents with `pdf_status = 'found'`
+- Log confidence score in timeline event metadata
+- Consult `pdf_reasoning` to understand document quality
+
+**Metadata Agent:**
+- Check `pdf_reasoning` to understand document type selection
+- Use `pdf_candidates` to identify alternative versions (English, summary, etc.)
+- Extract metadata only from documents with confidence >= 50
+
+**QA Agent:**
+- Review all documents with `pdf_confidence_score < 50`
+- Verify that `pdf_reasoning` contains 'swedish_full_report' signal
+- Flag if 'kortversion' or 'english_version' penalties were applied to selected PDF
+- Cross-check `extraction_log` for disqualified candidates
+
+### Example Queries for AI Agents
+
+```sql
+-- Find documents needing review
+SELECT doc_number, title, metadata->>'pdf_confidence_score' as confidence
+FROM documents
+WHERE (metadata->>'pdf_status') = 'found'
+  AND CAST(metadata->>'pdf_confidence_score' AS INTEGER) < 60
+ORDER BY confidence ASC;
+
+-- Find documents with missing PDFs
+SELECT doc_number, title, metadata->>'extraction_log' as log
+FROM documents
+WHERE (metadata->>'pdf_status') = 'missing';
+
+-- Find documents with multiple PDF candidates
+SELECT doc_number, title, 
+       jsonb_array_length(metadata->'pdf_candidates') as candidate_count
+FROM documents
+WHERE jsonb_array_length(metadata->'pdf_candidates') > 1
+ORDER BY candidate_count DESC;
+
+-- Find high-confidence Swedish full reports ready for processing
+SELECT doc_number, title, pdf_url
+FROM documents
+WHERE (metadata->>'pdf_status') = 'found'
+  AND CAST(metadata->>'pdf_confidence_score' AS INTEGER) >= 80
+  AND metadata->'pdf_reasoning' @> '["swedish_full_report"]'::jsonb;
+```
+
+### Integration Principle
+
+All downstream AI agents MUST:
+1. Read and respect `pdf_status` before processing documents
+2. Use `pdf_confidence_score` to prioritize work and flag uncertain cases
+3. Consult `pdf_reasoning` to understand extraction decisions
+4. Log their own confidence and reasoning in similar transparent manner
+5. Never assume a document is complete just because it exists in the database
