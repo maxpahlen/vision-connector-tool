@@ -66,6 +66,54 @@ const ScraperTest = () => {
     }
   };
 
+  const testPdfExtraction = async (url: string) => {
+    setLoading(true);
+    try {
+      toast({
+        title: "Testing PDF extraction...",
+        description: `Scraping: ${url}`,
+      });
+
+      const { data, error } = await supabase.functions.invoke('scrape-regeringen-document', {
+        body: { url }
+      });
+
+      if (error) throw error;
+
+      if (data.success) {
+        toast({
+          title: "PDF Extraction Complete!",
+          description: `Document: ${data.document.doc_number}`,
+        });
+        
+        // Show detailed results
+        console.log('PDF Extraction Results:', data);
+        setResult({
+          success: true,
+          count: 1,
+          documents: [data],
+        });
+        
+        await loadDocuments();
+      } else {
+        toast({
+          title: "Extraction failed",
+          description: data.error || "Unknown error",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error testing PDF extraction:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to test extraction",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const loadDocuments = async () => {
     setLoadingDocs(true);
     try {
@@ -102,24 +150,53 @@ const ScraperTest = () => {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex gap-4">
-            <Button 
-              onClick={triggerScraper} 
-              disabled={loading}
-            >
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Run Scraper (Limit 10)
-            </Button>
-            
-            <Button 
-              variant="outline" 
-              onClick={loadDocuments} 
-              disabled={loadingDocs}
-            >
-              {loadingDocs && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              <Database className="mr-2 h-4 w-4" />
-              Refresh Documents
-            </Button>
+          <div className="space-y-4">
+            <div className="flex gap-4">
+              <Button 
+                onClick={triggerScraper} 
+                disabled={loading}
+              >
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Run Scraper (Limit 10)
+              </Button>
+              
+              <Button 
+                variant="outline" 
+                onClick={loadDocuments} 
+                disabled={loadingDocs}
+              >
+                {loadingDocs && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <Database className="mr-2 h-4 w-4" />
+                Refresh Documents
+              </Button>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Test PDF Extraction on Specific Document:</p>
+              <div className="flex gap-2">
+                <Button 
+                  size="sm"
+                  onClick={() => testPdfExtraction('https://regeringen.se/rattsliga-dokument/statens-offentliga-utredningar/2025/05/sou-202546/')}
+                  disabled={loading}
+                >
+                  SOU 2025:46
+                </Button>
+                <Button 
+                  size="sm"
+                  onClick={() => testPdfExtraction('https://regeringen.se/rattsliga-dokument/statens-offentliga-utredningar/2025/05/sou-202550/')}
+                  disabled={loading}
+                >
+                  SOU 2025:50
+                </Button>
+                <Button 
+                  size="sm"
+                  onClick={() => testPdfExtraction('https://regeringen.se/rattsliga-dokument/statens-offentliga-utredningar/2025/05/sou-202552/')}
+                  disabled={loading}
+                >
+                  SOU 2025:52
+                </Button>
+              </div>
+            </div>
           </div>
 
           {result && (
@@ -165,7 +242,7 @@ const ScraperTest = () => {
                     <TableHead>SOU Number</TableHead>
                     <TableHead>Title</TableHead>
                     <TableHead>Ministry</TableHead>
-                    <TableHead>PDF</TableHead>
+                    <TableHead>PDF Status</TableHead>
                     <TableHead>Processed</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -182,11 +259,54 @@ const ScraperTest = () => {
                         {doc.ministry || "-"}
                       </TableCell>
                       <TableCell>
-                        {doc.pdf_url ? (
-                          <Badge variant="outline">Available</Badge>
-                        ) : (
-                          <Badge variant="secondary">N/A</Badge>
-                        )}
+                        <div className="space-y-1">
+                          {doc.pdf_url ? (
+                            <>
+                              <a 
+                                href={doc.pdf_url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline text-xs block"
+                              >
+                                Download PDF
+                              </a>
+                              {doc.metadata?.pdf_status && (
+                                <div className="space-y-1">
+                                  <Badge 
+                                    variant={
+                                      doc.metadata.pdf_status === 'found' ? 'default' : 
+                                      doc.metadata.pdf_status === 'missing' ? 'destructive' : 
+                                      'secondary'
+                                    }
+                                    className="text-xs"
+                                  >
+                                    {doc.metadata.pdf_status}
+                                  </Badge>
+                                  {doc.metadata.pdf_confidence_score !== undefined && (
+                                    <div className="text-xs text-muted-foreground">
+                                      Score: {doc.metadata.pdf_confidence_score}%
+                                    </div>
+                                  )}
+                                  {doc.metadata.pdf_reasoning && (
+                                    <div className="text-xs text-muted-foreground max-w-xs">
+                                      {Array.isArray(doc.metadata.pdf_reasoning) 
+                                        ? doc.metadata.pdf_reasoning[0] 
+                                        : doc.metadata.pdf_reasoning}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">
+                              {doc.metadata?.pdf_status === 'missing' ? (
+                                <Badge variant="destructive" className="text-xs">Missing</Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-xs">N/A</Badge>
+                              )}
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {doc.processed_at ? (
