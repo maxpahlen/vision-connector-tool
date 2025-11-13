@@ -71,6 +71,9 @@ This matches the real structure of the websites: sou.gov.se lists investigations
 - [x] Process-document links are created in `process_documents` with appropriate roles ✅ IMPLEMENTED 2025-11-13
 - [x] Process stage transitions to 'published' ONLY when SOU document is confirmed ✅ IMPLEMENTED 2025-11-13
 - [x] Task queue processor executes pending tasks reliably ✅ TESTED 2025-11-13
+- [ ] **PDF Detection: Disqualifier logic correctly handles structured sections** ⏳ IN PROGRESS
+- [ ] **PDF Detection: `determineLocation()` classifies structured sections as `download_section`** ⏳ IN PROGRESS
+- [ ] **PDF Detection: SOU 2025:46 and similar documents correctly detect PDFs in `.list--icons`** ⏳ IN PROGRESS
 - [ ] PDF text extraction works and stores content in `documents.raw_content`
 - [x] Error handling prevents crashes and logs failures for review ✅ IMPLEMENTED 2025-11-13
 - [ ] Admin UI allows manual triggering of scrapers and queue processing
@@ -270,7 +273,14 @@ The scraper uses an intelligent scoring system to select the correct PDF when mu
 **Disqualifiers (score = -999):**
 - External domain (not regeringen.se)
 - Cover page only indicators
-- Document number found in wrong context (body text instead of primary sections)
+- **Document number in wrong context (STRICT CRITERIA - Updated 2025-11-13):**
+  - Only disqualifies if ALL of these conditions are true:
+    1. Link is in `body_text` location (not in "Ladda ner" heading context)
+    2. AND link is NOT in a structured section (`.list--icons`, `.download`, `.file-list`)
+    3. AND link has NO PDF signals (no "pdf" in text, no file size patterns, no `/contentassets/`)
+    4. AND still matches document number (likely random mention in generic body text)
+  - **For ambiguous cases:** Strong negative penalty (-15) instead of full disqualification
+  - **Rationale:** Reserves `-999` for cases we're almost certain are wrong; allows scoring system to handle ambiguous cases
 
 ### PDF Extraction Metadata
 
@@ -365,3 +375,151 @@ All downstream AI agents MUST:
 3. Consult `pdf_reasoning` to understand extraction decisions
 4. Log their own confidence and reasoning in similar transparent manner
 5. Never assume a document is complete just because it exists in the database
+
+## Bug Fix: Disqualifier Logic (2025-11-13)
+
+### Problem Identified
+The `doc_number_in_wrong_context` disqualifier was too aggressive and incorrectly disqualifying legitimate PDF links in structured download sections (e.g., `.list--icons`).
+
+**Root Cause:** The penalty logic checked if `location === 'body_text'` and if the link contained the document number, but:
+1. `determineLocation()` didn't recognize structured section classes like `.list--icons`, `.download`, `.file-list`
+2. Therefore, legitimate download links in these sections were classified as `body_text`
+3. This caused them to be disqualified even though they were in proper download contexts
+
+**Example:** SOU 2025:46 had its PDF in `.list--icons` section, but was disqualified with score `-999`.
+
+### Solution: Two-Part Fix
+
+#### Part 1: Refine Disqualifier Logic (CRITICAL - Immediate)
+
+**File:** `supabase/functions/scrape-regeringen-document/index.ts` (lines ~472-477)
+
+**Change:** Make disqualifier very strict - only apply `-999` when we're almost certain the link is wrong:
+
+```typescript
+// Check if link is in a structured section (even if determineLocation says body_text)
+const isInStructuredSection = !!link.closest('.list--icons, .download, .file-list');
+
+// Check if link has strong PDF signals
+const hasStrongPdfSignals = 
+  linkText.toLowerCase().includes('pdf') ||
+  linkText.match(/\([\d,.]+ ?mb\)/i) ||
+  href.includes('/contentassets/') ||
+  href.includes('/globalassets/') ||
+  href.includes('.pdf');
+
+// === DISQUALIFIER: Doc number in wrong context ===
+// Only disqualify if:
+// - In body_text AND not in a structured section
+// - AND has no PDF signals
+// - AND still matches doc number (likely random mention)
+if (location === 'body_text' && 
+    !isInStructuredSection &&
+    !hasStrongPdfSignals &&
+    (href.toLowerCase().includes(normalizedDocNum) || linkText.includes(normalizedDocNum))) {
+  score = -999;
+  penalties.push('DISQUALIFIED:doc_number_in_wrong_context');
+}
+
+// For "suspicious but unclear" cases: apply strong penalty instead
+else if (location === 'body_text' && 
+         !isInStructuredSection &&
+         (href.toLowerCase().includes(normalizedDocNum) || linkText.includes(normalizedDocNum))) {
+  score -= 15; // Strong penalty but not disqualification
+  penalties.push('suspicious_context_penalty');
+}
+```
+
+**Rationale:**
+- Reserves `-999` for cases we're almost certain are wrong (external domains, truly random mentions)
+- Allows legitimate PDFs in structured sections to pass through even if `determineLocation()` hasn't classified them correctly yet
+- Uses strong negative penalty for ambiguous cases, letting the scoring system decide relative to other candidates
+
+#### Part 2: Improve `determineLocation()` (Long-term Enhancement)
+
+**File:** `supabase/functions/scrape-regeringen-document/index.ts` (lines ~165-189)
+
+**Change:** Add structured section detection before returning `body_text`:
+
+```typescript
+function determineLocation(link: Element, doc: Document): string {
+  let current = link.parentElement;
+  let depth = 0;
+  
+  while (current && depth < 10) {
+    const heading = current.querySelector('h2, h3, h4');
+    if (heading?.textContent?.toLowerCase().includes('ladda ner')) {
+      return 'download_section';
+    }
+    
+    if (current.classList?.contains('main-content') || 
+        current.classList?.contains('article-content')) {
+      return 'main_content';
+    }
+    
+    current = current.parentElement;
+    depth++;
+  }
+  
+  if (link.closest('aside, footer, .sidebar')) {
+    return 'sidebar';
+  }
+  
+  // NEW: Check if link is in a structured download section
+  if (link.closest('.list--icons, .download, .file-list')) {
+    return 'download_section';
+  }
+  
+  return 'body_text';
+}
+```
+
+**Impact:**
+- Links in `.list--icons` (like SOU 2025:46) will now be classified as `download_section` instead of `body_text`
+- Makes scoring logic cleaner and more explicit
+- Reduces need for workarounds in penalty logic
+
+### Testing Strategy
+
+After implementing both parts, test these scenarios:
+
+#### Test Case 1: SOU 2025:46 (Currently Failing)
+- **Current Status:** `pdf_status: missing`, candidate disqualified with `-999`
+- **Expected After Fix:**
+  - `pdf_status: found`
+  - `pdf_confidence_score: 50-70%`
+  - `location: download_section` (after Part 2)
+  - High score due to:
+    - `+8` for structured section
+    - `+5` for `/contentassets/` URL
+    - `+8` for "swedish_full_report" (contains SOU number)
+    - NO disqualification (Part 1 prevents it)
+
+#### Test Case 2: SOU 2025:50
+- **Expected:** Multiple PDFs (main + summaries), main SOU ranks highest
+- **Expected Status:** `found` with high confidence
+
+#### Test Case 3: SOU 2025:52
+- **Expected:** Similar to 2025:46, verify consistent behavior
+
+#### Test Case 4: Document with Ambiguous Links
+- **Expected:** `multiple_candidates` or `low_confidence`
+- **Expected:** NO task created (confidence < 30)
+
+### Deployment Order
+
+1. **First:** Implement Part 1 (disqualifier fix) - **Critical bug fix**
+2. **Second:** Implement Part 2 (`determineLocation()` improvement) - **Makes architecture cleaner**
+3. **Third:** Deploy to production (automatic with edge function deployment)
+4. **Fourth:** Re-test SOU 2025:46, 2025:50, 2025:52
+5. **Fifth:** Review `documents.metadata` for scoring details and verify transparency
+
+### Success Criteria for Bug Fix
+
+- [x] **Problem diagnosed:** Disqualifier too aggressive, `determineLocation()` incomplete ✅ 2025-11-13
+- [ ] Part 1 implemented: Refined disqualifier logic with strict criteria
+- [ ] Part 2 implemented: Enhanced `determineLocation()` with structured section detection
+- [ ] SOU 2025:46 PDF detected with confidence ≥ 50%
+- [ ] No incorrect PDFs selected when multiple candidates exist
+- [ ] Transparency maintained: All scores, penalties, and reasoning logged
+- [ ] All existing tests still pass (no regressions)
