@@ -209,6 +209,80 @@ function isInDownloadSection(link: Element, doc: Document): boolean {
   return false;
 }
 
+// Helper function to find all PDF candidates using multi-tier detection
+function findPdfCandidates(doc: Document): Element[] {
+  const candidates = new Set<Element>();
+  const allLinks = doc.querySelectorAll('a[href]');
+  
+  // First, try to find candidates in preferred sections ("Ladda ner" context)
+  const preferredSections: Element[] = [];
+  
+  // Find "Ladda ner" sections
+  const allHeadings = doc.querySelectorAll('h2, h3, h4');
+  for (const heading of allHeadings) {
+    const text = heading.textContent?.toLowerCase() || '';
+    if (text.includes('ladda ner')) {
+      const parent = heading.parentElement;
+      if (parent) {
+        preferredSections.push(parent);
+      }
+    }
+  }
+  
+  // Add structured sections
+  const structuredSections = doc.querySelectorAll('.list--icons, .download, .file-list');
+  preferredSections.push(...Array.from(structuredSections) as Element[]);
+  
+  // Tier 1: Search within preferred sections first
+  for (const section of preferredSections) {
+    const sectionLinks = section.querySelectorAll('a[href]');
+    for (const link of sectionLinks) {
+      const element = link as Element;
+      const text = element.textContent?.toLowerCase() || '';
+      const href = element.getAttribute('href')?.toLowerCase() || '';
+      
+      // Skip obvious image links
+      if (href.match(/\.(jpg|jpeg|png|gif|svg|webp)$/i)) continue;
+      
+      // Match PDF indicators
+      if (
+        href.includes('.pdf') ||
+        href.includes('/contentassets/') ||
+        href.includes('/globalassets/') ||
+        text.includes('pdf') ||
+        text.match(/\([\d,.]+ ?mb\)/i)
+      ) {
+        candidates.add(element);
+      }
+    }
+  }
+  
+  // Tier 2: If no candidates found in preferred sections, search globally
+  if (candidates.size === 0) {
+    for (const link of allLinks) {
+      const element = link as Element;
+      const text = element.textContent?.toLowerCase() || '';
+      const href = element.getAttribute('href')?.toLowerCase() || '';
+      
+      // Skip obvious image links
+      if (href.match(/\.(jpg|jpeg|png|gif|svg|webp)$/i)) continue;
+      
+      // Match PDF indicators (same criteria but globally)
+      if (
+        href.includes('.pdf') ||
+        href.includes('/contentassets/') ||
+        href.includes('/globalassets/') ||
+        text.includes('pdf') ||
+        text.match(/\([\d,.]+ ?mb\)/i)
+      ) {
+        candidates.add(element);
+      }
+    }
+  }
+  
+  return Array.from(candidates);
+}
+
 function captureRelevantHtml(doc: Document): string {
   const sections: string[] = [];
   
@@ -230,13 +304,13 @@ function captureRelevantHtml(doc: Document): string {
     sections.push(`=== List Section ===\n${(section as Element).outerHTML}`);
   }
   
-  // Capture all PDF links with context
-  const pdfLinks = doc.querySelectorAll('a[href*=".pdf" i], a[href*=".PDF"]');
-  if (pdfLinks.length > 0) {
-    sections.push(`=== Found ${pdfLinks.length} PDF Links ===`);
-    for (const link of Array.from(pdfLinks).slice(0, 5)) {
-      const href = (link as Element).getAttribute('href');
-      const text = (link as Element).textContent?.trim();
+  // Capture all PDF candidates found by enhanced detection
+  const pdfCandidates = findPdfCandidates(doc);
+  if (pdfCandidates.length > 0) {
+    sections.push(`=== Found ${pdfCandidates.length} PDF Candidates ===`);
+    for (const link of pdfCandidates.slice(0, 5)) {
+      const href = link.getAttribute('href');
+      const text = link.textContent?.trim();
       sections.push(`Link: ${text}\nURL: ${href}`);
     }
   }
@@ -292,15 +366,48 @@ function scorePdfCandidate(
     signals.push('in_download_section');
   }
   
-  // === MODERATE SIGNALS (+5 points each) ===
+  // === CONTEXTUAL WEIGHTING: "Ladda ner" Context (+15 points) ===
+  // Check if link is directly under "Ladda ner" heading (highest priority)
+  let current = link.parentElement;
+  let foundLaddaNer = false;
+  let depth = 0;
+
+  while (current && depth < 3) {
+    const nearbyHeading = current.querySelector('h2, h3, h4');
+    if (nearbyHeading?.textContent?.toLowerCase().includes('ladda ner')) {
+      foundLaddaNer = true;
+      break;
+    }
+    current = current.parentElement;
+    depth++;
+  }
+
+  if (foundLaddaNer) {
+    score += 15;
+    signals.push('ladda_ner_context');
+  }
+  
+  // === MODERATE SIGNALS (+5-8 points) ===
+  // Boost for structured sections (increased from +5 to +8)
   if (link.closest('.list--icons, .download, .file-list')) {
-    score += 5;
+    score += 8;
     signals.push('in_structured_section');
   }
   
-  if (fullUrl.includes('contentassets')) {
-    score += 5;
-    signals.push('regeringen_cdn');
+  // Check if this is a global fallback candidate
+  const isGlobalFallback = !foundLaddaNer && 
+                           !link.closest('.list--icons, .download, .file-list') &&
+                           location === 'body_text';
+
+  // Contentassets scoring with contextual awareness
+  if (fullUrl.includes('contentassets') || fullUrl.includes('globalassets')) {
+    if (isGlobalFallback) {
+      score += 2; // Lower score for global fallback candidates
+      signals.push('global_fallback_contentassets');
+    } else {
+      score += 5; // Normal score for contextually-correct links
+      signals.push('regeringen_cdn');
+    }
   }
   
   if (linkText.includes('pdf') || link.querySelector('.icon-pdf, .fa-file-pdf')) {
@@ -394,26 +501,27 @@ function extractAndScorePdfs(
   const extractionLog: string[] = [];
   const allCandidates: PdfCandidate[] = [];
   
-  // Collect all PDF links (case-insensitive)
-  const pdfLinks = Array.from(doc.querySelectorAll('a[href*=".pdf" i], a[href*=".PDF"]'));
-  extractionLog.push(`Found ${pdfLinks.length} PDF links on page`);
+  // Use enhanced multi-tier PDF candidate detection
+  const pdfCandidates = findPdfCandidates(doc);
+  extractionLog.push(`Found ${pdfCandidates.length} PDF candidates on page (using enhanced detection)`);
   extractionLog.push(`Looking for document: ${docNumber} (${docType})`);
   
-  if (pdfLinks.length === 0) {
+  if (pdfCandidates.length === 0) {
+    extractionLog.push('❌ No PDF candidates found (tried .pdf extension, /contentassets/, "pdf" in text, file size patterns)');
     return {
       bestPdf: null,
       confidence: 0,
-      reasoning: ['No PDF links found on page'],
+      reasoning: ['No PDF candidates found despite enhanced detection (directory URLs, text patterns, file sizes)'],
       allCandidates: [],
       extractionLog,
       htmlSnapshot: captureRelevantHtml(doc),
     };
   }
   
-  // Score each candidate
-  for (const link of pdfLinks) {
+  // Score each candidate (all candidates go through the scoring system)
+  for (const link of pdfCandidates) {
     const candidate = scorePdfCandidate(
-      link as Element, 
+      link, 
       doc, 
       docNumber, 
       docType, 
