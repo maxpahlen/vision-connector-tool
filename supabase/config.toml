@@ -3,6 +3,9 @@ project_id = "oxwizikytcdevwkjaegq"
 [functions.scrape-sou-index]
 verify_jwt = false
 
+[functions.scrape-regeringen-document]
+verify_jwt = false
+
 [functions.scrape-sou-metadata]
 verify_jwt = false
 

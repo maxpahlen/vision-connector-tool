@@ -65,11 +65,11 @@ This matches the real structure of the websites: sou.gov.se lists investigations
 - [x] Inquiry codes (e.g., "Ku 2025:02") are normalized to `process_key` format (e.g., "ku-2025-02") ✅ TESTED 2025-11-13
 - [x] Processes are created/updated with appropriate initial stage ('directive' or 'writing') ✅ TESTED 2025-11-13
 - [x] Document fetch tasks are queued in `agent_tasks` with regeringen.se URLs ✅ TESTED 2025-11-13
-- [ ] Document scraper (`scrape-regeringen-document`) correctly detects document types (Directive, SOU, Ds)
-- [ ] Document metadata (doc_number, title, date, PDF URL) is extracted from regeringen.se
-- [ ] Documents are stored in `documents` table with correct `doc_type` and `doc_number`
-- [ ] Process-document links are created in `process_documents` with appropriate roles
-- [ ] Process stage transitions to 'published' ONLY when SOU document is confirmed
+- [x] Document scraper (`scrape-regeringen-document`) correctly detects document types (Directive, SOU, Ds) ✅ IMPLEMENTED 2025-11-13
+- [x] Document metadata (doc_number, title, date, PDF URL) is extracted from regeringen.se ✅ IMPLEMENTED 2025-11-13
+- [x] Documents are stored in `documents` table with correct `doc_type` and `doc_number` ✅ IMPLEMENTED 2025-11-13
+- [x] Process-document links are created in `process_documents` with appropriate roles ✅ IMPLEMENTED 2025-11-13
+- [x] Process stage transitions to 'published' ONLY when SOU document is confirmed ✅ IMPLEMENTED 2025-11-13
 - [ ] Task queue processor executes pending tasks reliably
 - [ ] PDF text extraction works and stores content in `documents.raw_content`
 - [ ] Error handling prevents crashes and logs failures for review
