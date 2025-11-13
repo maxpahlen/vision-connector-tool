@@ -70,13 +70,13 @@ This matches the real structure of the websites: sou.gov.se lists investigations
 - [x] Documents are stored in `documents` table with correct `doc_type` and `doc_number` ✅ IMPLEMENTED 2025-11-13
 - [x] Process-document links are created in `process_documents` with appropriate roles ✅ IMPLEMENTED 2025-11-13
 - [x] Process stage transitions to 'published' ONLY when SOU document is confirmed ✅ IMPLEMENTED 2025-11-13
-- [ ] Task queue processor executes pending tasks reliably
+- [x] Task queue processor executes pending tasks reliably ✅ IMPLEMENTED 2025-11-13
 - [ ] PDF text extraction works and stores content in `documents.raw_content`
-- [ ] Error handling prevents crashes and logs failures for review
+- [x] Error handling prevents crashes and logs failures for review ✅ IMPLEMENTED 2025-11-13
 - [ ] Admin UI allows manual triggering of scrapers and queue processing
 - [ ] All security best practices followed (RLS policies, input validation)
 - [ ] Code follows functional paradigm from custom knowledge
-- [ ] Rate limiting respects source website terms (1-2 second delays)
+- [x] Rate limiting respects source website terms (1-2 second delays) ✅ IMPLEMENTED 2025-11-13
 
 ## Technical Approach
 
