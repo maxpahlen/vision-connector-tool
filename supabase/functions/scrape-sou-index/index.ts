@@ -16,8 +16,9 @@ interface InquiryEntry {
 
 // Normalize inquiry code to process_key format
 // "Ku 2025:02" -> "ku-2025-02"
+// Updated to include all ministry codes including newer ones like KN, LI
 function normalizeProcessKey(inquiryCode: string): string {
-  const pattern = /(Ku|U|Fi|A|S|M|N|Fö|Ju)\s+(\d{4}):(\d+)/i;
+  const pattern = /([A-ZÅÄÖa-zåäö]{1,3})\s+(\d{4}):(\d+)/i;
   const match = inquiryCode.match(pattern);
   
   if (!match) {
@@ -63,7 +64,8 @@ function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): Inq
   }
   
   const entries: InquiryEntry[] = [];
-  const inquiryPattern = /(Ku|U|Fi|A|S|M|N|Fö|Ju)\s+(\d{4}):(\d+)/i;
+  // Updated pattern to match all ministry codes (1-3 letters, including Swedish chars)
+  const inquiryPattern = /([A-ZÅÄÖa-zåäö]{1,3})\s+(\d{4}):(\d+)/i;
   
   // Try multiple selectors to find list items
   const listItems = doc.querySelectorAll('li, article, .inquiry-item, [class*="utredning"]');
