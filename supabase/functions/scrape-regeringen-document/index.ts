@@ -163,6 +163,12 @@ function extractPublicationDate(doc: Document): string | null {
 // ============================================
 
 function determineLocation(link: Element, doc: Document): string {
+  // === PRIORITY 1: Check for structured download sections ===
+  // These are explicitly designed for file downloads
+  if (link.closest('.list--icons, .download, .file-list')) {
+    return 'download_section';
+  }
+  
   let current = link.parentElement;
   let depth = 0;
   
