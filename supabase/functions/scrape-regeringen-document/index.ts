@@ -274,6 +274,22 @@ function scorePdfCandidate(
   // === STRONG SIGNALS (+10 points each) ===
   const location = determineLocation(link, doc);
   
+  // ENHANCED: Extra strong bonus for links directly under "Ladda ner" headings
+  let isInLaddaNerSection = false;
+  let current = link.parentElement;
+  let depth = 0;
+  while (current && depth < 5) {
+    const heading = current.querySelector('h2, h3, h4');
+    if (heading?.textContent?.toLowerCase().includes('ladda ner')) {
+      score += 15; // STRONG contextual bonus
+      signals.push('under_ladda_ner_heading');
+      isInLaddaNerSection = true;
+      break;
+    }
+    current = current.parentElement;
+    depth++;
+  }
+  
   if (location === 'download_section' || location === 'main_content') {
     if (href.toLowerCase().includes(normalizedDocNum) || 
         href.toLowerCase().includes(compactDocNum)) {
