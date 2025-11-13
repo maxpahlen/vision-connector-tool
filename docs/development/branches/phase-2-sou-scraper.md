@@ -483,43 +483,102 @@ function determineLocation(link: Element, doc: Document): string {
 
 After implementing both parts, test these scenarios:
 
-#### Test Case 1: SOU 2025:46 (Currently Failing)
-- **Current Status:** `pdf_status: missing`, candidate disqualified with `-999`
-- **Expected After Fix:**
-  - `pdf_status: found`
-  - `pdf_confidence_score: 50-70%`
-  - `location: download_section` (after Part 2)
-  - High score due to:
-    - `+8` for structured section
-    - `+5` for `/contentassets/` URL
-    - `+8` for "swedish_full_report" (contains SOU number)
-    - NO disqualification (Part 1 prevents it)
+#### Test Case 1: SOU 2025:46 (Currently Failing) ✅ PASSED
+- **Before Fix:** `pdf_status: missing`, candidate disqualified with `-999`
+- **After Fix (Part 1):**
+  - ✅ `pdf_status: found`
+  - ✅ `pdf_confidence_score: 96%` (exceeded expectation of 50-70%)
+  - ⚠️ `location: body_text` (scraped before Part 2 deployment)
+  - ✅ High score due to:
+    - `+8` for structured section (`in_structured_section` signal)
+    - `+5` for `/contentassets/` URL (`regeringen_cdn`)
+    - `+8` for "swedish_full_report"
+    - ✅ NO disqualification (Part 1 prevents it)
 
-#### Test Case 2: SOU 2025:50
-- **Expected:** Multiple PDFs (main + summaries), main SOU ranks highest
-- **Expected Status:** `found` with high confidence
+#### Test Case 2: SOU 2025:50 ✅ PASSED
+- **Result:** ✅ Correct PDF found with 100% confidence
+- **Location:** ✅ `download_section` (Part 2 working)
+- **Signals:** All expected signals present
 
-#### Test Case 3: SOU 2025:52
-- **Expected:** Similar to 2025:46, verify consistent behavior
+#### Test Case 3: SOU 2025:52 ✅ PASSED
+- **Result:** ✅ Similar to 2025:50, consistent behavior verified
+- **Location:** ✅ `download_section` (Part 2 working)
+- **Confidence:** 100%
 
 #### Test Case 4: Document with Ambiguous Links
-- **Expected:** `multiple_candidates` or `low_confidence`
-- **Expected:** NO task created (confidence < 30)
+- **Status:** Not yet tested (all test documents had clear winners)
+- **Expected Future Behavior:** `multiple_candidates` or `low_confidence`
 
 ### Deployment Order
 
-1. **First:** Implement Part 1 (disqualifier fix) - **Critical bug fix**
-2. **Second:** Implement Part 2 (`determineLocation()` improvement) - **Makes architecture cleaner**
-3. **Third:** Deploy to production (automatic with edge function deployment)
-4. **Fourth:** Re-test SOU 2025:46, 2025:50, 2025:52
-5. **Fifth:** Review `documents.metadata` for scoring details and verify transparency
+1. **First:** Implement Part 1 (disqualifier fix) - ✅ **COMPLETED 2025-11-13**
+2. **Second:** Implement Part 2 (`determineLocation()` improvement) - ✅ **COMPLETED 2025-11-13**
+3. **Third:** Deploy to production (automatic with edge function deployment) - ✅ **COMPLETED 2025-11-13**
+4. **Fourth:** Re-test SOU 2025:46, 2025:50, 2025:52 - ✅ **COMPLETED 2025-11-13**
+5. **Fifth:** Review `documents.metadata` for scoring details and verify transparency - ✅ **VERIFIED 2025-11-13**
 
 ### Success Criteria for Bug Fix
 
 - [x] **Problem diagnosed:** Disqualifier too aggressive, `determineLocation()` incomplete ✅ 2025-11-13
-- [ ] Part 1 implemented: Refined disqualifier logic with strict criteria
-- [ ] Part 2 implemented: Enhanced `determineLocation()` with structured section detection
-- [ ] SOU 2025:46 PDF detected with confidence ≥ 50%
-- [ ] No incorrect PDFs selected when multiple candidates exist
-- [ ] Transparency maintained: All scores, penalties, and reasoning logged
-- [ ] All existing tests still pass (no regressions)
+- [x] Part 1 implemented: Refined disqualifier logic with strict criteria ✅ 2025-11-13
+- [x] Part 2 implemented: Enhanced `determineLocation()` with structured section detection ✅ 2025-11-13
+- [x] SOU 2025:46 PDF detected with confidence ≥ 50% (achieved 96%) ✅ 2025-11-13
+- [x] No incorrect PDFs selected when multiple candidates exist ✅ 2025-11-13
+- [x] Transparency maintained: All scores, penalties, and reasoning logged ✅ 2025-11-13
+- [x] All existing tests still pass (no regressions) ✅ 2025-11-13
+
+### Test Results (2025-11-13)
+
+**Status:** ✅ BUG FIX COMPLETED AND VERIFIED
+
+#### SOU 2025:52 (Tested After Complete Fix)
+- **Status:** `found` ✅
+- **Confidence:** 100%
+- **Location:** `download_section` ✅ (correctly classified)
+- **Signals:** `doc_number_in_url`, `doc_number_in_text`, `in_structured_section`, `regeringen_cdn`, `explicit_pdf_indicator`, `swedish_full_report`
+- **Penalties:** None ✅
+- **PDF URL:** https://www.regeringen.se/contentassets/b34550905159409db6dcf323b2cc80cc/okad-insyn-i-politiska-processer-sou-202552.pdf
+- **Result:** Perfect detection, all fixes working
+
+#### SOU 2025:50 (Tested After Complete Fix)
+- **Status:** `found` ✅
+- **Confidence:** 100%
+- **Location:** `download_section` ✅ (correctly classified)
+- **Signals:** `doc_number_in_url`, `doc_number_in_text`, `in_structured_section`, `regeringen_cdn`, `explicit_pdf_indicator`, `swedish_full_report`
+- **Penalties:** None ✅
+- **PDF URL:** https://www.regeringen.se/contentassets/6efce55600874beab18a698d2181e243/sou-202550-en-ny-nationell-myndighet-for-viltforvaltning.pdf
+- **Result:** Perfect detection, all fixes working
+
+#### SOU 2025:46 (Tested After Part 1 Only)
+- **Status:** `found` ✅
+- **Confidence:** 96%
+- **Location:** `body_text` (scraped before Part 2 was deployed)
+- **Signals:** `in_structured_section`, `regeringen_cdn`, `explicit_pdf_indicator`, `swedish_full_report`
+- **Penalties:** None ✅ (Part 1 successfully prevented disqualification)
+- **PDF URL:** https://www.regeringen.se/contentassets/453a044f06534dd185458b7c589cbfd1/tryggare-idrottsarrangemang-sou-202546/
+- **Result:** Part 1 fix working perfectly, would show `download_section` if re-scraped
+
+#### Key Improvements Verified
+
+1. **Disqualifier Logic (Part 1):**
+   - ✅ No legitimate PDFs in structured sections were disqualified
+   - ✅ All documents show zero penalties
+   - ✅ `in_structured_section` signal correctly detected even when `location` was `body_text`
+
+2. **Location Classification (Part 2):**
+   - ✅ Documents scraped after Part 2 show `location: download_section`
+   - ✅ Structured sections (`.list--icons`, `.download`, `.file-list`) now properly recognized
+   - ✅ Location classification now explicit and transparent
+
+3. **Overall System Health:**
+   - ✅ Confidence scores high (96-100%)
+   - ✅ All test documents found correct PDFs
+   - ✅ No false positives or incorrect selections
+   - ✅ Complete transparency in scoring and reasoning
+
+### Deployment Completed
+
+- **Date:** 2025-11-13
+- **Status:** ✅ Successfully deployed to production
+- **Edge Function:** `scrape-regeringen-document` updated and tested
+- **Verification:** Multiple test documents processed successfully
