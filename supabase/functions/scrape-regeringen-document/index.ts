@@ -367,6 +367,19 @@ function scorePdfCandidate(
     penalties.push('appendix');
   }
   
+  // === GLOBAL FALLBACK PENALTY (-7 points) ===
+  // Links found via text matching or file size indicators but NOT in proper download sections
+  // should be scored lower to preserve transparency and prevent mis-selection
+  const hasFileExtension = href.toLowerCase().includes('.pdf');
+  const isGlobalFallback = !hasFileExtension && !isInLaddaNerSection && 
+                           location !== 'download_section' && 
+                           !link.closest('.list--icons, .download, .file-list');
+  
+  if (isGlobalFallback) {
+    score -= 7;
+    penalties.push('global_fallback_low_confidence');
+  }
+  
   // === DISQUALIFIERS (score = -999) ===
   if (!fullUrl.includes('regeringen.se') && !fullUrl.includes('contentassets')) {
     score = -999;
