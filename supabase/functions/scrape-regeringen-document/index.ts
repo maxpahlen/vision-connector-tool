@@ -394,16 +394,90 @@ function extractAndScorePdfs(
   const extractionLog: string[] = [];
   const allCandidates: PdfCandidate[] = [];
   
-  // Collect all PDF links (case-insensitive)
-  const pdfLinks = Array.from(doc.querySelectorAll('a[href*=".pdf" i], a[href*=".PDF"]'));
-  extractionLog.push(`Found ${pdfLinks.length} PDF links on page`);
+  // ============================================
+  // ENHANCED CANDIDATE DETECTION
+  // Be generous in what qualifies as a candidate
+  // ============================================
+  
+  const candidateLinks = new Set<Element>();
+  
+  // 1. Links with .pdf in href (original method)
+  const pdfHrefLinks = doc.querySelectorAll('a[href*=".pdf" i], a[href*=".PDF"]');
+  pdfHrefLinks.forEach(link => candidateLinks.add(link as Element));
+  extractionLog.push(`Found ${pdfHrefLinks.length} links with .pdf in href`);
+  
+  // 2. Links with "pdf" in text content
+  const allLinks = doc.querySelectorAll('a[href]');
+  let pdfTextCount = 0;
+  allLinks.forEach(link => {
+    const text = (link.textContent || '').toLowerCase();
+    if (text.includes('pdf')) {
+      candidateLinks.add(link as Element);
+      pdfTextCount++;
+    }
+  });
+  extractionLog.push(`Found ${pdfTextCount} links with "pdf" in text`);
+  
+  // 3. Links with file size indicators (e.g., "(2 MB)", "(pdf 2 MB)")
+  let fileSizeCount = 0;
+  allLinks.forEach(link => {
+    const text = link.textContent || '';
+    if (/\(.*?\d+\s*(mb|kb|bytes)\)/i.test(text)) {
+      candidateLinks.add(link as Element);
+      fileSizeCount++;
+    }
+  });
+  extractionLog.push(`Found ${fileSizeCount} links with file size indicators`);
+  
+  // 4. Links to /contentassets/ paths (excluding images)
+  let contentAssetsCount = 0;
+  allLinks.forEach(link => {
+    const href = (link as Element).getAttribute('href') || '';
+    if (href.includes('/contentassets/') && 
+        !href.match(/\.(jpg|jpeg|png|gif|svg|webp)$/i)) {
+      candidateLinks.add(link as Element);
+      contentAssetsCount++;
+    }
+  });
+  extractionLog.push(`Found ${contentAssetsCount} links to /contentassets/ (non-image)`);
+  
+  // 5. Contextual priority: Links under "Ladda ner" headings or in download containers
+  let contextualCount = 0;
+  const downloadSections = doc.querySelectorAll('.list--icons, .download, .file-list');
+  downloadSections.forEach(section => {
+    const linksInSection = (section as Element).querySelectorAll('a[href]');
+    linksInSection.forEach(link => {
+      candidateLinks.add(link as Element);
+      contextualCount++;
+    });
+  });
+  
+  // Also check for links near "Ladda ner" headings
+  const allHeadings = doc.querySelectorAll('h2, h3, h4');
+  allHeadings.forEach(heading => {
+    const text = heading.textContent?.toLowerCase() || '';
+    if (text.includes('ladda ner')) {
+      const parent = heading.parentElement;
+      if (parent) {
+        const linksNearHeading = parent.querySelectorAll('a[href]');
+        linksNearHeading.forEach(link => {
+          candidateLinks.add(link as Element);
+          contextualCount++;
+        });
+      }
+    }
+  });
+  extractionLog.push(`Found ${contextualCount} links in download sections or near "Ladda ner" headings`);
+  
+  const totalCandidates = candidateLinks.size;
+  extractionLog.push(`Total unique candidates after deduplication: ${totalCandidates}`);
   extractionLog.push(`Looking for document: ${docNumber} (${docType})`);
   
-  if (pdfLinks.length === 0) {
+  if (totalCandidates === 0) {
     return {
       bestPdf: null,
       confidence: 0,
-      reasoning: ['No PDF links found on page'],
+      reasoning: ['No PDF candidate links found on page'],
       allCandidates: [],
       extractionLog,
       htmlSnapshot: captureRelevantHtml(doc),
