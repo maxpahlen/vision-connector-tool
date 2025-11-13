@@ -469,11 +469,36 @@ function scorePdfCandidate(
     penalties.push('DISQUALIFIED:cover_page_only');
   }
   
+  // Check if link is in a structured section (even if determineLocation says body_text)
+  const isInStructuredSection = !!link.closest('.list--icons, .download, .file-list');
+  
+  // Check if link has strong PDF signals
+  const hasStrongPdfSignals = 
+    linkText.toLowerCase().includes('pdf') ||
+    linkText.match(/\([\d,.]+ ?mb\)/i) ||
+    href.includes('/contentassets/') ||
+    href.includes('/globalassets/') ||
+    href.includes('.pdf');
+  
+  // === DISQUALIFIER: Doc number in wrong context ===
+  // Only disqualify if:
+  // - In body_text AND not in a structured section
+  // - AND has no PDF signals
+  // - AND still matches doc number (likely random mention)
   if (location === 'body_text' && 
-      (href.toLowerCase().includes(normalizedDocNum) || 
-       linkText.includes(normalizedDocNum))) {
+      !isInStructuredSection &&
+      !hasStrongPdfSignals &&
+      (href.toLowerCase().includes(normalizedDocNum) || linkText.includes(normalizedDocNum))) {
     score = -999;
     penalties.push('DISQUALIFIED:doc_number_in_wrong_context');
+  }
+  
+  // For "suspicious but unclear" cases: apply strong penalty instead
+  else if (location === 'body_text' && 
+           !isInStructuredSection &&
+           (href.toLowerCase().includes(normalizedDocNum) || linkText.includes(normalizedDocNum))) {
+    score -= 15; // Strong penalty but not disqualification
+    penalties.push('suspicious_context_penalty');
   }
   
   log.push(
