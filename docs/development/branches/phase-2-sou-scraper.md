@@ -215,19 +215,47 @@ Reference: `docs/technical/testing-strategy.md` (to be created if not exists)
 ### Core Principle
 **"Be explicit about what we know, what we don't know, and never pretend."**
 
+### Challenge: Directory-Based URLs on Regeringen.se
+
+**Problem Identified:** Regeringen.se often uses directory-based URLs for PDFs (e.g., `https://www.regeringen.se/contentassets/abc123.../`) rather than explicit `.pdf` file extensions in link hrefs. This caused the initial implementation to miss valid PDF candidates.
+
+**Solution:** Enhanced multi-tier PDF candidate detection that:
+1. **Broadens candidate detection** to include:
+   - Links with `.pdf` in href (original)
+   - Links to `/contentassets/` or `/globalassets/` paths (NEW)
+   - Links with "pdf" in link text (case-insensitive) (NEW)
+   - Links with file size patterns like `(pdf 2 MB)`, `(2,5 MB)` (NEW)
+   
+2. **Prioritizes contextual matches** over global search:
+   - **Tier 1:** Search within "Ladda ner" sections first (`.list--icons`, `.download`, `.file-list`)
+   - **Tier 2:** Only if Tier 1 finds nothing, search globally (with lower scores)
+   
+3. **Excludes obvious non-PDFs:**
+   - Skip image links (`.jpg`, `.png`, `.svg`, `.webp`, etc.)
+
+**Key Principle:** "Be generous in what qualifies as a *candidate*, but strict in what becomes the *primary* PDF."
+
 ### PDF Scoring System
 
-The scraper uses an intelligent scoring system to select the correct PDF when multiple candidates exist:
+The scraper uses an intelligent scoring system to select the correct PDF when multiple candidates exist. **All detected candidates are passed through the scoring system** - there are no shortcuts or bypasses.
 
-**Strong Signals (+10 points each):**
-- Document number appears in URL or filename (within primary sections only)
-- Document number appears in link text (within primary sections only)
-- Link is inside a section with "Ladda ner" heading
+The scraper uses an intelligent scoring system to select the correct PDF when multiple candidates exist. **All detected candidates are passed through the scoring system** - there are no shortcuts or bypasses.
 
-**Moderate Signals (+5 points):**
-- Link is in `.list--icons` or structured download section
-- URL is from regeringen's CDN (contentassets)
-- Link text explicitly indicates PDF
+**Strong Signals (+10-15 points each):**
+- **"Ladda ner" Context** (+15): Link found directly under or within a "Ladda ner" heading - HIGHEST priority
+- Document number appears in URL or filename (within primary sections only) (+10)
+- Document number appears in link text (within primary sections only) (+10)
+- Link is inside a section with "Ladda ner" heading (+10, if not already awarded +15 context boost)
+
+**Moderate Signals (+5-8 points):**
+- Link is in `.list--icons`, `.download`, or `.file-list` structured sections (+8, increased from +5)
+- URL is from regeringen's CDN (`/contentassets/`, `/globalassets/`) (+5 if contextually correct)
+- Link text explicitly indicates PDF (+5)
+
+**Low Priority Signals (+2 points):**
+- **Global Fallback** (+2): Link found only via generic patterns outside preferred sections - lowest priority
+  - Example: `/contentassets/` URL found in body text (not in "Ladda ner" sections)
+  - These candidates are allowed but score significantly lower than contextually-correct links
 
 **Swedish Full Report Rule (+8 points):**
 - Primary PDF should always be the Swedish full report
@@ -269,7 +297,10 @@ All documents store rich extraction metadata in `documents.metadata`:
 
 **Critical Rule:** PDF processing tasks are ONLY created when:
 - `pdf_status = 'found'` AND
-- `pdf_confidence_score >= 30`
+- `pdf_confidence_score >= 30` AND
+- A clear primary PDF has been identified (not `multiple_candidates` with equal scores)
+
+**Transparency Guarantee:** All candidates, scores, reasoning, and decision logs are stored in `documents.metadata` for full auditability. This allows future AI agents and developers to understand *exactly* why a PDF was selected or rejected.
 
 ## AI Agent Integration Guidelines
 
