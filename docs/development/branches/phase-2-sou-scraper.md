@@ -29,15 +29,15 @@ Build the core data acquisition system that scrapes SOU metadata from sou.gov.se
 - PDF storage in file system (only text storage for now)
 
 ## Success Criteria
-- [ ] SOU metadata scraper successfully fetches data from sou.gov.se
-- [ ] Metadata is correctly stored in database with proper structure
-- [ ] PDF download function retrieves documents from URLs
-- [ ] Text extraction produces readable content from PDFs
-- [ ] Extracted text is stored and associated with correct SOU
-- [ ] Error handling prevents crashes on failed downloads
-- [ ] Edge functions can be triggered manually or via API
-- [ ] All security best practices followed (RLS policies if needed)
-- [ ] Code follows functional paradigm from custom knowledge
+- [x] SOU metadata scraper successfully fetches data from sou.gov.se
+- [x] Metadata is correctly stored in database with proper structure
+- [x] PDF download function retrieves documents from URLs
+- [x] Text extraction produces readable content from PDFs
+- [x] Extracted text is stored and associated with correct SOU
+- [x] Error handling prevents crashes on failed downloads
+- [x] Edge functions can be triggered manually or via API
+- [x] All security best practices followed (RLS policies if needed)
+- [x] Code follows functional paradigm from custom knowledge
 
 ## Technical Approach
 
