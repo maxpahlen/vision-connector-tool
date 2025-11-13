@@ -14,7 +14,334 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      agent_tasks: {
+        Row: {
+          agent_name: string
+          completed_at: string | null
+          created_at: string | null
+          document_id: string | null
+          error_message: string | null
+          id: string
+          input_data: Json | null
+          output_data: Json | null
+          priority: number | null
+          process_id: string | null
+          started_at: string | null
+          status: string | null
+          task_type: string
+        }
+        Insert: {
+          agent_name: string
+          completed_at?: string | null
+          created_at?: string | null
+          document_id?: string | null
+          error_message?: string | null
+          id?: string
+          input_data?: Json | null
+          output_data?: Json | null
+          priority?: number | null
+          process_id?: string | null
+          started_at?: string | null
+          status?: string | null
+          task_type: string
+        }
+        Update: {
+          agent_name?: string
+          completed_at?: string | null
+          created_at?: string | null
+          document_id?: string | null
+          error_message?: string | null
+          id?: string
+          input_data?: Json | null
+          output_data?: Json | null
+          priority?: number | null
+          process_id?: string | null
+          started_at?: string | null
+          status?: string | null
+          task_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_tasks_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_tasks_process_id_fkey"
+            columns: ["process_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      documents: {
+        Row: {
+          created_at: string | null
+          doc_number: string
+          doc_type: string
+          id: string
+          metadata: Json | null
+          ministry: string | null
+          pdf_url: string | null
+          processed_at: string | null
+          publication_date: string | null
+          raw_content: string | null
+          title: string
+          updated_at: string | null
+          url: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          doc_number: string
+          doc_type: string
+          id?: string
+          metadata?: Json | null
+          ministry?: string | null
+          pdf_url?: string | null
+          processed_at?: string | null
+          publication_date?: string | null
+          raw_content?: string | null
+          title: string
+          updated_at?: string | null
+          url?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          doc_number?: string
+          doc_type?: string
+          id?: string
+          metadata?: Json | null
+          ministry?: string | null
+          pdf_url?: string | null
+          processed_at?: string | null
+          publication_date?: string | null
+          raw_content?: string | null
+          title?: string
+          updated_at?: string | null
+          url?: string | null
+        }
+        Relationships: []
+      }
+      entities: {
+        Row: {
+          created_at: string | null
+          entity_type: string
+          id: string
+          metadata: Json | null
+          name: string
+          role: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          entity_type: string
+          id?: string
+          metadata?: Json | null
+          name: string
+          role?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          entity_type?: string
+          id?: string
+          metadata?: Json | null
+          name?: string
+          role?: string | null
+        }
+        Relationships: []
+      }
+      process_documents: {
+        Row: {
+          created_at: string | null
+          document_id: string
+          id: string
+          process_id: string
+          role: string
+        }
+        Insert: {
+          created_at?: string | null
+          document_id: string
+          id?: string
+          process_id: string
+          role: string
+        }
+        Update: {
+          created_at?: string | null
+          document_id?: string
+          id?: string
+          process_id?: string
+          role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "process_documents_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "process_documents_process_id_fkey"
+            columns: ["process_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      processes: {
+        Row: {
+          created_at: string | null
+          current_stage: string
+          directive_number: string | null
+          id: string
+          main_document_id: string | null
+          ministry: string | null
+          process_key: string
+          stage_explanation: string | null
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          current_stage?: string
+          directive_number?: string | null
+          id?: string
+          main_document_id?: string | null
+          ministry?: string | null
+          process_key: string
+          stage_explanation?: string | null
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          current_stage?: string
+          directive_number?: string | null
+          id?: string
+          main_document_id?: string | null
+          ministry?: string | null
+          process_key?: string
+          stage_explanation?: string | null
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_processes_main_document"
+            columns: ["main_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string | null
+          email: string | null
+          full_name: string | null
+          id: string
+          organization: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          email?: string | null
+          full_name?: string | null
+          id: string
+          organization?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          organization?: string | null
+        }
+        Relationships: []
+      }
+      relations: {
+        Row: {
+          created_at: string | null
+          id: string
+          metadata: Json | null
+          relation_type: string
+          source_id: string
+          source_type: string
+          target_id: string
+          target_type: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          relation_type: string
+          source_id: string
+          source_type: string
+          target_id: string
+          target_type: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          relation_type?: string
+          source_id?: string
+          source_type?: string
+          target_id?: string
+          target_type?: string
+        }
+        Relationships: []
+      }
+      timeline_events: {
+        Row: {
+          actors: Json | null
+          created_at: string | null
+          description: string | null
+          event_date: string
+          event_type: string
+          id: string
+          process_id: string
+          source_excerpt: string | null
+          source_page: number | null
+          source_url: string | null
+        }
+        Insert: {
+          actors?: Json | null
+          created_at?: string | null
+          description?: string | null
+          event_date: string
+          event_type: string
+          id?: string
+          process_id: string
+          source_excerpt?: string | null
+          source_page?: number | null
+          source_url?: string | null
+        }
+        Update: {
+          actors?: Json | null
+          created_at?: string | null
+          description?: string | null
+          event_date?: string
+          event_type?: string
+          id?: string
+          process_id?: string
+          source_excerpt?: string | null
+          source_page?: number | null
+          source_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "timeline_events_process_id_fkey"
+            columns: ["process_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
