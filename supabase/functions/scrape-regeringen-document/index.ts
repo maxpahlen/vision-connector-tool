@@ -484,10 +484,10 @@ function extractAndScorePdfs(
     };
   }
   
-  // Score each candidate
-  for (const link of pdfLinks) {
+  // Score each candidate through the existing scoring system
+  for (const link of Array.from(candidateLinks)) {
     const candidate = scorePdfCandidate(
-      link as Element, 
+      link, 
       doc, 
       docNumber, 
       docType, 
