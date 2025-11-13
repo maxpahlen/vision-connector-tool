@@ -61,10 +61,10 @@ This matches the real structure of the websites: sou.gov.se lists investigations
 - PDF file storage (only text extraction for now)
 
 ## Success Criteria
-- [ ] Index scraper (`scrape-sou-index`) successfully fetches inquiry data from sou.gov.se
-- [ ] Inquiry codes (e.g., "Ku 2025:02") are normalized to `process_key` format (e.g., "ku-2025-02")
-- [ ] Processes are created/updated with appropriate initial stage ('directive' or 'writing')
-- [ ] Document fetch tasks are queued in `agent_tasks` with regeringen.se URLs
+- [x] Index scraper (`scrape-sou-index`) successfully fetches inquiry data from sou.gov.se
+- [x] Inquiry codes (e.g., "Ku 2025:02") are normalized to `process_key` format (e.g., "ku-2025-02")
+- [x] Processes are created/updated with appropriate initial stage ('directive' or 'writing')
+- [x] Document fetch tasks are queued in `agent_tasks` with regeringen.se URLs
 - [ ] Document scraper (`scrape-regeringen-document`) correctly detects document types (Directive, SOU, Ds)
 - [ ] Document metadata (doc_number, title, date, PDF URL) is extracted from regeringen.se
 - [ ] Documents are stored in `documents` table with correct `doc_type` and `doc_number`
