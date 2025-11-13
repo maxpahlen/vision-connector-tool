@@ -512,27 +512,32 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     
-    const { task_id, regeringen_url, process_id } = await req.json();
+    const body = await req.json();
+    const { task_id, regeringen_url, process_id, url } = body;
     
-    if (!regeringen_url || !process_id) {
-      throw new Error('Missing required parameters: regeringen_url and process_id');
+    // Accept 'url' as an alias for 'regeringen_url'
+    const documentUrl = regeringen_url || url;
+    
+    if (!documentUrl) {
+      throw new Error('Missing required parameter: regeringen_url or url');
     }
     
-    console.log(`Scraping document: ${regeringen_url} for process ${process_id}`);
+    // process_id is optional for standalone testing
+    console.log(`Scraping document: ${documentUrl}${process_id ? ` for process ${process_id}` : ' (standalone test)'}`);
     
     // Fetch the page
-    const response = await fetch(regeringen_url, {
+    const response = await fetch(documentUrl, {
       headers: {
         'User-Agent': 'Vision-Connector-Tool/1.0 (Educational Research Tool)',
       },
     });
     
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status} from ${regeringen_url}`);
+      throw new Error(`HTTP ${response.status} from ${documentUrl}`);
     }
     
     const html = await response.text();
-    const metadata = parseRegeringenDocument(html, regeringen_url);
+    const metadata = parseRegeringenDocument(html, documentUrl);
     
     console.log('Extracted metadata:', metadata);
     
@@ -613,51 +618,55 @@ Deno.serve(async (req) => {
                  metadata.docType === 'directive' ? 'directive' : 
                  'reference_ds';
     
-    // Link document to process
-    const { error: linkError } = await supabase
-      .from('process_documents')
-      .upsert({
-        process_id,
-        document_id: documentId,
-        role,
-      }, {
-        onConflict: 'process_id,document_id',
-      });
-    
-    if (linkError) {
-      console.error('Error linking document to process:', linkError);
-    }
-    
-    // Update process stage if SOU
-    if (metadata.docType === 'sou') {
-      console.log(`SOU detected! Updating process stage to 'published'...`);
+    // Link document to process (only if process_id provided)
+    if (process_id) {
+      const { error: linkError } = await supabase
+        .from('process_documents')
+        .upsert({
+          process_id,
+          document_id: documentId,
+          role,
+        }, {
+          onConflict: 'process_id,document_id',
+        });
       
-      const { error: processError } = await supabase
-        .from('processes')
-        .update({
-          current_stage: 'published',
-          stage_explanation: `${metadata.docNumber} published${metadata.pdfUrl ? ' with PDF available' : ''}`,
-          main_document_id: documentId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', process_id);
+      if (linkError) {
+        console.error('Error linking document to process:', linkError);
+      }
       
-      if (processError) {
-        console.error('Error updating process stage:', processError);
+      // Update process stage if SOU
+      if (metadata.docType === 'sou') {
+        console.log(`SOU detected! Updating process stage to 'published'...`);
+        
+        const { error: processError } = await supabase
+          .from('processes')
+          .update({
+            current_stage: 'published',
+            stage_explanation: `${metadata.docNumber} published${metadata.pdfUrl ? ' with PDF available' : ''}`,
+            main_document_id: documentId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', process_id);
+        
+        if (processError) {
+          console.error('Error updating process stage:', processError);
+        }
+      } else {
+        // Update stage explanation for other document types
+        const { error: processError } = await supabase
+          .from('processes')
+          .update({
+            stage_explanation: `${metadata.docType.toUpperCase()} ${metadata.docNumber} found`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', process_id);
+        
+        if (processError) {
+          console.error('Error updating process explanation:', processError);
+        }
       }
     } else {
-      // Update stage explanation for other document types
-      const { error: processError } = await supabase
-        .from('processes')
-        .update({
-          stage_explanation: `${metadata.docType.toUpperCase()} ${metadata.docNumber} found`,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', process_id);
-      
-      if (processError) {
-        console.error('Error updating process explanation:', processError);
-      }
+      console.log('No process_id provided - skipping process linking and updates');
     }
     
     // CRITICAL: Only create PDF processing task if PDF was found and confidence >= 30
@@ -723,10 +732,10 @@ Deno.serve(async (req) => {
           candidate_count: metadata.pdf_candidates?.length || 0,
           task_created: !!metadata.pdfUrl && metadata.pdf_confidence_score >= 30,
         },
-        process: {
+        process: process_id ? {
           id: process_id,
           stage_updated: metadata.docType === 'sou',
-        },
+        } : null,
       }, null, 2),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
