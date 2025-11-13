@@ -176,21 +176,21 @@ const ScraperTest = () => {
               <div className="flex gap-2">
                 <Button 
                   size="sm"
-                  onClick={() => testPdfExtraction('https://regeringen.se/rattsliga-dokument/statens-offentliga-utredningar/2025/05/sou-202546/')}
+                  onClick={() => testPdfExtraction('https://www.regeringen.se/rattsliga-dokument/statens-offentliga-utredningar/2025/04/sou-202546/')}
                   disabled={loading}
                 >
                   SOU 2025:46
                 </Button>
                 <Button 
                   size="sm"
-                  onClick={() => testPdfExtraction('https://regeringen.se/rattsliga-dokument/statens-offentliga-utredningar/2025/05/sou-202550/')}
+                  onClick={() => testPdfExtraction('https://www.regeringen.se/rattsliga-dokument/statens-offentliga-utredningar/2025/05/sou-202550/')}
                   disabled={loading}
                 >
                   SOU 2025:50
                 </Button>
                 <Button 
                   size="sm"
-                  onClick={() => testPdfExtraction('https://regeringen.se/rattsliga-dokument/statens-offentliga-utredningar/2025/05/sou-202552/')}
+                  onClick={() => testPdfExtraction('https://www.regeringen.se/rattsliga-dokument/statens-offentliga-utredningar/2025/05/sou-202552/')}
                   disabled={loading}
                 >
                   SOU 2025:52
