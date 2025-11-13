@@ -71,10 +71,12 @@ This matches the real structure of the websites: sou.gov.se lists investigations
 - [x] Process-document links are created in `process_documents` with appropriate roles ✅ IMPLEMENTED 2025-11-13
 - [x] Process stage transitions to 'published' ONLY when SOU document is confirmed ✅ IMPLEMENTED 2025-11-13
 - [x] Task queue processor executes pending tasks reliably ✅ TESTED 2025-11-13
-- [ ] **PDF Detection: Disqualifier logic correctly handles structured sections** ⏳ IN PROGRESS
-- [ ] **PDF Detection: `determineLocation()` classifies structured sections as `download_section`** ⏳ IN PROGRESS
-- [ ] **PDF Detection: SOU 2025:46 and similar documents correctly detect PDFs in `.list--icons`** ⏳ IN PROGRESS
-- [ ] PDF text extraction works and stores content in `documents.raw_content`
+- [x] **PDF Detection: Disqualifier logic correctly handles structured sections** ✅ COMPLETED 2025-11-13
+- [x] **PDF Detection: `determineLocation()` classifies structured sections as `download_section`** ✅ COMPLETED 2025-11-13
+- [x] **PDF Detection: SOU 2025:46 and similar documents correctly detect PDFs in `.list--icons`** ✅ VERIFIED 2025-11-13
+- [x] **Task Queue: Updated `process-task-queue` to handle `process_pdf` tasks** ✅ IMPLEMENTED 2025-11-13
+- [x] **PDF Processing: `process-sou-pdf` accepts `documentId` parameter** ✅ ALREADY IMPLEMENTED
+- [ ] PDF text extraction tested end-to-end and stores content in `documents.raw_content` ⏳ NEXT STEP
 - [x] Error handling prevents crashes and logs failures for review ✅ IMPLEMENTED 2025-11-13
 - [ ] Admin UI allows manual triggering of scrapers and queue processing
 - [ ] All security best practices followed (RLS policies, input validation)
@@ -150,13 +152,15 @@ This matches the real structure of the websites: sou.gov.se lists investigations
 - Existing database schema from Phase 1 (processes, documents, process_documents, agent_tasks)
 
 ### Implementation Order
-1. `scrape-sou-index` for avslutade-utredningar (using inquiry codes)
-2. `scrape-regeringen-document` to create documents + process_documents
-3. `process-task-queue` to orchestrate task execution
-4. Update existing `process-sou-pdf` to use document_id
-5. Admin UI components for manual control
-6. Extend index scraper to pagaende-utredningar
-7. Search & discovery features (by inquiry code or SOU number)
+1. ✅ `scrape-sou-index` for avslutade-utredningar (using inquiry codes) - COMPLETED 2025-11-13
+2. ✅ `scrape-regeringen-document` to create documents + process_documents - COMPLETED 2025-11-13
+3. ✅ `process-task-queue` to orchestrate task execution - COMPLETED 2025-11-13
+4. ✅ Update `process-task-queue` to handle `process_pdf` tasks - COMPLETED 2025-11-13
+5. ✅ `process-sou-pdf` already supports document_id parameter - VERIFIED 2025-11-13
+6. ⏳ Test end-to-end PDF processing workflow - NEXT STEP
+7. Admin UI components for manual control
+8. Extend index scraper to pagaende-utredningar
+9. Search & discovery features (by inquiry code or SOU number)
 
 ## Testing Strategy
 
@@ -582,3 +586,73 @@ After implementing both parts, test these scenarios:
 - **Status:** ✅ Successfully deployed to production
 - **Edge Function:** `scrape-regeringen-document` updated and tested
 - **Verification:** Multiple test documents processed successfully
+
+## Task Queue Enhancement: PDF Processing Support (2025-11-13)
+
+### Overview
+Updated `process-task-queue` to handle both `fetch_regeringen_document` and `process_pdf` task types, enabling end-to-end document acquisition and PDF text extraction workflow.
+
+### Changes Implemented
+
+**File:** `supabase/functions/process-task-queue/index.ts`
+
+1. **Dynamic Task Type Handling:**
+   - Changed default `task_type` parameter from `'fetch_regeringen_document'` to `null` (process any type)
+   - Added `task_type` to the SELECT query to enable routing
+   - Added conditional filtering: if `task_type` specified, filter by it; otherwise process all pending tasks
+
+2. **Task Routing Logic:**
+   ```typescript
+   if (task.task_type === 'fetch_regeringen_document') {
+     // Call scrape-regeringen-document with regeringen_url
+   } else if (task.task_type === 'process_pdf') {
+     // Call process-sou-pdf with documentId
+   } else {
+     throw new Error(`Unsupported task type: ${task.task_type}`);
+   }
+   ```
+
+3. **PDF Processing Integration:**
+   - Extracts `document_id` from task record (not `input_data`)
+   - Calls `process-sou-pdf` function with `documentId` parameter
+   - Handles errors and updates task status appropriately
+
+4. **Improved Task Status Management:**
+   - Checks if task status was already updated by the called function
+   - Only updates to 'completed' if still in 'processing' state
+   - Prevents duplicate status updates
+
+### Integration Flow
+
+```mermaid
+graph LR
+    A[scrape-regeringen-document] -->|Creates| B[process_pdf task]
+    B -->|document_id| C[process-task-queue]
+    C -->|Invokes| D[process-sou-pdf]
+    D -->|Updates| E[documents.raw_content]
+    D -->|Sets| F[documents.processed_at]
+```
+
+### Task Data Structure
+
+**process_pdf task:**
+```json
+{
+  "task_type": "process_pdf",
+  "agent_name": "pdf_processor",
+  "document_id": "uuid",
+  "input_data": {
+    "pdf_url": "https://...",
+    "doc_number": "SOU 2025:46",
+    "confidence": 96
+  },
+  "status": "pending",
+  "priority": 10
+}
+```
+
+### Next Steps
+1. ⏳ Test end-to-end PDF processing workflow
+2. ⏳ Verify `documents.raw_content` is populated correctly
+3. ⏳ Monitor edge function logs for PDF processing errors
+4. ⏳ Consider implementing proper PDF parsing library (currently using basic extraction)
