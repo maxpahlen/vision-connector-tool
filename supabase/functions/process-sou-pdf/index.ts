@@ -139,10 +139,13 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
+        text: finalText,
+        metadata: {
+          pageCount: extractionResult.metadata?.pageCount,
+          textLength: finalText.length,
+          byteSize: extractionResult.metadata?.byteSize,
+        },
         documentId,
-        textLength: finalText.length,
-        pageCount: extractionResult.metadata?.pageCount,
-        preview: finalText.substring(0, 200),
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
