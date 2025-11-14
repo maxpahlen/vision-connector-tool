@@ -77,7 +77,7 @@ This matches the real structure of the websites: sou.gov.se lists investigations
 - [x] **Task Queue: Updated `process-task-queue` to handle `process_pdf` tasks** ✅ IMPLEMENTED 2025-11-13
 - [x] **PDF Processing: `process-sou-pdf` accepts `documentId` parameter** ✅ ALREADY IMPLEMENTED
 - [x] **End-to-End Workflow: PDF processing tasks execute and update documents** ✅ VERIFIED 2025-11-13
-- [ ] **Production Enhancement: Implement proper PDF parsing library** ⚠️ REQUIRED (currently using placeholder)
+- [ ] **Production Enhancement: Implement production-grade PDF extraction service** 🚧 IN PROGRESS (architecture documented)
 - [ ] Admin UI components for scraper control and monitoring
 - [x] Error handling prevents crashes and logs failures for review ✅ IMPLEMENTED 2025-11-13
 - [ ] Admin UI allows manual triggering of scrapers and queue processing
@@ -691,8 +691,807 @@ graph LR
 **Recommendation:**
 The end-to-end workflow architecture is sound and verified. For production use, implement a proper PDF parsing solution with text sanitization.
 
+---
+
+## Production PDF Text Extraction Architecture
+
+### Overview
+
+The production PDF extraction system uses a **hybrid architecture** that respects both Lovable's Deno-only runtime constraints and the need for robust, battle-tested PDF parsing capabilities.
+
+**Architecture Pattern: External Node.js Service + Deno Edge Function Orchestrator**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Lovable Cloud                             │
+│  ┌──────────────────┐      ┌──────────────────┐                │
+│  │ process-task-     │──1──▶│ process-sou-pdf  │                │
+│  │ queue             │      │ (Deno Edge)      │                │
+│  │ (Deno Edge)       │      └────────┬─────────┘                │
+│  └──────────────────┘               │                           │
+│                                      │3. GET pdf_url            │
+│                                      ▼                           │
+│                            ┌──────────────────┐                 │
+│                            │  Supabase         │                 │
+│                            │  documents table  │                 │
+│                            └──────────────────┘                 │
+└─────────────────────────────────┬───────────────────────────────┘
+                                  │4. POST /extract
+                                  │   X-API-Key: ***
+                                  │   { pdfUrl, documentId }
+                                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   External Node.js Service                       │
+│                  (Vercel / Railway / Render)                     │
+│                                                                   │
+│  ┌───────────────┐   ┌─────────────────┐   ┌──────────────┐   │
+│  │ API Key Auth  │──▶│ Domain Validator │──▶│ PDF Download │   │
+│  │ Middleware    │   │ (allow-list)     │   │ (50MB limit) │   │
+│  └───────────────┘   └─────────────────┘   └───────┬──────┘   │
+│                                                      │           │
+│                                              ┌───────▼──────┐   │
+│                                              │ pdf-parse    │   │
+│                                              │ (extraction) │   │
+│                                              └───────┬──────┘   │
+│                                                      │           │
+│                                              ┌───────▼──────┐   │
+│                                              │ Text         │   │
+│                                              │ Sanitizer    │   │
+│                                              │ (Layer 1)    │   │
+│                                              └───────┬──────┘   │
+│                                                      │           │
+└──────────────────────────────────────────────────────┼───────────┘
+                                                       │5. Return
+                                                       │   { ok, text, metadata }
+┌──────────────────────────────────────────────────────▼───────────┐
+│                        Lovable Cloud                              │
+│                   ┌────────────────────┐                         │
+│                   │ Text Sanitizer     │                         │
+│                   │ (Layer 2 - Final)  │                         │
+│                   └─────────┬──────────┘                         │
+│                             │6. Store                            │
+│                             ▼                                    │
+│                   ┌──────────────────┐                          │
+│                   │  Supabase        │                          │
+│                   │  documents table │                          │
+│                   │  - raw_content   │                          │
+│                   │  - metadata      │                          │
+│                   └──────────────────┘                          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Why This Architecture?
+
+**Problem:** Lovable runs on Deno-only edge functions. No production-grade PDF parsing libraries exist for Deno runtime.
+
+**Solution:** Create a minimal, focused Node.js microservice that does **one thing well** (PDF text extraction) and integrate it as an external dependency that the Deno edge function orchestrates.
+
+**Benefits:**
+- ✅ Uses battle-tested `pdf-parse` library (widely adopted, stable)
+- ✅ Preserves existing Lovable architecture (no refactoring needed)
+- ✅ Separates concerns: Deno handles orchestration, Node handles heavy lifting
+- ✅ Can be deployed independently and scaled if needed
+- ✅ Future-proof: Easy to swap or upgrade PDF processing logic
+
+### Security Requirements
+
+#### 1. API Key Authentication
+
+**Requirement:** All requests to the PDF extraction service MUST include a valid API key.
+
+**Implementation:**
+- Header: `X-API-Key: <secret>`
+- Service validates against `PDF_EXTRACTOR_API_KEY` environment variable
+- Rejects unauthorized requests with HTTP 401
+
+**Secret Management:**
+- `PDF_EXTRACTOR_API_KEY` stored in both:
+  - Lovable Cloud secrets (for Deno edge function to send)
+  - External service environment (Vercel/Railway env vars to validate)
+- Generate with: `openssl rand -hex 32`
+
+#### 2. Domain Allow-List
+
+**Requirement:** Service ONLY processes PDFs from trusted government sources.
+
+**Allowed Domains:**
+```javascript
+[
+  'https://www.regeringen.se',
+  'https://regeringen.se'
+]
+```
+
+**Enforcement:**
+- Validate PDF URL before download
+- Reject non-allowed domains with HTTP 403
+- Return structured error: `{ ok: false, error: 'domain_not_allowed', message: '...' }`
+
+**Future Extension:**
+To add new domains (e.g., riksdagen.se, other government sites), update the `ALLOWED_DOMAINS` constant in the service and redeploy.
+
+### Operational Safeguards
+
+#### Size Limits
+
+**Maximum PDF Size:** 50 MB (52,428,800 bytes)
+
+**Enforcement:**
+1. Check `Content-Length` header before download
+2. If size exceeds limit, return error immediately (no partial download)
+3. Error code: `too_large`
+
+**Rationale:**
+- Typical SOU: 5-15 MB (100-400 pages)
+- Large SOUs: 20-30 MB (500-800 pages)
+- 50 MB limit handles outliers while preventing abuse
+
+#### Timeout Limits
+
+**Download Timeout:** 30 seconds  
+**Parsing Timeout:** 60 seconds  
+**Total Request Timeout:** 60 seconds
+
+**Enforcement:**
+- Use `AbortController` for download timeout
+- Use `Promise.race()` for parsing timeout
+- If timeout exceeded, return error: `timeout`
+
+**Rationale:**
+- Most PDFs download in < 5 seconds
+- Most PDFs parse in < 10 seconds
+- 60s total is generous but prevents hanging requests
+
+#### Failure Handling
+
+**When limits are exceeded:**
+- ❌ Do NOT retry automatically
+- ❌ Do NOT store partial data
+- ✅ Return structured error immediately
+- ✅ Store error metadata in `documents.metadata`
+- ✅ Mark task as `failed` in `agent_tasks`
+
+### Text Sanitization (Double Layer Defense)
+
+#### Why Double Layer?
+
+**Defense in depth:** Even if one sanitization layer fails, the second catches issues before database insertion.
+
+#### Layer 1: Service-Side Sanitization (Node.js)
+
+**Location:** `services/pdf-extractor/sanitizer.js`
+
+**Operations:**
+1. Remove null bytes: `text.replace(/\u0000/g, '')`
+2. Normalize line breaks: `\r\n` → `\n`, `\r` → `\n`
+3. Remove excessive blank lines: max 3 consecutive newlines
+4. Normalize UTF-8: `text.normalize('NFC')`
+5. Trim whitespace
+
+**Validation:**
+- Verify no null bytes remain
+- Verify output is string type
+- Verify minimum content length (> 10 chars)
+
+**On failure:**
+- Return error: `sanitization_error`
+- Do NOT return unsanitized text
+
+#### Layer 2: Edge Function Final Sanitization (Deno)
+
+**Location:** `supabase/functions/process-sou-pdf/index.ts`
+
+**Operations:**
+1. Remove any remaining null bytes (redundant check)
+2. Normalize line breaks (redundant check)
+3. Validate UTF-8 (redundant check)
+4. Final verification before DB insert
+
+**On failure:**
+- Do NOT write to database
+- Store error in metadata: `pdf_text_status: 'sanitization_error'`
+- Mark task as failed
+
+#### Null Byte Prevention
+
+**Problem:** PostgreSQL TEXT columns reject null bytes (`\u0000`)
+
+**Solution:**
+```javascript
+// Remove all null bytes
+cleanedText = text.replace(/\u0000/g, '');
+
+// Verify none remain
+if (cleanedText.includes('\u0000')) {
+  throw new Error('Null bytes still present after sanitization');
+}
+```
+
+**Critical:** This check happens in BOTH layers before returning/storing text.
+
+### Error Taxonomy
+
+**Fixed Enum of Error Codes** (for `documents.metadata.pdf_text_error`):
+
+| Error Code | Meaning | HTTP Status | Layer |
+|------------|---------|-------------|-------|
+| `domain_not_allowed` | PDF URL not in allow-list | 403 | Service |
+| `download_failed` | Network error, HTTP error, invalid URL | 400 | Service |
+| `too_large` | PDF exceeds 50MB limit | 400 | Service |
+| `timeout` | Download or parsing exceeded time limit | 400 | Service |
+| `parse_failed` | pdf-parse library failed, empty PDF | 400 | Service |
+| `sanitization_error` | Text cleaning failed, null bytes persist | 500 | Service or Edge |
+| `unknown_error` | Unexpected error (fallback) | 500 | Any |
+
+**Metadata Structure:**
+
+**Success:**
+```json
+{
+  "pdf_text_status": "ok",
+  "pdf_text_length": 456789,
+  "pdf_page_count": 312,
+  "pdf_byte_size": 5242880,
+  "pdf_extracted_at": "2025-11-14T10:30:00Z"
+}
+```
+
+**Failure:**
+```json
+{
+  "pdf_text_status": "extraction_failed",
+  "pdf_text_error": "timeout",
+  "pdf_text_message": "PDF parsing timeout exceeded (60s)",
+  "pdf_extraction_attempted_at": "2025-11-14T10:30:00Z"
+}
+```
+
+**Important:** Error codes are **predictable and fixed**, allowing future AI agents to handle errors programmatically.
+
+### Component Details
+
+#### Node.js PDF Extraction Service
+
+**Location:** `/services/pdf-extractor/`
+
+**Files:**
+```
+services/pdf-extractor/
+├── package.json          # Dependencies (express, pdf-parse, node-fetch)
+├── index.js              # Express server + auth middleware
+├── extractor.js          # PDF download and parsing
+├── sanitizer.js          # Text cleaning (null bytes, UTF-8)
+├── validator.js          # Domain allow-list validation
+├── config.js             # Centralized configuration
+├── .env.example          # Environment variable template
+├── .gitignore
+└── README.md             # Deployment instructions
+```
+
+**Key Dependencies:**
+- `express@^4.18.2` - HTTP server
+- `pdf-parse@^1.1.1` - Production PDF parsing
+- `node-fetch@^2.7.0` - PDF downloading
+- `dotenv@^16.3.1` - Environment configuration
+
+**Endpoints:**
+
+**POST /extract**
+- **Auth:** Requires `X-API-Key` header
+- **Input:** `{ pdfUrl: string, documentId?: string, docNumber?: string }`
+- **Output (success):** `{ ok: true, text: string, metadata: {...} }`
+- **Output (failure):** `{ ok: false, error: string, message: string }`
+
+**GET /health**
+- **Auth:** None
+- **Output:** `{ status: 'ok', service: 'pdf-extractor', version: '1.0.0', config: {...} }`
+
+**Configuration:**
+```javascript
+{
+  MAX_PDF_SIZE_BYTES: 50 * 1024 * 1024,  // 50 MB
+  REQUEST_TIMEOUT_MS: 60 * 1000,         // 60 seconds
+  DOWNLOAD_TIMEOUT_MS: 30 * 1000,        // 30 seconds
+  ALLOWED_DOMAINS: [
+    'https://www.regeringen.se',
+    'https://regeringen.se'
+  ]
+}
+```
+
+#### Updated Deno Edge Function
+
+**Location:** `supabase/functions/process-sou-pdf/index.ts`
+
+**Changes from Placeholder:**
+
+**Before (Placeholder):**
+```typescript
+function extractTextFromPdf(buffer: Uint8Array): string {
+  return `[PDF processing: Basic text extraction from ${buffer.length} byte PDF...]`;
+}
+```
+
+**After (Production):**
+```typescript
+async function extractTextFromPdfService(
+  pdfUrl: string,
+  documentId: string,
+  docNumber: string
+): Promise<{ ok: boolean; text?: string; metadata?: any; error?: string; message?: string }> {
+  
+  const response = await fetch(`${pdfExtractorUrl}/extract`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': pdfExtractorApiKey!
+    },
+    body: JSON.stringify({ pdfUrl, documentId, docNumber })
+  });
+  
+  const data = await response.json();
+  
+  if (!response.ok || !data.ok) {
+    return {
+      ok: false,
+      error: data.error || 'unknown_error',
+      message: data.message || 'Unknown extraction error'
+    };
+  }
+  
+  return {
+    ok: true,
+    text: data.text,
+    metadata: data.metadata
+  };
+}
+
+function sanitizeTextFinal(text: string): { ok: boolean; text?: string; error?: string } {
+  try {
+    // Layer 2: Remove any remaining null bytes
+    let cleaned = text.replace(/\u0000/g, '');
+    cleaned = cleaned.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    cleaned = cleaned.normalize('NFC');
+    
+    if (cleaned.includes('\u0000')) {
+      return { ok: false, error: 'sanitization_error' };
+    }
+    
+    return { ok: true, text: cleaned.trim() };
+  } catch (error) {
+    return { ok: false, error: 'sanitization_error' };
+  }
+}
+```
+
+**New Secrets Required:**
+- `PDF_EXTRACTOR_URL` - Deployed service URL (e.g., `https://pdf-extractor-xyz.vercel.app`)
+- `PDF_EXTRACTOR_API_KEY` - Shared secret for authentication
+
+### Deployment
+
+#### Recommended Platform: Vercel
+
+**Why Vercel:**
+- ✅ Free tier: 100 GB-hours/month (sufficient for moderate volume)
+- ✅ Auto-scaling (handles traffic spikes)
+- ✅ 99.99% uptime SLA
+- ✅ Simple GitHub integration
+- ✅ Environment variable management built-in
+
+**Deployment Steps:**
+
+1. **Push to GitHub:**
+   ```bash
+   git add services/pdf-extractor/
+   git commit -m "Add production PDF extraction service"
+   git push
+   ```
+
+2. **Create Vercel Project:**
+   - Go to vercel.com
+   - Import from GitHub
+   - Set root directory: `services/pdf-extractor`
+   - Framework preset: Other
+   - Build command: (leave empty)
+   - Output directory: (leave empty)
+
+3. **Configure Environment Variables in Vercel:**
+   ```
+   PDF_EXTRACTOR_API_KEY=<generate with: openssl rand -hex 32>
+   ```
+
+4. **Deploy & Get URL:**
+   - Vercel auto-deploys: `https://pdf-extractor-<random>.vercel.app`
+   - Test health endpoint: `curl https://your-url/health`
+
+5. **Configure Lovable Cloud Secrets:**
+   - Go to project settings in Lovable
+   - Add secret: `PDF_EXTRACTOR_URL` = `https://your-url` (no trailing slash)
+   - Add secret: `PDF_EXTRACTOR_API_KEY` = (same key as Vercel)
+
+6. **Verify Integration:**
+   - Trigger a `process_pdf` task
+   - Check edge function logs for successful service call
+   - Verify `documents.raw_content` populated with real text
+
+#### Alternative Platforms
+
+**Railway:**
+- Free tier: $5 credit/month
+- Simple deployment: `railway up`
+- Good for prototypes
+
+**Render:**
+- Free tier available (with cold starts)
+- Good for low-traffic apps
+
+**Self-Hosted (VPS):**
+- DigitalOcean, Linode, AWS EC2
+- Full control, requires more setup
+- Use PM2 or systemd for process management
+
+### Testing Requirements
+
+#### Test Cases
+
+1. **✅ Happy Path - Simple SOU:**
+   - Document: SOU 2025:50
+   - Expected: `pdf_text_status = 'ok'`, real Swedish text in `raw_content`
+   - Verify: `LENGTH(raw_content) > 10000` characters
+
+2. **✅ Large SOU (300+ pages):**
+   - Document: SOU 2025:46
+   - Expected: `pdf_text_status = 'ok'`, full text extracted within 60s
+   - Verify: `pdf_page_count > 200`
+
+3. **✅ Null Byte Handling:**
+   - Document: SOU 2025:52 (previously failed)
+   - Expected: `pdf_text_status = 'ok'`, NO PostgreSQL errors
+   - Verify: No `\u0000` in stored text
+
+4. **⚠️ Difficult PDF (OCR/Heavy Encoding):**
+   - Find an SOU with poor OCR quality or mixed formatting
+   - Expected: Either `pdf_text_status = 'ok'` with degraded text quality, OR clean failure with `parse_failed` error
+   - Verify: No partial binary garbage stored
+
+5. **🚫 Domain Violation Test:**
+   - Manually call service with non-regeringen.se URL
+   - Expected: HTTP 403, `error: 'domain_not_allowed'`
+
+6. **⏱️ Timeout Test:**
+   - Test with very large (>50MB) PDF if available
+   - Expected: `error: 'too_large'` or `error: 'timeout'`
+
+#### Verification SQL Queries
+
+**Check PDF extraction status:**
+```sql
+SELECT 
+  doc_number,
+  title,
+  LENGTH(raw_content) as content_length,
+  SUBSTRING(raw_content, 1, 100) as preview,
+  processed_at,
+  metadata->>'pdf_text_status' as status,
+  metadata->>'pdf_text_error' as error,
+  metadata->>'pdf_text_length' as reported_length,
+  metadata->>'pdf_page_count' as pages
+FROM documents 
+WHERE doc_number IN ('SOU 2025:46', 'SOU 2025:50', 'SOU 2025:52')
+ORDER BY doc_number;
+```
+
+**Check for null bytes (should return 0 rows):**
+```sql
+SELECT doc_number, title
+FROM documents
+WHERE raw_content LIKE '%' || CHR(0) || '%';
+```
+
+**Summary of extraction attempts:**
+```sql
+SELECT 
+  metadata->>'pdf_text_status' as status,
+  metadata->>'pdf_text_error' as error,
+  COUNT(*) as count
+FROM documents
+WHERE metadata->>'pdf_text_status' IS NOT NULL
+GROUP BY status, error
+ORDER BY count DESC;
+```
+
+#### Success Criteria (Erik's Perspective)
+
+For this implementation to be **production-ready**:
+
+1. ✅ **Real text extraction** - `documents.raw_content` contains actual Swedish legislative text from SOUs, not placeholder strings (verify by manual reading)
+
+2. ✅ **Zero null-byte errors** - No PostgreSQL `\u0000` errors in logs after processing 10+ documents
+
+3. ✅ **Handles large PDFs** - Successfully processes SOUs with 300+ pages within 60s timeout
+
+4. ✅ **Clean failures** - When extraction fails, system stores structured error in metadata, NOT partial/garbage data
+
+5. ✅ **Security enforced** - Service rejects unauthorized requests (no `X-API-Key` = 401) and non-regeringen.se URLs (403)
+
+6. ✅ **Transparent metadata** - All extraction attempts (success or failure) recorded in `documents.metadata` with clear `pdf_text_status` and error codes
+
+7. ✅ **AI-ready data** - Future agents can rely on `raw_content` for:
+   - Keyword search (e.g., "klimat", "budget", specific terms)
+   - Timeline extraction (dates, events mentioned in text)
+   - Entity detection (person names, organization names, locations)
+
+8. ✅ **Architecture preserved** - Existing scraping pipeline, task queue, database schema unchanged (only `process-sou-pdf` internals updated)
+
+### Troubleshooting Guide
+
+#### Service Health Check
+
+**Verify service is running:**
+```bash
+curl https://your-pdf-extractor-url/health
+```
+
+**Expected response:**
+```json
+{
+  "status": "ok",
+  "service": "pdf-extractor",
+  "version": "1.0.0",
+  "config": {
+    "maxPdfSizeMB": 50,
+    "requestTimeoutSeconds": 60,
+    "allowedDomains": [
+      "https://www.regeringen.se",
+      "https://regeringen.se"
+    ]
+  }
+}
+```
+
+#### Common Errors
+
+**Error: `domain_not_allowed`**
+- **Cause:** PDF URL is not from regeringen.se
+- **Solution:** Verify the `pdf_url` in `documents` table starts with `https://www.regeringen.se` or `https://regeringen.se`
+- **To fix:** If legitimate government source, add domain to `ALLOWED_DOMAINS` in service config and redeploy
+
+**Error: `download_failed`**
+- **Cause:** Network error, HTTP 404/403, or invalid URL format
+- **Solution:** 
+  - Check if PDF URL is still accessible (may have moved/deleted on regeringen.se)
+  - Verify network connectivity from service to regeringen.se
+  - Check regeringen.se for rate limiting or blocking
+
+**Error: `too_large`**
+- **Cause:** PDF exceeds 50MB limit
+- **Solution:**
+  - If this is a legitimate large government document, consider increasing `MAX_PDF_SIZE_BYTES` in service config
+  - Typical SOUs are < 30MB, so 50MB should handle most cases
+
+**Error: `timeout`**
+- **Cause:** Download or parsing took longer than 60 seconds
+- **Solution:**
+  - Check service performance and resource limits (may need to upgrade Vercel plan for more CPU)
+  - Very large/complex PDFs may legitimately timeout
+  - Consider increasing timeout limits if many documents fail this way
+
+**Error: `parse_failed`**
+- **Cause:** pdf-parse library could not extract text (corrupted PDF, unsupported format, image-only PDF)
+- **Solution:**
+  - Verify PDF is not image-only (OCR not implemented yet)
+  - Check if PDF is corrupted by trying to open manually
+  - Some government PDFs may be poorly formatted and genuinely unparseable
+
+**Error: `sanitization_error`**
+- **Cause:** Text cleaning failed or null bytes persist after sanitization
+- **Solution:**
+  - This indicates a bug in sanitization logic
+  - Check edge function logs for detailed error message
+  - Report as bug with specific `doc_number` for investigation
+
+**Error: `unknown_error`**
+- **Cause:** Unexpected error not covered by specific error codes
+- **Solution:**
+  - Check service logs (Vercel dashboard → Logs)
+  - Check edge function logs (Lovable Cloud → Edge Function Logs)
+  - Report with full error details for diagnosis
+
+#### Rate Limiting Considerations
+
+**Current:** No rate limiting implemented
+
+**Future Considerations:**
+- If processing large batches (100+ documents), regeringen.se may rate-limit requests
+- Solution: Add delays between PDF downloads (e.g., 1-2 seconds)
+- Implementation: Use task queue priority and scheduling to spread out requests
+
+#### Adding New Allowed Domains
+
+**Example: Adding riksdagen.se**
+
+1. Update `services/pdf-extractor/config.js`:
+   ```javascript
+   ALLOWED_DOMAINS: [
+     'https://www.regeringen.se',
+     'https://regeringen.se',
+     'https://www.riksdagen.se',
+     'https://riksdagen.se'
+   ]
+   ```
+
+2. Redeploy service to Vercel (auto-deploys on git push)
+
+3. Verify health endpoint shows new domain:
+   ```bash
+   curl https://your-url/health | jq '.config.allowedDomains'
+   ```
+
+4. Test with a riksdagen.se PDF URL
+
+### Migration Path from Placeholder
+
+**Current State:**
+- ✅ Task queue creates `process_pdf` tasks with `document_id`
+- ✅ `process-sou-pdf` accepts `documentId` and updates database
+- ⚠️ PDF text extraction is placeholder (114-char stub string)
+
+**Migration Steps:**
+
+1. ✅ **Create Node.js service** (this document describes architecture)
+2. ✅ **Deploy service to Vercel** (or alternative platform)
+3. ✅ **Configure secrets** (`PDF_EXTRACTOR_URL`, `PDF_EXTRACTOR_API_KEY`)
+4. ✅ **Update `process-sou-pdf` edge function** (replace placeholder with service call)
+5. ✅ **Test with known documents** (SOU 2025:46, 2025:50, 2025:52)
+6. ✅ **Verify database updates** (real text in `raw_content`, no null-byte errors)
+7. ✅ **Update this documentation** (mark as completed)
+
+**Rollback Plan:**
+If production PDF extraction fails catastrophically:
+1. Revert `process-sou-pdf` edge function to placeholder version
+2. Mark affected tasks as `pending` to retry later
+3. Debug service issues in isolation
+4. Redeploy when fixed
+
+**Data Migration:**
+- Documents with placeholder text (`raw_content` = 114 chars) can be reprocessed:
+  ```sql
+  -- Find documents with placeholder extraction
+  SELECT id, doc_number 
+  FROM documents 
+  WHERE LENGTH(raw_content) < 200 
+    AND processed_at IS NOT NULL;
+  
+  -- Reset for reprocessing
+  UPDATE documents 
+  SET raw_content = NULL, 
+      processed_at = NULL,
+      metadata = jsonb_set(
+        COALESCE(metadata, '{}'::jsonb),
+        '{pdf_text_status}',
+        '"pending"'
+      )
+  WHERE LENGTH(raw_content) < 200 
+    AND processed_at IS NOT NULL;
+  
+  -- Recreate process_pdf tasks
+  -- (manual trigger or via admin UI)
+  ```
+
+### Cost Estimation
+
+#### Vercel Free Tier
+
+**Limits:**
+- 100 GB-hours/month of compute time
+- Unlimited bandwidth
+- Unlimited deployments
+
+**Usage Estimate:**
+- Average PDF processing: 5-15 seconds
+- 100 GB-hours = ~24,000 function invocations/month (at 15s avg)
+- **Conclusion:** Free tier sufficient for processing entire SOU catalog (1,000-2,000 documents/year)
+
+**When to Upgrade:**
+- If processing > 800 documents/month consistently
+- If need guaranteed response times (cold starts on free tier)
+- Cost: Vercel Pro = $20/month (400 GB-hours)
+
+#### Alternative: Railway
+
+**Free Tier:**
+- $5 credit/month
+- ~20,000 function invocations (based on typical usage)
+
+**Paid:**
+- Usage-based: ~$0.000463/GB-second
+- Estimated: $10-15/month for moderate usage
+
+#### Cost Comparison
+
+| Platform | Free Tier | Estimated Cost (1000 docs/month) |
+|----------|-----------|----------------------------------|
+| Vercel | 100 GB-hrs | $0 (well within limits) |
+| Railway | $5 credit | $0 (within credit) |
+| Render | Cold starts | $7/month (hobby plan) |
+
+**Recommendation:** Start with Vercel free tier, upgrade if needed.
+
+### Future Enhancements
+
+**Out of scope for Phase 2, but documented for future reference:**
+
+1. **Advanced PDF Parsing:**
+   - Table extraction (preserve structure)
+   - Image extraction (diagrams, charts)
+   - Footnote/citation handling
+   - Multi-column layout preservation
+
+2. **OCR Support:**
+   - For image-only or scanned PDFs
+   - Use Tesseract.js or cloud OCR (Google Vision, AWS Textract)
+   - Adds significant complexity and cost
+
+3. **Caching Layer:**
+   - Store parsed text in object storage (S3, Supabase Storage)
+   - Avoid re-parsing same PDF multiple times
+   - Reduces service load and costs
+
+4. **Batch Processing:**
+   - Process multiple PDFs in parallel
+   - Optimize for throughput rather than latency
+   - Useful for initial catalog import
+
+5. **Quality Metrics:**
+   - Detect and report low-quality text (likely OCR needed)
+   - Confidence scores for extraction quality
+   - Flag documents needing manual review
+
+6. **Monitoring & Alerts:**
+   - Service health monitoring (Sentry, Datadog)
+   - Alert on high error rates
+   - Dashboard for extraction statistics
+
+---
+
 ### Next Steps
-1. ⏳ Implement production-grade PDF text extraction library
-2. ⏳ Add null byte sanitization to extracted text
-3. ⏳ Build admin UI components for manual control
-4. ⏳ Extend index scraper to `pagaende-utredningar`
+
+#### Immediate (Phase 2 Completion)
+1. 🚧 **IN PROGRESS:** Create Node.js PDF extraction service (`/services/pdf-extractor/`)
+   - Implement API key authentication
+   - Implement domain allow-list validation
+   - Implement PDF download with size/timeout checks
+   - Integrate pdf-parse library
+   - Implement double-layer text sanitization
+   - Add health check endpoint
+
+2. ⏳ **Deploy PDF extraction service** to Vercel (or alternative platform)
+   - Configure environment variables
+   - Test health endpoint
+   - Verify service responds correctly
+
+3. ⏳ **Update Deno edge function** (`process-sou-pdf`)
+   - Replace placeholder extraction with service call
+   - Implement second-layer sanitization
+   - Update metadata structure with error taxonomy
+   - Configure `PDF_EXTRACTOR_URL` and `PDF_EXTRACTOR_API_KEY` secrets
+
+4. ⏳ **End-to-end testing**
+   - Test with SOU 2025:46 (large, 300+ pages)
+   - Test with SOU 2025:50 (simple)
+   - Test with SOU 2025:52 (null byte issue)
+   - Verify real text in `documents.raw_content`
+   - Verify no PostgreSQL null-byte errors
+   - Verify clean error handling for failures
+
+5. ⏳ **Build admin UI components** for manual control
+   - Scraper control panel (trigger scrapers)
+   - Task queue monitor (view pending/failed tasks)
+   - Document list (view extraction status)
+   - PDF processing trigger (manual reprocessing)
+
+#### Future Phases
+6. ⏳ Extend index scraper to `pagaende-utredningar` (ongoing inquiries)
+7. ⏳ Implement multi-agent analysis system (Phase 3)
+8. ⏳ Build user-facing SOU viewer with timeline/analysis
