@@ -327,15 +327,31 @@ The URL remains the same, so no changes needed in Lovable Cloud.
 
 ## Summary Checklist
 
-- [ ] Generate API key with `openssl rand -hex 32`
-- [ ] Create `vercel.json` configuration
-- [ ] Deploy to Vercel (CLI or Dashboard)
-- [ ] Add `PDF_EXTRACTOR_API_KEY` environment variable in Vercel
-- [ ] Copy deployment URL
-- [ ] Add `PDF_EXTRACTOR_URL` and `PDF_EXTRACTOR_API_KEY` secrets in Lovable Cloud
-- [ ] Test health endpoint
-- [ ] Test PDF extraction endpoint
-- [ ] Verify end-to-end integration through your app
+- [x] Generate API key with `openssl rand -hex 32`
+- [x] Create `vercel.json` configuration
+- [x] Deploy to Vercel (CLI or Dashboard)
+- [x] Add `PDF_EXTRACTOR_API_KEY` environment variable in Vercel
+- [x] Copy deployment URL
+- [x] Add `PDF_EXTRACTOR_URL` and `PDF_EXTRACTOR_API_KEY` secrets in Lovable Cloud
+- [x] Test health endpoint
+- [x] Test PDF extraction endpoint
+- [x] Verify end-to-end integration through your app
 - [ ] Monitor logs and usage
 
 Your PDF extraction service is now live and integrated! 🎉
+
+---
+
+## Deployment Status
+
+**✅ Successfully Deployed and Tested**
+
+- **Deployment Date**: 2025-11-14
+- **Status**: Operational
+- **Latest Test**: Successfully extracted 9,640 characters from Swedish government PDF
+- **Integration**: Lovable Cloud backend configured with PDF_EXTRACTOR_URL and PDF_EXTRACTOR_API_KEY secrets
+- **Test Interface**: Available at `/admin/pdf-test` in the application
+
+**Known Issues Fixed**:
+- ✅ API key header mismatch resolved (changed from `X-API-Key` to `x-api-key`)
+- ✅ Edge function response structure corrected to include full extracted text and metadata
