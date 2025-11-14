@@ -104,7 +104,7 @@ serve(async (req) => {
 
     // Apply second-layer sanitization (defense in depth)
     console.log('Applying final sanitization');
-    const finalText = sanitizeTextFinal(extractionResult.text);
+    const finalText = sanitizeTextFinal(extractionResult.text || '');
 
     console.log(`Successfully extracted ${finalText.length} characters from PDF`);
 
@@ -187,7 +187,7 @@ async function extractTextFromPdfService(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': apiKey,
+        'x-api-key': apiKey,
       },
       body: JSON.stringify({
         pdfUrl,
@@ -200,6 +200,7 @@ async function extractTextFromPdfService(
 
     if (!response.ok) {
       // Service returned an error response
+      console.error(`PDF service error (${response.status}):`, result);
       return {
         success: false,
         error: result.error || 'service_error',
@@ -207,8 +208,9 @@ async function extractTextFromPdfService(
       };
     }
 
-    if (!result.success) {
+    if (!result.success && !result.ok) {
       // Service processed but extraction failed
+      console.error('PDF extraction failed:', result);
       return {
         success: false,
         error: result.error || 'extraction_failed',
