@@ -21,8 +21,12 @@ Successfully tested with 3 SOUs:
 - **SOU 2025:50** - En ny nationell myndighet för viltförvaltning (958K chars, 492 pages)
 - **SOU 2025:52** - Ökad insyn i politiska processer (1.69M chars, 808 pages)
 
+### 🔧 Recent Fixes (2025-11-14)
+- **Task Queue Display**: Fixed RLS policies on `agent_tasks` table - admin UI now correctly displays task statistics
+
 ### 🎯 Next Steps
 - Scale to full document corpus (ongoing + completed inquiries)
+- Add document detail view with extraction timeline and metadata
 - Implement Phase 3: Multi-agent analysis system
 - Build user-facing SOU viewer with timeline visualization
 
@@ -1529,7 +1533,14 @@ If production PDF extraction fails catastrophically:
    - ✅ Real-time monitoring with React Query (auto-refresh every 5-10 seconds)
    - ✅ Safe limits: All batch operations default to 3-5 tasks to prevent system overload
 
+6. ✅ **COMPLETED 2025-11-14:** Fixed task queue display issue
+   - ✅ Diagnosed issue: `agent_tasks` table had RLS enabled but no read policies
+   - ✅ Added RLS policy allowing authenticated users to read task queue data
+   - ✅ Verified task statistics now display correctly in admin UI (21 pending document tasks visible)
+   - ✅ Task queue monitor now functional for all authenticated users
+
 #### Future Phases
-6. ⏳ Extend index scraper to `pagaende-utredningar` (ongoing inquiries)
-7. ⏳ Implement multi-agent analysis system (Phase 3)
-8. ⏳ Build user-facing SOU viewer with timeline/analysis
+7. ⏳ Add document detail view with extraction timeline and metadata
+8. ⏳ Extend index scraper to `pagaende-utredningar` (ongoing inquiries)
+9. ⏳ Implement multi-agent analysis system (Phase 3)
+10. ⏳ Build user-facing SOU viewer with timeline/analysis
