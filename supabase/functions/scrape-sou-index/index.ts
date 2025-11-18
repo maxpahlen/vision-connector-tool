@@ -115,6 +115,50 @@ function extractMinistry(text: string): string {
   return 'Okänt departement';
 }
 
+// Find inquiry list items using site-specific selectors
+// deno-lint-ignore no-explicit-any
+function findInquiryItems(doc: any): Element[] {
+  const selectors = [
+    // Most specific: the list we actually inspected on sou.gov.se
+    'main#content ul.list--block.list--investigation > li',
+    // Slightly more forgiving variants in case sou.gov.se tweaks classes
+    'main#content ul.list--investigation > li',
+    'main[role="main"] ul.list--investigation > li',
+  ];
+
+  for (const selector of selectors) {
+    const items = Array.from(doc.querySelectorAll(selector)) as Element[];
+    if (items.length >= 10) {
+      console.log(`Using inquiry selector "${selector}", found ${items.length} items`);
+      return items;
+    }
+  }
+
+  // Fallback: log and fail loudly instead of silently returning 0 entries
+  const fallbackItems = Array.from(
+    doc.querySelectorAll('main#content li')
+  ) as Element[];
+
+  console.warn(
+    `FALLBACK: no specific inquiry selector matched, main#content li count = ${fallbackItems.length}`
+  );
+
+  // Sanity check – if we don't see any inquiry code pattern in the first few items,
+  // treat this as a hard failure so we notice in logs.
+  const inquiryPattern = /([A-ZÅÄÖa-zåäö]{1,3})\s+\d{4}:\d+/;
+  const sampleHasInquiryCode = fallbackItems
+    .slice(0, 5)
+    .some(li => ((li as Element).textContent || '').match(inquiryPattern));
+
+  if (!sampleHasInquiryCode) {
+    throw new Error(
+      'findInquiryItems: first list items in main#content do not contain any inquiry codes – likely matched nav instead of investigation list.'
+    );
+  }
+
+  return fallbackItems;
+}
+
 // Parse HTML to extract inquiry entries
 function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): InquiryEntry[] {
   const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -126,14 +170,21 @@ function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): Inq
   // Updated pattern to match all ministry codes (1-3 letters, including Swedish chars)
   const inquiryPattern = /([A-ZÅÄÖa-zåäö]{1,3})\s+(\d{4}):(\d+)/i;
   
-  // Try multiple selectors to find list items
-  const listItems = doc.querySelectorAll('li, article, .inquiry-item, [class*="utredning"]');
+  // Use the site-specific helper to find inquiry items
+  const listItems = findInquiryItems(doc);
   
-  console.log(`Found ${listItems.length} potential inquiry items on ${pageType} page`);
+  console.log(`parseInquiryList(${pageType}): listItems.length = ${listItems.length}`);
   
-  // Debug: Show first few items
+  // Sanity check: warn if suspiciously low item count
+  if (listItems.length < 10) {
+    console.warn(
+      `parseInquiryList: suspiciously low item count (${listItems.length}) for ${pageType}; check selector.`
+    );
+  }
+  
+  // Debug: Show first few items to confirm they look like inquiries
   for (let i = 0; i < Math.min(3, listItems.length); i++) {
-    const debugText = listItems[i].textContent?.substring(0, 100) || '';
+    const debugText = listItems[i].textContent?.substring(0, 100).replace(/\s+/g, ' ') || '';
     console.log(`  Item ${i}: "${debugText}..."`);
   }
   
