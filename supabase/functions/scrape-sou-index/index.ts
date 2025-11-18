@@ -67,10 +67,10 @@ function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): Inq
   // Updated pattern to match all ministry codes (1-3 letters, including Swedish chars)
   const inquiryPattern = /([A-ZÅÄÖa-zåäö]{1,3})\s+(\d{4}):(\d+)/i;
   
-  // Try multiple selectors to find list items
-  const listItems = doc.querySelectorAll('li, article, .inquiry-item, [class*="utredning"]');
+  // Anchor to the actual investigation list container
+  const listItems = doc.querySelectorAll('main .list--block.list--investigation > li');
   
-  console.log(`Found ${listItems.length} potential inquiry items on ${pageType} page`);
+  console.log(`Found ${listItems.length} inquiry items on ${pageType} page`);
   
   for (const item of listItems) {
     const text = item.textContent || '';
@@ -145,157 +145,205 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     
     // Parse request body for options
-    const { pageTypes = ['avslutade'] } = await req.json().catch(() => ({}));
+    const { 
+      pageTypes = ['avslutade'],
+      maxPages = null 
+    } = await req.json().catch(() => ({}));
     
-    const results = {
-      processesCreated: 0,
-      processesUpdated: 0,
-      tasksCreated: 0,
-      errors: [] as string[],
-      entries: [] as any[],
-    };
+  const results = {
+    processesCreated: 0,
+    processesUpdated: 0,
+    tasksCreated: 0,
+    pagesScraped: 0,
+    pagesByType: {} as Record<string, number>,
+    errors: [] as string[],
+    entries: [] as any[],
+  };
     
-    // Scrape each requested page type
+    // Scrape each page type with pagination
     for (const pageType of pageTypes) {
-      console.log(`Starting scrape of ${pageType} page...`);
+      console.log(`Starting scrape of ${pageType}...`);
       
-      const url = pageType === 'avslutade'
-        ? 'https://www.sou.gov.se/avslutade-utredningar/'
-        : 'https://www.sou.gov.se/pagaende-utredningar/';
+      let currentPage = 1;
+      let pageCount = 0;
       
-      try {
-        // Fetch the page
-        const response = await fetch(url, {
-          headers: {
-            'User-Agent': 'Vision-Connector-Tool/1.0 (Educational Research Tool)',
-          },
-        });
-        
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status} from ${url}`);
+      // Pagination loop
+      while (true) {
+        // Check if we've reached maxPages limit
+        if (maxPages && currentPage > maxPages) {
+          console.log(`[${pageType}] Stopping: reached maxPages limit (${maxPages})`);
+          break;
         }
         
-        const html = await response.text();
-        const entries = parseInquiryList(html, pageType);
+        // Build URL with pagination using ?page=N#result pattern
+        const baseUrl = pageType === 'avslutade'
+          ? 'https://www.sou.gov.se/avslutade-utredningar/'
+          : 'https://www.sou.gov.se/pagaende-utredningar/';
         
-        console.log(`Processing ${entries.length} entries from ${pageType}...`);
+        const url = currentPage === 1 
+          ? baseUrl
+          : `${baseUrl}?page=${currentPage}#result`;
         
-        // Process each entry
-        for (const entry of entries) {
-          try {
-            const processKey = normalizeProcessKey(entry.inquiryCode);
-            
-            // Determine initial stage based on page type
-            const initialStage = pageType === 'avslutade' ? 'writing' : 'directive';
-            const stageExplanation = pageType === 'avslutade'
-              ? 'Investigation completed, awaiting SOU document fetch from regeringen.se'
-              : 'Ongoing investigation with directive issued';
-            
-            // Upsert process
-            const { data: process, error: processError } = await supabase
-              .from('processes')
-              .upsert({
-                process_key: processKey,
-                title: entry.title,
-                ministry: entry.ministry,
-                current_stage: initialStage,
-                stage_explanation: stageExplanation,
-                updated_at: new Date().toISOString(),
-              }, {
-                onConflict: 'process_key',
-              })
-              .select()
-              .single();
-            
-            if (processError) {
-              console.error(`Error upserting process ${processKey}:`, processError);
-              results.errors.push(`Process ${processKey}: ${processError.message}`);
-              continue;
-            }
-            
-            if (!process) {
-              console.error(`No process returned for ${processKey}`);
-              continue;
-            }
-            
-            results.processesCreated++;
-            
-            // Check if we already have a pending task for this URL
-            const { data: existingTask } = await supabase
-              .from('agent_tasks')
-              .select('id')
-              .eq('process_id', process.id)
-              .eq('task_type', 'fetch_regeringen_document')
-              .in('status', ['pending', 'processing'])
-              .maybeSingle();
-            
-            if (existingTask) {
-              console.log(`Task already exists for process ${processKey}, skipping task creation`);
-              continue;
-            }
-            
-            // Create document fetch task
-            const { error: taskError } = await supabase
-              .from('agent_tasks')
-              .insert({
-                task_type: 'fetch_regeringen_document',
-                agent_name: 'document_fetcher',
-                process_id: process.id,
-                input_data: {
-                  regeringen_url: entry.regeringenUrl,
-                  source_page: pageType,
-                  inquiry_code: entry.inquiryCode,
-                },
-                status: 'pending',
-                priority: pageType === 'avslutade' ? 1 : 0, // Prioritize completed investigations
-              });
-            
-            if (taskError) {
-              console.error(`Error creating task for ${processKey}:`, taskError);
-              results.errors.push(`Task ${processKey}: ${taskError.message}`);
-              continue;
-            }
-            
-            results.tasksCreated++;
-            
-            results.entries.push({
-              processKey,
-              inquiryCode: entry.inquiryCode,
-              title: entry.title,
-              ministry: entry.ministry,
-              regeringenUrl: entry.regeringenUrl,
-              stage: initialStage,
-            });
-            
-          } catch (entryError) {
-            const errorMsg = entryError instanceof Error ? entryError.message : String(entryError);
-            console.error(`Error processing entry ${entry.inquiryCode}:`, entryError);
-            results.errors.push(`Entry ${entry.inquiryCode}: ${errorMsg}`);
+        console.log(`[${pageType}] Fetching page ${currentPage}: ${url}`);
+        
+        try {
+          // Fetch the page
+          const response = await fetch(url, {
+            headers: {
+              'User-Agent': 'Vision-Connector-Tool/1.0 (Educational Research Tool)',
+            },
+          });
+          
+          // Check for 404 - no more pages
+          if (response.status === 404) {
+            console.log(`[${pageType}] Stopping: received 404 on page ${currentPage} (no more pages)`);
+            break;
           }
           
-          // Rate limiting: small delay between database operations
-          await new Promise(resolve => setTimeout(resolve, 100));
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status} from ${url}`);
+          }
+          
+          const html = await response.text();
+          const entries = parseInquiryList(html, pageType);
+          
+          // If no entries found, might be end of pagination
+          if (entries.length === 0) {
+            console.log(`[${pageType}] Stopping: page ${currentPage} returned no entries`);
+            break;
+          }
+          
+          console.log(`[${pageType}] Page ${currentPage}: Processing ${entries.length} entries`);
+          pageCount++;
+          results.pagesScraped++;
+          
+          // Process each entry
+          for (const entry of entries) {
+            try {
+              const processKey = normalizeProcessKey(entry.inquiryCode);
+              
+              // Determine initial stage based on page type
+              const initialStage = pageType === 'avslutade' ? 'writing' : 'directive';
+              const stageExplanation = pageType === 'avslutade'
+                ? 'Investigation completed, awaiting SOU document fetch from regeringen.se'
+                : 'Ongoing investigation with directive issued';
+              
+              // Upsert process
+              const { data: process, error: processError } = await supabase
+                .from('processes')
+                .upsert({
+                  process_key: processKey,
+                  title: entry.title,
+                  ministry: entry.ministry,
+                  current_stage: initialStage,
+                  stage_explanation: stageExplanation,
+                  updated_at: new Date().toISOString(),
+                }, {
+                  onConflict: 'process_key',
+                })
+                .select()
+                .single();
+              
+              if (processError) {
+                console.error(`Error upserting process ${processKey}:`, processError);
+                results.errors.push(`Process ${processKey}: ${processError.message}`);
+                continue;
+              }
+              
+              if (!process) {
+                console.error(`No process returned for ${processKey}`);
+                continue;
+              }
+              
+              results.processesCreated++;
+              
+              // Check if we already have a pending task for this URL
+              const { data: existingTask } = await supabase
+                .from('agent_tasks')
+                .select('id')
+                .eq('process_id', process.id)
+                .eq('task_type', 'fetch_regeringen_document')
+                .in('status', ['pending', 'processing'])
+                .maybeSingle();
+              
+              if (existingTask) {
+                console.log(`Task already exists for process ${processKey}, skipping task creation`);
+                continue;
+              }
+              
+              // Create document fetch task
+              const { error: taskError } = await supabase
+                .from('agent_tasks')
+                .insert({
+                  task_type: 'fetch_regeringen_document',
+                  agent_name: 'document_fetcher',
+                  process_id: process.id,
+                  input_data: {
+                    regeringen_url: entry.regeringenUrl,
+                    source_page: pageType,
+                    inquiry_code: entry.inquiryCode,
+                  },
+                  status: 'pending',
+                  priority: pageType === 'avslutade' ? 1 : 0, // Prioritize completed investigations
+                });
+              
+              if (taskError) {
+                console.error(`Error creating task for ${processKey}:`, taskError);
+                results.errors.push(`Task ${processKey}: ${taskError.message}`);
+                continue;
+              }
+              
+              results.tasksCreated++;
+              results.entries.push(entry);
+              
+              // Rate limiting: small delay between database operations
+              await new Promise(resolve => setTimeout(resolve, 100));
+            } catch (entryError) {
+              const errorMsg = entryError instanceof Error ? entryError.message : String(entryError);
+              console.error(`Error processing entry:`, entryError);
+              results.errors.push(`Entry processing: ${errorMsg}`);
+            }
+          }
+          
+          // Move to next page
+          currentPage++;
+          
+          // Rate limiting between pages
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+        } catch (pageError) {
+          const errorMsg = pageError instanceof Error ? pageError.message : String(pageError);
+          console.error(`[${pageType}] Error scraping page ${currentPage}:`, pageError);
+          results.errors.push(`Page ${pageType}/${currentPage}: ${errorMsg}`);
+          break; // Stop pagination on error
         }
-        
-      } catch (pageError) {
-        const errorMsg = pageError instanceof Error ? pageError.message : String(pageError);
-        console.error(`Error scraping ${pageType} page:`, pageError);
-        results.errors.push(`Page ${pageType}: ${errorMsg}`);
       }
+      
+      // Track pages scraped per type
+      results.pagesByType[pageType] = pageCount;
+      console.log(`[${pageType}] Completed: scraped ${pageCount} page(s)`);
     }
     
-    console.log('Scraping complete:', results);
-    
-    return new Response(
-      JSON.stringify({
-        success: true,
-        ...results,
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
+  console.log('Scraping complete:', {
+    ...results,
+    summary: `Scraped ${results.pagesScraped} total pages across ${Object.keys(results.pagesByType).length} page types`
+  });
+
+  return new Response(
+    JSON.stringify({
+      success: true,
+      ...results,
+      pagination: {
+        totalPages: results.pagesScraped,
+        byType: results.pagesByType,
+        maxPagesLimit: maxPages || 'unlimited'
       }
-    );
+    }),
+    {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    }
+  );
     
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
