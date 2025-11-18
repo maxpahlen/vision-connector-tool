@@ -8,13 +8,43 @@ const corsHeaders = {
 
 interface InquiryEntry {
   inquiryCode: string;
+  completionCode: string | null; // e.g., "SOU 2024:86", "Ds 2023:12", null if not found
   title: string;
   ministry: string;
   regeringenUrl: string;
   pageType: 'avslutade' | 'pagaende';
 }
 
-// Extract year from inquiry code
+// Extract completion code from HTML
+// Matches patterns like "SOU 2024:86", "Ds 2023:12"
+function extractCompletionCode(html: string): string | null {
+  const patterns = [
+    /SOU\s+(\d{4}):(\d+)/i,
+    /Ds\s+(\d{4}):(\d+)/i,
+  ];
+  
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match) {
+      return match[0]; // Return full match like "SOU 2024:86"
+    }
+  }
+  
+  return null;
+}
+
+// Extract year from completion code (SOU/Ds number)
+// Example: "SOU 2024:86" -> 2024
+// This is the AUTHORITATIVE year for pagination stop logic
+function extractYearFromCompletionCode(completionCode: string | null): number | null {
+  if (!completionCode) return null;
+  
+  const pattern = /(SOU|Ds)\s+(\d{4}):(\d+)/i;
+  const match = completionCode.match(pattern);
+  return match ? parseInt(match[2], 10) : null;
+}
+
+// Extract year from inquiry code (for fallback/logging only)
 // Example: "Ku 2025:02" -> 2025
 function extractYearFromInquiryCode(inquiryCode: string): number | null {
   const pattern = /([A-ZÅÄÖa-zåäö]{1,3})\s+(\d{4}):(\d+)/i;
@@ -103,11 +133,15 @@ function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): Inq
   
   for (const item of listItems) {
     const text = item.textContent || '';
+    const itemHtml = (item as Element).outerHTML || ''; // Get full HTML for deeper searching
     const inquiryMatch = text.match(inquiryPattern);
     
     if (!inquiryMatch) continue;
     
     const inquiryCode = inquiryMatch[0];
+    
+    // Extract completion code (SOU/Ds number) - CRITICAL for avslutade pagination
+    const completionCode = extractCompletionCode(itemHtml);
     
     // Find regeringen.se link
     const links = (item as Element).querySelectorAll('a');
@@ -151,6 +185,7 @@ function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): Inq
     
     entries.push({
       inquiryCode,
+      completionCode,
       title: title || `Utredning ${inquiryCode}`,
       ministry,
       regeringenUrl,
@@ -177,21 +212,25 @@ Deno.serve(async (req) => {
     const { 
       pageTypes = ['avslutade'],
       maxPages = 100, // Safety limit
-      startYear = 2023, // Only scrape from this year forward
+      minCompletionYear = null, // null = full history mode; number = throttled mode (keep >= minCompletionYear, stop when < minCompletionYear)
     } = await req.json().catch(() => ({}));
     
-    console.log(`Starting scrape with config: pageTypes=${pageTypes}, maxPages=${maxPages}, startYear=${startYear}`);
+    // Determine scraping mode
+    const scrapingMode = minCompletionYear !== null ? `throttled_${minCompletionYear}_plus` : 'full_history';
+    
+    console.log(`Starting SOU scraper with pageTypes: ${pageTypes.join(', ')}, maxPages: ${maxPages}, mode: ${scrapingMode}${minCompletionYear !== null ? `, minCompletionYear: ${minCompletionYear}` : ''}`);
     
     const results = {
       processesCreated: 0,
-      processesUpdated: 0,
       tasksCreated: 0,
       pagesProcessed: 0,
       totalEntriesScanned: 0,
       validEntriesProcessed: 0,
-      stopReason: '', // 'year_threshold_reached', 'no_more_pages', 'max_pages_reached', 'error'
+      missingCompletionCodeCount: 0,
+      missingCompletionCodeExamples: [] as string[],
+      stopReason: null as string | null,
+      mode: scrapingMode,
       errors: [] as string[],
-      entries: [] as any[],
     };
     
     // Scrape each requested page type
@@ -231,33 +270,52 @@ Deno.serve(async (req) => {
           const allEntries = parseInquiryList(html, pageType);
           results.totalEntriesScanned += allEntries.length;
           
-          // Filter entries by year and check stop condition
-          let oldestYearOnPage: number | null = null;
+          // Filter entries based on completion year (for avslutade) or process all (for pagaende)
           const validEntries: InquiryEntry[] = [];
+          let oldestCompletionYearOnPage: number | null = null;
           
           for (const entry of allEntries) {
-            const year = extractYearFromInquiryCode(entry.inquiryCode);
-            
-            if (year !== null) {
-              if (oldestYearOnPage === null || year < oldestYearOnPage) {
-                oldestYearOnPage = year;
-              }
+            // For avslutade: use completion year logic if minCompletionYear is set
+            if (pageType === 'avslutade' && minCompletionYear !== null) {
+              const completionYear = extractYearFromCompletionCode(entry.completionCode);
               
-              // If we encounter a year below startYear, stop immediately
-              if (year < startYear) {
-                console.log(`⚠️  Stop condition reached: Found ${entry.inquiryCode} from year ${year} (< ${startYear})`);
-                results.stopReason = results.stopReason || 'year_threshold_reached';
-                shouldContinue = false;
-                break;
+              if (completionYear !== null) {
+                // Track oldest completion year on page
+                if (oldestCompletionYearOnPage === null || completionYear < oldestCompletionYearOnPage) {
+                  oldestCompletionYearOnPage = completionYear;
+                }
+                
+                // CRITICAL: Stop when completionYear < minCompletionYear
+                // Keep entries where completionYear >= minCompletionYear
+                if (completionYear < minCompletionYear) {
+                  console.log(`⚠️  Stop condition reached: ${entry.inquiryCode} completed as ${entry.completionCode} (year ${completionYear}) which is < minCompletionYear ${minCompletionYear}`);
+                  results.stopReason = results.stopReason || 'completion_year_threshold_reached';
+                  shouldContinue = false;
+                  break;
+                }
+                
+                validEntries.push(entry);
+              } else {
+                // Missing completion code - still process but track it
+                results.missingCompletionCodeCount++;
+                if (results.missingCompletionCodeExamples.length < 5) {
+                  results.missingCompletionCodeExamples.push(entry.inquiryCode);
+                }
+                console.warn(`⚠️  No completion code found for ${entry.inquiryCode} (inquiry from ${extractYearFromInquiryCode(entry.inquiryCode)}), processing anyway`);
+                validEntries.push(entry);
               }
-              
-              validEntries.push(entry);
             } else {
-              console.warn(`Could not extract year from ${entry.inquiryCode}, skipping`);
+              // For pagaende OR full history mode (minCompletionYear = null): process all entries
+              validEntries.push(entry);
             }
           }
           
-          console.log(`Page ${currentPage}: Found ${allEntries.length} total entries, ${validEntries.length} valid (>= ${startYear}), oldest year: ${oldestYearOnPage}`);
+          const modeInfo = pageType === 'avslutade' && minCompletionYear !== null 
+            ? `completion year >= ${minCompletionYear}, oldest completion: ${oldestCompletionYearOnPage}` 
+            : 'all entries (no year filter)';
+          
+          console.log(`📄 Page ${currentPage} (${pageType}): Found ${allEntries.length} total, ${validEntries.length} valid (${modeInfo})`);
+          results.validEntriesProcessed += validEntries.length;
           
           // Process valid entries
           for (const entry of validEntries) {
@@ -336,16 +394,6 @@ Deno.serve(async (req) => {
               }
               
               results.tasksCreated++;
-              results.validEntriesProcessed++;
-              
-              results.entries.push({
-                processKey,
-                inquiryCode: entry.inquiryCode,
-                title: entry.title,
-                ministry: entry.ministry,
-                regeringenUrl: entry.regeringenUrl,
-                stage: initialStage,
-              });
               
             } catch (entryError) {
               const errorMsg = entryError instanceof Error ? entryError.message : String(entryError);
