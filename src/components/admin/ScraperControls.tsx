@@ -23,9 +23,13 @@ export function ScraperControls() {
       if (error) throw error;
 
       setLastResult(data);
-      toast.success(
-        `Scrape complete: ${data.processesCreated} created, ${data.processesUpdated} updated, ${data.tasksCreated} tasks created`
-      );
+      
+      // Show detailed pagination stats if available
+      const statsMessage = data.pagesProcessed 
+        ? `Scrape complete: ${data.pagesProcessed} pages, ${data.validEntriesProcessed} entries processed, ${data.tasksCreated} tasks created. Stop reason: ${data.stopReason}`
+        : `Scrape complete: ${data.processesCreated} created, ${data.tasksCreated} tasks created`;
+      
+      toast.success(statsMessage);
     } catch (error: any) {
       toast.error(`Scrape failed: ${error.message}`);
     } finally {
@@ -79,16 +83,53 @@ export function ScraperControls() {
         </div>
 
         {lastResult && (
-          <div className="rounded-lg border bg-muted/50 p-4 space-y-2">
+          <div className="rounded-lg border bg-muted/50 p-4 space-y-3">
             <h4 className="text-sm font-medium">Last Scrape Result</h4>
-            <div className="flex gap-2 text-sm">
-              <Badge variant="default">{lastResult.processesCreated} Created</Badge>
-              <Badge variant="secondary">{lastResult.processesUpdated} Updated</Badge>
-              <Badge variant="outline">{lastResult.tasksCreated} Tasks Created</Badge>
+            
+            {/* Pagination Stats - Only show if available */}
+            {lastResult.pagesProcessed !== undefined && (
+              <div className="space-y-2 pb-2 border-b">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                  <div>
+                    <div className="text-xs text-muted-foreground">Pages Processed</div>
+                    <div className="font-medium">{lastResult.pagesProcessed}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Entries Scanned</div>
+                    <div className="font-medium">{lastResult.totalEntriesScanned}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Valid Entries</div>
+                    <div className="font-medium">{lastResult.validEntriesProcessed}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Stop Reason</div>
+                    <Badge variant="outline" className="text-xs">
+                      {lastResult.stopReason || 'N/A'}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Standard Stats */}
+            <div className="flex gap-2 text-sm flex-wrap">
+              <Badge variant="default">{lastResult.processesCreated} Processes</Badge>
+              <Badge variant="secondary">{lastResult.tasksCreated} Tasks Created</Badge>
+              {lastResult.errors && lastResult.errors.length > 0 && (
+                <Badge variant="destructive">{lastResult.errors.length} Errors</Badge>
+              )}
             </div>
+            
             {lastResult.errors && lastResult.errors.length > 0 && (
-              <div className="text-xs text-destructive">
-                {lastResult.errors.length} errors occurred
+              <div className="text-xs text-destructive space-y-1">
+                <div className="font-medium">Errors:</div>
+                {lastResult.errors.slice(0, 3).map((err: string, i: number) => (
+                  <div key={i} className="text-xs truncate">{err}</div>
+                ))}
+                {lastResult.errors.length > 3 && (
+                  <div className="text-xs">... and {lastResult.errors.length - 3} more</div>
+                )}
               </div>
             )}
           </div>
