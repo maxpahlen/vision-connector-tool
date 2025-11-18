@@ -1,6 +1,7 @@
 # Branch Plan: Phase 2 - SOU Scraper and PDF Processing
 
 ## Branch Information
+
 - **Branch Name**: `feature/phase-2-sou-scraper`
 - **Created**: 2025-11-13
 - **Status**: ✅ Phase 2 Core Complete (2025-11-14)
@@ -9,6 +10,7 @@
 ## Phase 2 Completion Summary (2025-11-14)
 
 ### ✅ Completed Components
+
 1. **Index Scraper** (`scrape-sou-index`) - Discovers inquiries from sou.gov.se
 2. **Document Scraper** (`scrape-regeringen-document`) - Extracts metadata from regeringen.se
 3. **PDF Extraction Service** - Production Node.js service deployed to Vercel
@@ -16,12 +18,15 @@
 5. **Admin Control Panel** (`/admin/scraper`) - Full monitoring and control interface
 
 ### ✅ Verified End-to-End Pipeline
+
 Successfully tested with 3 SOUs:
+
 - **SOU 2025:46** - Tryggare idrottsarrangemang (1.02M chars, 452 pages)
 - **SOU 2025:50** - En ny nationell myndighet för viltförvaltning (958K chars, 492 pages)
 - **SOU 2025:52** - Ökad insyn i politiska processer (1.69M chars, 808 pages)
 
 ### 🔧 Recent Fixes (2025-11-18)
+
 - **Pagination Implementation**: Added multi-page scraping capability to `scrape-sou-index`
   - Correctly uses `?page=N#result` URL pattern (WordPress pagination)
   - Fixed selector to anchor to `.list--block.list--investigation > li` under `<main>`
@@ -30,21 +35,25 @@ Successfully tested with 3 SOUs:
 - **Task Queue Display** (2025-11-14): Fixed RLS policies on `agent_tasks` table - admin UI now correctly displays task statistics
 
 ### 🎯 Next Steps
+
 - ✅ Pagination implemented - ready to scale to full document corpus
-- Process pending document tasks (21 tasks ready)
-- Run full corpus scrape (remove `maxPages` limit)
+- Process pending document tasks
 - Add document detail view with extraction timeline and metadata
 - Extend to pågående-utredningar (ongoing inquiries)
+- Create implementation plan .md files for all future phases
 - Implement Phase 3: Multi-agent analysis system
 - Build user-facing SOU viewer with timeline visualization
 
 ## Goal
+
 Build a two-stage data acquisition system that:
+
 1. Uses sou.gov.se as an **index/discovery layer** to find inquiries and their regeringen.se links
 2. Uses regeringen.se as the **canonical document source** to fetch actual SOUs, directives, and PDFs
 3. Extracts text content from PDFs for analysis by the multi-agent system
 
 ## Architecture Principle
+
 **sou.gov.se = index/map of inquiries**
 **regeringen.se = canonical document source (directives, SOUs, PDFs)**
 
@@ -53,12 +62,12 @@ This matches the real structure of the websites: sou.gov.se lists investigations
 ## Scope
 
 ### In Scope
+
 - **Stage 1 - Index Scraper** (`scrape-sou-index`):
   - Scrape both `/pagaende-utredningar/` and `/avslutade-utredningar/` on sou.gov.se
   - Extract inquiry identifiers (e.g., "Ku 2025:02"), titles, ministries, and regeringen.se links
   - Store/update `processes` table using inquiry code as canonical `process_key`
   - Create pending tasks for document fetching
-  
 - **Stage 2 - Document Scraper** (`scrape-regeringen-document`):
   - Fetch document pages from regeringen.se based on task queue
   - Detect document types (Directive, SOU, Ds) via text patterns
@@ -66,25 +75,22 @@ This matches the real structure of the websites: sou.gov.se lists investigations
   - Store in `documents` table with proper `doc_type` and `doc_number`
   - Link documents to processes via `process_documents` with appropriate roles
   - Update process stage to 'published' ONLY when actual SOU document is found
-  
 - **Task Orchestration** (`process-task-queue`):
   - Execute pending `fetch_regeringen_document` tasks from queue
   - Handle retries and error logging
-  
 - **PDF Processing** (update existing `process-sou-pdf`):
   - Accept `document_id` instead of raw URLs
   - Extract text and store in `documents.raw_content`
-  
 - **Admin UI Components**:
   - Scraper control panel
   - Process list (by inquiry code)
   - Document list (by type)
   - Task monitor
-  
 - Basic error handling and retry logic for network operations
 - Integration with existing database schema
 
 ### Out of Scope
+
 - AI analysis of documents (Phase 3)
 - Multi-agent orchestration (Phase 3)
 - Advanced PDF parsing (tables, images, complex layouts)
@@ -94,6 +100,7 @@ This matches the real structure of the websites: sou.gov.se lists investigations
 - PDF file storage (only text extraction for now)
 
 ## Success Criteria
+
 - [x] Index scraper (`scrape-sou-index`) successfully fetches inquiry data from sou.gov.se ✅ TESTED 2025-11-13
 - [x] Inquiry codes (e.g., "Ku 2025:02") are normalized to `process_key` format (e.g., "ku-2025-02") ✅ TESTED 2025-11-13
 - [x] Processes are created/updated with appropriate initial stage ('directive' or 'writing') ✅ TESTED 2025-11-13
@@ -181,12 +188,14 @@ This matches the real structure of the websites: sou.gov.se lists investigations
    - Task monitor (show queue status, errors)
 
 ### Dependencies
+
 - PDF parsing library (pdf-parse or similar for Deno edge functions)
 - HTML parsing library (deno-dom for Deno edge functions)
 - Network access from edge functions
 - Existing database schema from Phase 1 (processes, documents, process_documents, agent_tasks)
 
 ### Implementation Order
+
 1. ✅ `scrape-sou-index` for avslutade-utredningar (using inquiry codes) - COMPLETED 2025-11-13
 2. ✅ `scrape-regeringen-document` to create documents + process_documents - COMPLETED 2025-11-13
 3. ✅ `process-task-queue` to orchestrate task execution - COMPLETED 2025-11-13
@@ -200,12 +209,14 @@ This matches the real structure of the websites: sou.gov.se lists investigations
 ## Testing Strategy
 
 ### Manual Testing
+
 - Test scraper with known SOU pages
 - Verify PDF download and text extraction with sample documents
 - Check database records for correctness
 - Test error cases (404, invalid PDFs, network failures)
 
 ### Automated Testing (Future)
+
 - Unit tests for parsing functions
 - Integration tests for edge function workflows
 - Test data fixtures for consistent testing
@@ -213,6 +224,7 @@ This matches the real structure of the websites: sou.gov.se lists investigations
 Reference: `docs/technical/testing-strategy.md` (to be created if not exists)
 
 ## Security Considerations
+
 - Edge functions use service role key for database access
 - No user-facing endpoints expose raw scraping functionality
 - Input validation on all external data
@@ -220,6 +232,7 @@ Reference: `docs/technical/testing-strategy.md` (to be created if not exists)
 - Respect robots.txt and terms of service
 
 ## Related Documentation
+
 - Database schema: `docs/technical/database-design.md` (if exists)
 - Phase 1 completion: Foundation and authentication
 - Phase 3 preview: Multi-agent AI analysis system
@@ -227,12 +240,14 @@ Reference: `docs/technical/testing-strategy.md` (to be created if not exists)
 ## Notes
 
 ### Architectural
+
 - **Two-stage pattern**: sou.gov.se for discovery, regeringen.se for documents
 - **Canonical identifiers**: Inquiry codes (not SOU numbers) as process keys
 - **Evidence-driven stages**: Only advance to 'published' with confirmed SOU document
 - **Async task queue**: Decouples discovery from document processing
 
 ### Technical
+
 - Follow functional paradigm: data → function → data → function
 - Edge functions are stateless; state maintained in database
 - Consider using XState for complex scraping workflows if needed
@@ -246,6 +261,7 @@ Reference: `docs/technical/testing-strategy.md` (to be created if not exists)
   - Ds: `/Ds\s+\d{4}:\d+/i`
 
 ### Data Model
+
 - `processes.process_key` = normalized inquiry code (e.g., "ku-2025-02")
 - `documents.doc_number` = official document number (e.g., "SOU 2025:108", "Dir. 2025:97")
 - `documents.doc_type` = document type ('directive', 'sou', 'ds')
@@ -255,6 +271,7 @@ Reference: `docs/technical/testing-strategy.md` (to be created if not exists)
 ## PDF Extraction Architecture
 
 ### Core Principle
+
 **"Be explicit about what we know, what we don't know, and never pretend."**
 
 ### Challenge: Directory-Based URLs on Regeringen.se
@@ -262,20 +279,19 @@ Reference: `docs/technical/testing-strategy.md` (to be created if not exists)
 **Problem Identified:** Regeringen.se often uses directory-based URLs for PDFs (e.g., `https://www.regeringen.se/contentassets/abc123.../`) rather than explicit `.pdf` file extensions in link hrefs. This caused the initial implementation to miss valid PDF candidates.
 
 **Solution:** Enhanced multi-tier PDF candidate detection that:
+
 1. **Broadens candidate detection** to include:
    - Links with `.pdf` in href (original)
    - Links to `/contentassets/` or `/globalassets/` paths (NEW)
    - Links with "pdf" in link text (case-insensitive) (NEW)
    - Links with file size patterns like `(pdf 2 MB)`, `(2,5 MB)` (NEW)
-   
 2. **Prioritizes contextual matches** over global search:
    - **Tier 1:** Search within "Ladda ner" sections first (`.list--icons`, `.download`, `.file-list`)
    - **Tier 2:** Only if Tier 1 finds nothing, search globally (with lower scores)
-   
 3. **Excludes obvious non-PDFs:**
    - Skip image links (`.jpg`, `.png`, `.svg`, `.webp`, etc.)
 
-**Key Principle:** "Be generous in what qualifies as a *candidate*, but strict in what becomes the *primary* PDF."
+**Key Principle:** "Be generous in what qualifies as a _candidate_, but strict in what becomes the _primary_ PDF."
 
 ### PDF Scoring System
 
@@ -284,32 +300,38 @@ The scraper uses an intelligent scoring system to select the correct PDF when mu
 The scraper uses an intelligent scoring system to select the correct PDF when multiple candidates exist. **All detected candidates are passed through the scoring system** - there are no shortcuts or bypasses.
 
 **Strong Signals (+10-15 points each):**
+
 - **"Ladda ner" Context** (+15): Link found directly under or within a "Ladda ner" heading - HIGHEST priority
 - Document number appears in URL or filename (within primary sections only) (+10)
 - Document number appears in link text (within primary sections only) (+10)
 - Link is inside a section with "Ladda ner" heading (+10, if not already awarded +15 context boost)
 
 **Moderate Signals (+5-8 points):**
+
 - Link is in `.list--icons`, `.download`, or `.file-list` structured sections (+8, increased from +5)
 - URL is from regeringen's CDN (`/contentassets/`, `/globalassets/`) (+5 if contextually correct)
 - Link text explicitly indicates PDF (+5)
 
 **Low Priority Signals (+2 points):**
+
 - **Global Fallback** (+2): Link found only via generic patterns outside preferred sections - lowest priority
   - Example: `/contentassets/` URL found in body text (not in "Ladda ner" sections)
   - These candidates are allowed but score significantly lower than contextually-correct links
 
 **Swedish Full Report Rule (+8 points):**
+
 - Primary PDF should always be the Swedish full report
 - Not kortversion, sammanfattning, English, or faktablad
 
 **Penalties (-5 to -10 points):**
+
 - Kortversion / sammanfattning (-5 each)
 - English version / summary (-5)
 - Faktablad / fact sheet (-7)
 - Bilaga / appendix when document is not appendix type (-3)
 
 **Disqualifiers (score = -999):**
+
 - External domain (not regeringen.se)
 - Cover page only indicators
 - **Document number in wrong context (STRICT CRITERIA - Updated 2025-11-13):**
@@ -340,37 +362,42 @@ All documents store rich extraction metadata in `documents.metadata`:
 ### Confidence Score Interpretation
 
 - **80-100**: High confidence - Swedish full report with doc number match
-- **60-79**: Medium confidence - Likely correct but may need verification  
+- **60-79**: Medium confidence - Likely correct but may need verification
 - **30-59**: Low confidence - Ambiguous, requires review
 - **0-29**: Very low - PDF found but uncertain if correct (no task created)
 
 **Critical Rule:** PDF processing tasks are ONLY created when:
+
 - `pdf_status = 'found'` AND
 - `pdf_confidence_score >= 30` AND
 - A clear primary PDF has been identified (not `multiple_candidates` with equal scores)
 
-**Transparency Guarantee:** All candidates, scores, reasoning, and decision logs are stored in `documents.metadata` for full auditability. This allows future AI agents and developers to understand *exactly* why a PDF was selected or rejected.
+**Transparency Guarantee:** All candidates, scores, reasoning, and decision logs are stored in `documents.metadata` for full auditability. This allows future AI agents and developers to understand _exactly_ why a PDF was selected or rejected.
 
 ## AI Agent Integration Guidelines
 
 ### Usage Guidelines for Future AI Agents
 
 **Head Detective Agent:**
+
 - If `pdf_status = 'missing'`, create verification task
 - If `pdf_confidence_score < 60`, flag for manual review
 - If `pdf_status = 'multiple_candidates'` and count > 3, create disambiguation task
 
 **Timeline Agent:**
+
 - Only process documents with `pdf_status = 'found'`
 - Log confidence score in timeline event metadata
 - Consult `pdf_reasoning` to understand document quality
 
 **Metadata Agent:**
+
 - Check `pdf_reasoning` to understand document type selection
 - Use `pdf_candidates` to identify alternative versions (English, summary, etc.)
 - Extract metadata only from documents with confidence >= 50
 
 **QA Agent:**
+
 - Review all documents with `pdf_confidence_score < 50`
 - Verify that `pdf_reasoning` contains 'swedish_full_report' signal
 - Flag if 'kortversion' or 'english_version' penalties were applied to selected PDF
@@ -392,7 +419,7 @@ FROM documents
 WHERE (metadata->>'pdf_status') = 'missing';
 
 -- Find documents with multiple PDF candidates
-SELECT doc_number, title, 
+SELECT doc_number, title,
        jsonb_array_length(metadata->'pdf_candidates') as candidate_count
 FROM documents
 WHERE jsonb_array_length(metadata->'pdf_candidates') > 1
@@ -409,6 +436,7 @@ WHERE (metadata->>'pdf_status') = 'found'
 ### Integration Principle
 
 All downstream AI agents MUST:
+
 1. Read and respect `pdf_status` before processing documents
 2. Use `pdf_confidence_score` to prioritize work and flag uncertain cases
 3. Consult `pdf_reasoning` to understand extraction decisions
@@ -418,9 +446,11 @@ All downstream AI agents MUST:
 ## Bug Fix: Disqualifier Logic (2025-11-13)
 
 ### Problem Identified
+
 The `doc_number_in_wrong_context` disqualifier was too aggressive and incorrectly disqualifying legitimate PDF links in structured download sections (e.g., `.list--icons`).
 
 **Root Cause:** The penalty logic checked if `location === 'body_text'` and if the link contained the document number, but:
+
 1. `determineLocation()` didn't recognize structured section classes like `.list--icons`, `.download`, `.file-list`
 2. Therefore, legitimate download links in these sections were classified as `body_text`
 3. This caused them to be disqualified even though they were in proper download contexts
@@ -440,7 +470,7 @@ The `doc_number_in_wrong_context` disqualifier was too aggressive and incorrectl
 const isInStructuredSection = !!link.closest('.list--icons, .download, .file-list');
 
 // Check if link has strong PDF signals
-const hasStrongPdfSignals = 
+const hasStrongPdfSignals =
   linkText.toLowerCase().includes('pdf') ||
   linkText.match(/\([\d,.]+ ?mb\)/i) ||
   href.includes('/contentassets/') ||
@@ -452,7 +482,7 @@ const hasStrongPdfSignals =
 // - In body_text AND not in a structured section
 // - AND has no PDF signals
 // - AND still matches doc number (likely random mention)
-if (location === 'body_text' && 
+if (location === 'body_text' &&
     !isInStructuredSection &&
     !hasStrongPdfSignals &&
     (href.toLowerCase().includes(normalizedDocNum) || linkText.includes(normalizedDocNum))) {
@@ -461,7 +491,7 @@ if (location === 'body_text' &&
 }
 
 // For "suspicious but unclear" cases: apply strong penalty instead
-else if (location === 'body_text' && 
+else if (location === 'body_text' &&
          !isInStructuredSection &&
          (href.toLowerCase().includes(normalizedDocNum) || linkText.includes(normalizedDocNum))) {
   score -= 15; // Strong penalty but not disqualification
@@ -470,6 +500,7 @@ else if (location === 'body_text' &&
 ```
 
 **Rationale:**
+
 - Reserves `-999` for cases we're almost certain are wrong (external domains, truly random mentions)
 - Allows legitimate PDFs in structured sections to pass through even if `determineLocation()` hasn't classified them correctly yet
 - Uses strong negative penalty for ambiguous cases, letting the scoring system decide relative to other candidates
@@ -484,36 +515,37 @@ else if (location === 'body_text' &&
 function determineLocation(link: Element, doc: Document): string {
   let current = link.parentElement;
   let depth = 0;
-  
+
   while (current && depth < 10) {
     const heading = current.querySelector('h2, h3, h4');
     if (heading?.textContent?.toLowerCase().includes('ladda ner')) {
       return 'download_section';
     }
-    
-    if (current.classList?.contains('main-content') || 
+
+    if (current.classList?.contains('main-content') ||
         current.classList?.contains('article-content')) {
       return 'main_content';
     }
-    
+
     current = current.parentElement;
     depth++;
   }
-  
+
   if (link.closest('aside, footer, .sidebar')) {
     return 'sidebar';
   }
-  
+
   // NEW: Check if link is in a structured download section
   if (link.closest('.list--icons, .download, .file-list')) {
     return 'download_section';
   }
-  
+
   return 'body_text';
 }
 ```
 
 **Impact:**
+
 - Links in `.list--icons` (like SOU 2025:46) will now be classified as `download_section` instead of `body_text`
 - Makes scoring logic cleaner and more explicit
 - Reduces need for workarounds in penalty logic
@@ -523,6 +555,7 @@ function determineLocation(link: Element, doc: Document): string {
 After implementing both parts, test these scenarios:
 
 #### Test Case 1: SOU 2025:46 (Currently Failing) ✅ PASSED
+
 - **Before Fix:** `pdf_status: missing`, candidate disqualified with `-999`
 - **After Fix (Part 1):**
   - ✅ `pdf_status: found`
@@ -535,16 +568,19 @@ After implementing both parts, test these scenarios:
     - ✅ NO disqualification (Part 1 prevents it)
 
 #### Test Case 2: SOU 2025:50 ✅ PASSED
+
 - **Result:** ✅ Correct PDF found with 100% confidence
 - **Location:** ✅ `download_section` (Part 2 working)
 - **Signals:** All expected signals present
 
 #### Test Case 3: SOU 2025:52 ✅ PASSED
+
 - **Result:** ✅ Similar to 2025:50, consistent behavior verified
 - **Location:** ✅ `download_section` (Part 2 working)
 - **Confidence:** 100%
 
 #### Test Case 4: Document with Ambiguous Links
+
 - **Status:** Not yet tested (all test documents had clear winners)
 - **Expected Future Behavior:** `multiple_candidates` or `low_confidence`
 
@@ -571,6 +607,7 @@ After implementing both parts, test these scenarios:
 **Status:** ✅ BUG FIX COMPLETED AND VERIFIED
 
 #### SOU 2025:52 (Tested After Complete Fix)
+
 - **Status:** `found` ✅
 - **Confidence:** 100%
 - **Location:** `download_section` ✅ (correctly classified)
@@ -580,6 +617,7 @@ After implementing both parts, test these scenarios:
 - **Result:** Perfect detection, all fixes working
 
 #### SOU 2025:50 (Tested After Complete Fix)
+
 - **Status:** `found` ✅
 - **Confidence:** 100%
 - **Location:** `download_section` ✅ (correctly classified)
@@ -589,6 +627,7 @@ After implementing both parts, test these scenarios:
 - **Result:** Perfect detection, all fixes working
 
 #### SOU 2025:46 (Tested After Part 1 Only)
+
 - **Status:** `found` ✅
 - **Confidence:** 96%
 - **Location:** `body_text` (scraped before Part 2 was deployed)
@@ -625,6 +664,7 @@ After implementing both parts, test these scenarios:
 ## Task Queue Enhancement: PDF Processing Support (2025-11-13)
 
 ### Overview
+
 Updated `process-task-queue` to handle both `fetch_regeringen_document` and `process_pdf` task types, enabling end-to-end document acquisition and PDF text extraction workflow.
 
 ### Changes Implemented
@@ -637,6 +677,7 @@ Updated `process-task-queue` to handle both `fetch_regeringen_document` and `pro
    - Added conditional filtering: if `task_type` specified, filter by it; otherwise process all pending tasks
 
 2. **Task Routing Logic:**
+
    ```typescript
    if (task.task_type === 'fetch_regeringen_document') {
      // Call scrape-regeringen-document with regeringen_url
@@ -671,6 +712,7 @@ graph LR
 ### Task Data Structure
 
 **process_pdf task:**
+
 ```json
 {
   "task_type": "process_pdf",
@@ -689,19 +731,21 @@ graph LR
 ### End-to-End Test Results (2025-11-13)
 
 **Test Execution:**
+
 - Triggered `process-task-queue` with `task_type: "process_pdf"` and `limit: 3`
 - Processed 3 high-priority PDF extraction tasks
 - Verified database updates for successful tasks
 
 **Results:**
 
-| Document | Status | Details |
-|----------|--------|---------|
-| SOU 2025:46 | ✅ Success | Processed at 16:23:07, 114 chars extracted |
-| SOU 2025:50 | ✅ Success | Processed at 16:23:14, 114 chars extracted |
-| SOU 2025:52 | ❌ Failed | PostgreSQL null byte error (`\u0000 cannot be converted to text`) |
+| Document    | Status     | Details                                                           |
+| ----------- | ---------- | ----------------------------------------------------------------- |
+| SOU 2025:46 | ✅ Success | Processed at 16:23:07, 114 chars extracted                        |
+| SOU 2025:50 | ✅ Success | Processed at 16:23:14, 114 chars extracted                        |
+| SOU 2025:52 | ❌ Failed  | PostgreSQL null byte error (`\u0000 cannot be converted to text`) |
 
 **Workflow Verification:**
+
 1. ✅ Tasks created by `scrape-regeringen-document` with correct `document_id`
 2. ✅ `process-task-queue` fetches and routes `process_pdf` tasks correctly
 3. ✅ `process-sou-pdf` invoked with `documentId` parameter
@@ -800,6 +844,7 @@ The production PDF extraction system uses a **hybrid architecture** that respect
 **Solution:** Create a minimal, focused Node.js microservice that does **one thing well** (PDF text extraction) and integrate it as an external dependency that the Deno edge function orchestrates.
 
 **Benefits:**
+
 - ✅ Uses battle-tested `pdf-parse` library (widely adopted, stable)
 - ✅ Preserves existing Lovable architecture (no refactoring needed)
 - ✅ Separates concerns: Deno handles orchestration, Node handles heavy lifting
@@ -813,11 +858,13 @@ The production PDF extraction system uses a **hybrid architecture** that respect
 **Requirement:** All requests to the PDF extraction service MUST include a valid API key.
 
 **Implementation:**
+
 - Header: `X-API-Key: <secret>`
 - Service validates against `PDF_EXTRACTOR_API_KEY` environment variable
 - Rejects unauthorized requests with HTTP 401
 
 **Secret Management:**
+
 - `PDF_EXTRACTOR_API_KEY` stored in both:
   - Lovable Cloud secrets (for Deno edge function to send)
   - External service environment (Vercel/Railway env vars to validate)
@@ -828,6 +875,7 @@ The production PDF extraction system uses a **hybrid architecture** that respect
 **Requirement:** Service ONLY processes PDFs from trusted government sources.
 
 **Allowed Domains:**
+
 ```javascript
 [
   'https://www.regeringen.se',
@@ -836,6 +884,7 @@ The production PDF extraction system uses a **hybrid architecture** that respect
 ```
 
 **Enforcement:**
+
 - Validate PDF URL before download
 - Reject non-allowed domains with HTTP 403
 - Return structured error: `{ ok: false, error: 'domain_not_allowed', message: '...' }`
@@ -850,11 +899,13 @@ To add new domains (e.g., riksdagen.se, other government sites), update the `ALL
 **Maximum PDF Size:** 50 MB (52,428,800 bytes)
 
 **Enforcement:**
+
 1. Check `Content-Length` header before download
 2. If size exceeds limit, return error immediately (no partial download)
 3. Error code: `too_large`
 
 **Rationale:**
+
 - Typical SOU: 5-15 MB (100-400 pages)
 - Large SOUs: 20-30 MB (500-800 pages)
 - 50 MB limit handles outliers while preventing abuse
@@ -866,11 +917,13 @@ To add new domains (e.g., riksdagen.se, other government sites), update the `ALL
 **Total Request Timeout:** 60 seconds
 
 **Enforcement:**
+
 - Use `AbortController` for download timeout
 - Use `Promise.race()` for parsing timeout
 - If timeout exceeded, return error: `timeout`
 
 **Rationale:**
+
 - Most PDFs download in < 5 seconds
 - Most PDFs parse in < 10 seconds
 - 60s total is generous but prevents hanging requests
@@ -878,6 +931,7 @@ To add new domains (e.g., riksdagen.se, other government sites), update the `ALL
 #### Failure Handling
 
 **When limits are exceeded:**
+
 - ❌ Do NOT retry automatically
 - ❌ Do NOT store partial data
 - ✅ Return structured error immediately
@@ -895,6 +949,7 @@ To add new domains (e.g., riksdagen.se, other government sites), update the `ALL
 **Location:** `services/pdf-extractor/sanitizer.js`
 
 **Operations:**
+
 1. Remove null bytes: `text.replace(/\u0000/g, '')`
 2. Normalize line breaks: `\r\n` → `\n`, `\r` → `\n`
 3. Remove excessive blank lines: max 3 consecutive newlines
@@ -902,11 +957,13 @@ To add new domains (e.g., riksdagen.se, other government sites), update the `ALL
 5. Trim whitespace
 
 **Validation:**
+
 - Verify no null bytes remain
 - Verify output is string type
 - Verify minimum content length (> 10 chars)
 
 **On failure:**
+
 - Return error: `sanitization_error`
 - Do NOT return unsanitized text
 
@@ -915,12 +972,14 @@ To add new domains (e.g., riksdagen.se, other government sites), update the `ALL
 **Location:** `supabase/functions/process-sou-pdf/index.ts`
 
 **Operations:**
+
 1. Remove any remaining null bytes (redundant check)
 2. Normalize line breaks (redundant check)
 3. Validate UTF-8 (redundant check)
 4. Final verification before DB insert
 
 **On failure:**
+
 - Do NOT write to database
 - Store error in metadata: `pdf_text_status: 'sanitization_error'`
 - Mark task as failed
@@ -930,6 +989,7 @@ To add new domains (e.g., riksdagen.se, other government sites), update the `ALL
 **Problem:** PostgreSQL TEXT columns reject null bytes (`\u0000`)
 
 **Solution:**
+
 ```javascript
 // Remove all null bytes
 cleanedText = text.replace(/\u0000/g, '');
@@ -946,19 +1006,20 @@ if (cleanedText.includes('\u0000')) {
 
 **Fixed Enum of Error Codes** (for `documents.metadata.pdf_text_error`):
 
-| Error Code | Meaning | HTTP Status | Layer |
-|------------|---------|-------------|-------|
-| `domain_not_allowed` | PDF URL not in allow-list | 403 | Service |
-| `download_failed` | Network error, HTTP error, invalid URL | 400 | Service |
-| `too_large` | PDF exceeds 50MB limit | 400 | Service |
-| `timeout` | Download or parsing exceeded time limit | 400 | Service |
-| `parse_failed` | pdf-parse library failed, empty PDF | 400 | Service |
-| `sanitization_error` | Text cleaning failed, null bytes persist | 500 | Service or Edge |
-| `unknown_error` | Unexpected error (fallback) | 500 | Any |
+| Error Code           | Meaning                                  | HTTP Status | Layer           |
+| -------------------- | ---------------------------------------- | ----------- | --------------- |
+| `domain_not_allowed` | PDF URL not in allow-list                | 403         | Service         |
+| `download_failed`    | Network error, HTTP error, invalid URL   | 400         | Service         |
+| `too_large`          | PDF exceeds 50MB limit                   | 400         | Service         |
+| `timeout`            | Download or parsing exceeded time limit  | 400         | Service         |
+| `parse_failed`       | pdf-parse library failed, empty PDF      | 400         | Service         |
+| `sanitization_error` | Text cleaning failed, null bytes persist | 500         | Service or Edge |
+| `unknown_error`      | Unexpected error (fallback)              | 500         | Any             |
 
 **Metadata Structure:**
 
 **Success:**
+
 ```json
 {
   "pdf_text_status": "ok",
@@ -970,6 +1031,7 @@ if (cleanedText.includes('\u0000')) {
 ```
 
 **Failure:**
+
 ```json
 {
   "pdf_text_status": "extraction_failed",
@@ -988,6 +1050,7 @@ if (cleanedText.includes('\u0000')) {
 **Location:** `/services/pdf-extractor/`
 
 **Files:**
+
 ```
 services/pdf-extractor/
 ├── package.json          # Dependencies (express, pdf-parse, node-fetch)
@@ -1002,6 +1065,7 @@ services/pdf-extractor/
 ```
 
 **Key Dependencies:**
+
 - `express@^4.18.2` - HTTP server
 - `pdf-parse@^1.1.1` - Production PDF parsing
 - `node-fetch@^2.7.0` - PDF downloading
@@ -1010,16 +1074,19 @@ services/pdf-extractor/
 **Endpoints:**
 
 **POST /extract**
+
 - **Auth:** Requires `X-API-Key` header
 - **Input:** `{ pdfUrl: string, documentId?: string, docNumber?: string }`
 - **Output (success):** `{ ok: true, text: string, metadata: {...} }`
 - **Output (failure):** `{ ok: false, error: string, message: string }`
 
 **GET /health**
+
 - **Auth:** None
 - **Output:** `{ status: 'ok', service: 'pdf-extractor', version: '1.0.0', config: {...} }`
 
 **Configuration:**
+
 ```javascript
 {
   MAX_PDF_SIZE_BYTES: 50 * 1024 * 1024,  // 50 MB
@@ -1039,6 +1106,7 @@ services/pdf-extractor/
 **Changes from Placeholder:**
 
 **Before (Placeholder):**
+
 ```typescript
 function extractTextFromPdf(buffer: Uint8Array): string {
   return `[PDF processing: Basic text extraction from ${buffer.length} byte PDF...]`;
@@ -1046,13 +1114,14 @@ function extractTextFromPdf(buffer: Uint8Array): string {
 ```
 
 **After (Production):**
+
 ```typescript
 async function extractTextFromPdfService(
   pdfUrl: string,
   documentId: string,
   docNumber: string
 ): Promise<{ ok: boolean; text?: string; metadata?: any; error?: string; message?: string }> {
-  
+
   const response = await fetch(`${pdfExtractorUrl}/extract`, {
     method: 'POST',
     headers: {
@@ -1061,9 +1130,9 @@ async function extractTextFromPdfService(
     },
     body: JSON.stringify({ pdfUrl, documentId, docNumber })
   });
-  
+
   const data = await response.json();
-  
+
   if (!response.ok || !data.ok) {
     return {
       ok: false,
@@ -1071,7 +1140,7 @@ async function extractTextFromPdfService(
       message: data.message || 'Unknown extraction error'
     };
   }
-  
+
   return {
     ok: true,
     text: data.text,
@@ -1085,11 +1154,11 @@ function sanitizeTextFinal(text: string): { ok: boolean; text?: string; error?: 
     let cleaned = text.replace(/\u0000/g, '');
     cleaned = cleaned.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     cleaned = cleaned.normalize('NFC');
-    
+
     if (cleaned.includes('\u0000')) {
       return { ok: false, error: 'sanitization_error' };
     }
-    
+
     return { ok: true, text: cleaned.trim() };
   } catch (error) {
     return { ok: false, error: 'sanitization_error' };
@@ -1098,6 +1167,7 @@ function sanitizeTextFinal(text: string): { ok: boolean; text?: string; error?: 
 ```
 
 **New Secrets Required:**
+
 - `PDF_EXTRACTOR_URL` - Deployed service URL (e.g., `https://pdf-extractor-xyz.vercel.app`)
 - `PDF_EXTRACTOR_API_KEY` - Shared secret for authentication
 
@@ -1106,6 +1176,7 @@ function sanitizeTextFinal(text: string): { ok: boolean; text?: string; error?: 
 #### Recommended Platform: Vercel
 
 **Why Vercel:**
+
 - ✅ Free tier: 100 GB-hours/month (sufficient for moderate volume)
 - ✅ Auto-scaling (handles traffic spikes)
 - ✅ 99.99% uptime SLA
@@ -1115,6 +1186,7 @@ function sanitizeTextFinal(text: string): { ok: boolean; text?: string; error?: 
 **Deployment Steps:**
 
 1. **Push to GitHub:**
+
    ```bash
    git add services/pdf-extractor/
    git commit -m "Add production PDF extraction service"
@@ -1130,6 +1202,7 @@ function sanitizeTextFinal(text: string): { ok: boolean; text?: string; error?: 
    - Output directory: (leave empty)
 
 3. **Configure Environment Variables in Vercel:**
+
    ```
    PDF_EXTRACTOR_API_KEY=<generate with: openssl rand -hex 32>
    ```
@@ -1151,15 +1224,18 @@ function sanitizeTextFinal(text: string): { ok: boolean; text?: string; error?: 
 #### Alternative Platforms
 
 **Railway:**
+
 - Free tier: $5 credit/month
 - Simple deployment: `railway up`
 - Good for prototypes
 
 **Render:**
+
 - Free tier available (with cold starts)
 - Good for low-traffic apps
 
 **Self-Hosted (VPS):**
+
 - DigitalOcean, Linode, AWS EC2
 - Full control, requires more setup
 - Use PM2 or systemd for process management
@@ -1199,8 +1275,9 @@ function sanitizeTextFinal(text: string): { ok: boolean; text?: string; error?: 
 #### Verification SQL Queries
 
 **Check PDF extraction status:**
+
 ```sql
-SELECT 
+SELECT
   doc_number,
   title,
   LENGTH(raw_content) as content_length,
@@ -1210,12 +1287,13 @@ SELECT
   metadata->>'pdf_text_error' as error,
   metadata->>'pdf_text_length' as reported_length,
   metadata->>'pdf_page_count' as pages
-FROM documents 
+FROM documents
 WHERE doc_number IN ('SOU 2025:46', 'SOU 2025:50', 'SOU 2025:52')
 ORDER BY doc_number;
 ```
 
 **Check for null bytes (should return 0 rows):**
+
 ```sql
 SELECT doc_number, title
 FROM documents
@@ -1223,8 +1301,9 @@ WHERE raw_content LIKE '%' || CHR(0) || '%';
 ```
 
 **Summary of extraction attempts:**
+
 ```sql
-SELECT 
+SELECT
   metadata->>'pdf_text_status' as status,
   metadata->>'pdf_text_error' as error,
   COUNT(*) as count
@@ -1262,11 +1341,13 @@ For this implementation to be **production-ready**:
 #### Service Health Check
 
 **Verify service is running:**
+
 ```bash
 curl https://your-pdf-extractor-url/health
 ```
 
 **Expected response:**
+
 ```json
 {
   "status": "ok",
@@ -1286,24 +1367,28 @@ curl https://your-pdf-extractor-url/health
 #### Common Errors
 
 **Error: `domain_not_allowed`**
+
 - **Cause:** PDF URL is not from regeringen.se
 - **Solution:** Verify the `pdf_url` in `documents` table starts with `https://www.regeringen.se` or `https://regeringen.se`
 - **To fix:** If legitimate government source, add domain to `ALLOWED_DOMAINS` in service config and redeploy
 
 **Error: `download_failed`**
+
 - **Cause:** Network error, HTTP 404/403, or invalid URL format
-- **Solution:** 
+- **Solution:**
   - Check if PDF URL is still accessible (may have moved/deleted on regeringen.se)
   - Verify network connectivity from service to regeringen.se
   - Check regeringen.se for rate limiting or blocking
 
 **Error: `too_large`**
+
 - **Cause:** PDF exceeds 50MB limit
 - **Solution:**
   - If this is a legitimate large government document, consider increasing `MAX_PDF_SIZE_BYTES` in service config
   - Typical SOUs are < 30MB, so 50MB should handle most cases
 
 **Error: `timeout`**
+
 - **Cause:** Download or parsing took longer than 60 seconds
 - **Solution:**
   - Check service performance and resource limits (may need to upgrade Vercel plan for more CPU)
@@ -1311,6 +1396,7 @@ curl https://your-pdf-extractor-url/health
   - Consider increasing timeout limits if many documents fail this way
 
 **Error: `parse_failed`**
+
 - **Cause:** pdf-parse library could not extract text (corrupted PDF, unsupported format, image-only PDF)
 - **Solution:**
   - Verify PDF is not image-only (OCR not implemented yet)
@@ -1318,6 +1404,7 @@ curl https://your-pdf-extractor-url/health
   - Some government PDFs may be poorly formatted and genuinely unparseable
 
 **Error: `sanitization_error`**
+
 - **Cause:** Text cleaning failed or null bytes persist after sanitization
 - **Solution:**
   - This indicates a bug in sanitization logic
@@ -1325,6 +1412,7 @@ curl https://your-pdf-extractor-url/health
   - Report as bug with specific `doc_number` for investigation
 
 **Error: `unknown_error`**
+
 - **Cause:** Unexpected error not covered by specific error codes
 - **Solution:**
   - Check service logs (Vercel dashboard → Logs)
@@ -1336,6 +1424,7 @@ curl https://your-pdf-extractor-url/health
 **Current:** No rate limiting implemented
 
 **Future Considerations:**
+
 - If processing large batches (100+ documents), regeringen.se may rate-limit requests
 - Solution: Add delays between PDF downloads (e.g., 1-2 seconds)
 - Implementation: Use task queue priority and scheduling to spread out requests
@@ -1345,6 +1434,7 @@ curl https://your-pdf-extractor-url/health
 **Example: Adding riksdagen.se**
 
 1. Update `services/pdf-extractor/config.js`:
+
    ```javascript
    ALLOWED_DOMAINS: [
      'https://www.regeringen.se',
@@ -1357,6 +1447,7 @@ curl https://your-pdf-extractor-url/health
 2. Redeploy service to Vercel (auto-deploys on git push)
 
 3. Verify health endpoint shows new domain:
+
    ```bash
    curl https://your-url/health | jq '.config.allowedDomains'
    ```
@@ -1366,6 +1457,7 @@ curl https://your-pdf-extractor-url/health
 ### Migration Path from Placeholder
 
 **Current State:**
+
 - ✅ Task queue creates `process_pdf` tasks with `document_id`
 - ✅ `process-sou-pdf` accepts `documentId` and updates database
 - ✅ PDF text extraction via production Node.js service (deployed to Vercel) ✅ TESTED 2025-11-14
@@ -1385,32 +1477,35 @@ curl https://your-pdf-extractor-url/health
 
 **Rollback Plan:**
 If production PDF extraction fails catastrophically:
+
 1. Revert `process-sou-pdf` edge function to placeholder version
 2. Mark affected tasks as `pending` to retry later
 3. Debug service issues in isolation
 4. Redeploy when fixed
 
 **Data Migration:**
+
 - Documents with placeholder text (`raw_content` = 114 chars) can be reprocessed:
+
   ```sql
   -- Find documents with placeholder extraction
-  SELECT id, doc_number 
-  FROM documents 
-  WHERE LENGTH(raw_content) < 200 
+  SELECT id, doc_number
+  FROM documents
+  WHERE LENGTH(raw_content) < 200
     AND processed_at IS NOT NULL;
-  
+
   -- Reset for reprocessing
-  UPDATE documents 
-  SET raw_content = NULL, 
+  UPDATE documents
+  SET raw_content = NULL,
       processed_at = NULL,
       metadata = jsonb_set(
         COALESCE(metadata, '{}'::jsonb),
         '{pdf_text_status}',
         '"pending"'
       )
-  WHERE LENGTH(raw_content) < 200 
+  WHERE LENGTH(raw_content) < 200
     AND processed_at IS NOT NULL;
-  
+
   -- Recreate process_pdf tasks
   -- (manual trigger or via admin UI)
   ```
@@ -1420,16 +1515,19 @@ If production PDF extraction fails catastrophically:
 #### Vercel Free Tier
 
 **Limits:**
+
 - 100 GB-hours/month of compute time
 - Unlimited bandwidth
 - Unlimited deployments
 
 **Usage Estimate:**
+
 - Average PDF processing: 5-15 seconds
 - 100 GB-hours = ~24,000 function invocations/month (at 15s avg)
 - **Conclusion:** Free tier sufficient for processing entire SOU catalog (1,000-2,000 documents/year)
 
 **When to Upgrade:**
+
 - If processing > 800 documents/month consistently
 - If need guaranteed response times (cold starts on free tier)
 - Cost: Vercel Pro = $20/month (400 GB-hours)
@@ -1437,20 +1535,22 @@ If production PDF extraction fails catastrophically:
 #### Alternative: Railway
 
 **Free Tier:**
+
 - $5 credit/month
 - ~20,000 function invocations (based on typical usage)
 
 **Paid:**
+
 - Usage-based: ~$0.000463/GB-second
 - Estimated: $10-15/month for moderate usage
 
 #### Cost Comparison
 
-| Platform | Free Tier | Estimated Cost (1000 docs/month) |
-|----------|-----------|----------------------------------|
-| Vercel | 100 GB-hrs | $0 (well within limits) |
-| Railway | $5 credit | $0 (within credit) |
-| Render | Cold starts | $7/month (hobby plan) |
+| Platform | Free Tier   | Estimated Cost (1000 docs/month) |
+| -------- | ----------- | -------------------------------- |
+| Vercel   | 100 GB-hrs  | $0 (well within limits)          |
+| Railway  | $5 credit   | $0 (within credit)               |
+| Render   | Cold starts | $7/month (hobby plan)            |
 
 **Recommendation:** Start with Vercel free tier, upgrade if needed.
 
@@ -1494,6 +1594,7 @@ If production PDF extraction fails catastrophically:
 ### Next Steps
 
 #### Immediate (Phase 2 Completion)
+
 1. ✅ **COMPLETED 2025-11-14:** Created Node.js PDF extraction service (`/services/pdf-extractor/`)
    - ✅ Implemented API key authentication with `x-api-key` header
    - ✅ Implemented domain allow-list validation (regeringen.se)
@@ -1558,6 +1659,7 @@ If production PDF extraction fails catastrophically:
    - ✅ Pagination now ready for full corpus scraping (remove `maxPages` for unlimited)
 
 #### Future Phases
+
 7. ⏳ Add document detail view with extraction timeline and metadata
 8. ⏳ Extend index scraper to `pagaende-utredningar` (ongoing inquiries)
 9. ⏳ Implement multi-agent analysis system (Phase 3)
