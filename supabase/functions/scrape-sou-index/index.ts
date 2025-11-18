@@ -131,6 +131,12 @@ function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): Inq
   
   console.log(`Found ${listItems.length} potential inquiry items on ${pageType} page`);
   
+  // Debug: Show first few items
+  for (let i = 0; i < Math.min(3, listItems.length); i++) {
+    const debugText = listItems[i].textContent?.substring(0, 100) || '';
+    console.log(`  Item ${i}: "${debugText}..."`);
+  }
+  
   for (const item of listItems) {
     const text = item.textContent || '';
     const itemHtml = (item as Element).outerHTML || ''; // Get full HTML for deeper searching
@@ -139,24 +145,31 @@ function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): Inq
     if (!inquiryMatch) continue;
     
     const inquiryCode = inquiryMatch[0];
+    console.log(`Found inquiry code: ${inquiryCode}`);
     
     // Extract completion code (SOU/Ds number) - CRITICAL for avslutade pagination
     const completionCode = extractCompletionCode(itemHtml);
+    if (completionCode) {
+      console.log(`  Completion code: ${completionCode}`);
+    }
     
-    // Find regeringen.se link
+    // Find regeringen.se link - try all <a> tags in the item AND its children
     const links = (item as Element).querySelectorAll('a');
     let regeringenUrl = '';
     
+    console.log(`  Found ${links.length} links in item`);
     for (const link of links) {
       const href = (link as Element).getAttribute('href') || '';
+      console.log(`    Link href: ${href.substring(0, 50)}...`);
       if (href.includes('regeringen.se')) {
         regeringenUrl = href.startsWith('http') ? href : `https://www.regeringen.se${href}`;
+        console.log(`  ✓ Found regeringen.se URL: ${regeringenUrl}`);
         break;
       }
     }
     
     if (!regeringenUrl) {
-      console.log(`No regeringen.se link found for ${inquiryCode}, skipping`);
+      console.warn(`  ✗ No regeringen.se link found for ${inquiryCode}, skipping`);
       continue;
     }
     
