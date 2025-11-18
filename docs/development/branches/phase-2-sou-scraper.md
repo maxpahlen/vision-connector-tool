@@ -23,12 +23,10 @@ Successfully tested with 3 SOUs:
 
 ### 🔧 Recent Fixes (2025-11-14)
 - **Task Queue Display**: Fixed RLS policies on `agent_tasks` table - admin UI now correctly displays task statistics
-- **Pagination Enhancement (2025-11-18)**: Added intelligent multi-page support to `scrape-sou-index` - now automatically discovers all inquiries from 2023-present with year-based stop conditions
 
 ### 🎯 Next Steps
-- Test pagination enhancement with full 2023-2025 corpus discovery
+- Scale to full document corpus (ongoing + completed inquiries)
 - Add document detail view with extraction timeline and metadata
-- Extend to `pagaende-utredningar` (ongoing inquiries)
 - Implement Phase 3: Multi-agent analysis system
 - Build user-facing SOU viewer with timeline visualization
 
@@ -1541,33 +1539,8 @@ If production PDF extraction fails catastrophically:
    - ✅ Verified task statistics now display correctly in admin UI (21 pending document tasks visible)
    - ✅ Task queue monitor now functional for all authenticated users
 
-7. ✅ **COMPLETED 2025-11-18:** Pagination Enhancement for Index Scraper
-   - ✅ **Goal**: Automatically discover ALL inquiries from 2023-present across multiple pages
-   - ✅ **Problem Solved**: Previous scraper only fetched first page (~20 entries), missing majority of 2023-2025 corpus
-   - ✅ **Solution**: Intelligent pagination with year-based stop conditions
-   
-   **Implementation**:
-   - ✅ Added `extractYearFromInquiryCode()` function to parse year from inquiry codes
-   - ✅ Added `hasNextPage()` function to detect pagination links
-   - ✅ Enhanced request body: `{ pageTypes, maxPages, startYear }` parameters
-   - ✅ Multi-page loop with intelligent stop conditions:
-     - Stops when year < 2023 encountered
-     - Stops when no more pagination links found
-     - Stops when maxPages (default 100) reached
-     - Stops on HTTP 404 (page doesn't exist)
-   - ✅ Rate limiting: 1-2 second delay between page fetches
-   - ✅ Comprehensive logging: page numbers, entry counts, oldest year per page, stop reasons
-   - ✅ Enhanced results object with pagination statistics
-   - ✅ Backward compatible: works for single-page scraping
-   
-   **Results**:
-   - Database completeness: Will discover ~150-200 inquiries from 2023-2025 (vs previous ~20)
-   - Predictable load: 1-2s per page × estimated 8-10 pages = ~16-20 seconds total
-   - Audit trail: Detailed logs for each scraping run
-   - Foundation for complete legal intelligence corpus
-
 #### Future Phases
-8. ⏳ Add document detail view with extraction timeline and metadata
-9. ⏳ Extend index scraper to `pagaende-utredningar` (ongoing inquiries)
-10. ⏳ Implement multi-agent analysis system (Phase 3)
-11. ⏳ Build user-facing SOU viewer with timeline/analysis
+7. ⏳ Add document detail view with extraction timeline and metadata
+8. ⏳ Extend index scraper to `pagaende-utredningar` (ongoing inquiries)
+9. ⏳ Implement multi-agent analysis system (Phase 3)
+10. ⏳ Build user-facing SOU viewer with timeline/analysis
