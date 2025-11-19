@@ -10,15 +10,14 @@ export function ScraperControls() {
   const [loading, setLoading] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<any>(null);
 
-  const handleScrapeIndex = async (pageTypes: string[], maxPages?: number) => {
+  const handleScrapeIndex = async (pageTypes: string[]) => {
     const key = pageTypes.join('-');
     setLoading(key);
-    toast.info(`Starting scrape of ${pageTypes.join(' and ')} pages${maxPages ? ` (max ${maxPages} pages)` : ''}...`);
+    toast.info(`Starting scrape of ${pageTypes.join(' and ')} pages...`);
 
     try {
-      const body = maxPages ? { pageTypes, maxPages } : { pageTypes };
       const { data, error } = await supabase.functions.invoke('scrape-sou-index', {
-        body,
+        body: { pageTypes },
       });
 
       if (error) throw error;
@@ -45,7 +44,7 @@ export function ScraperControls() {
       <CardContent className="space-y-4">
         <div className="grid gap-3 md:grid-cols-3">
           <Button
-            onClick={() => handleScrapeIndex(['pagaende'], 10)}
+            onClick={() => handleScrapeIndex(['pagaende'])}
             disabled={loading !== null}
           >
             {loading === 'pagaende' ? (
