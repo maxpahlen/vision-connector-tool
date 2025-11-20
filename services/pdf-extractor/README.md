@@ -2,6 +2,40 @@
 
 Production-grade PDF text extraction service for Swedish government documents (SOU, Dir, Ds).
 
+## Testing
+
+Run integration tests to validate API contract and response structure:
+
+```bash
+# Set environment variables
+export PDF_EXTRACTOR_URL=http://localhost:3000
+export PDF_EXTRACTOR_API_KEY=your-api-key
+
+# Run tests
+node test-integration.js
+```
+
+**Tests validate:**
+- ✅ Health endpoint structure
+- ✅ Extract endpoint response structure (prevents field mismatch regressions)
+- ✅ API key authentication
+- ✅ Error handling for missing parameters
+- ✅ Invalid domain rejection
+
+**Critical Test:** The response structure test validates that the service returns `{ ok: boolean }` instead of `{ success: boolean }`, preventing the regression documented below.
+
+## Recent Regression (2025-11-20)
+
+**Issue:** 100% of PDF extractions failed after refactoring due to response field mismatch.
+
+**Root Cause:** During refactoring, the PDF extractor service response was changed from `{ success: true }` to `{ ok: true }`, but the edge function consumer continued checking `result.success`, which was always `undefined`.
+
+**Fix:** Updated edge function to check `result.ok` instead of `result.success`.
+
+**Prevention:** Integration tests now validate the exact response structure to catch such mismatches immediately.
+
+**Full details:** See [REGRESSION_2025-11-20.md](./REGRESSION_2025-11-20.md)
+
 ## Architecture
 
 This is a Node.js microservice that extracts text from PDF files using the battle-tested `pdf-parse` library. It's designed to be called by Deno edge functions in the main Lovable application.

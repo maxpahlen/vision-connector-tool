@@ -57,40 +57,11 @@ async function extractTextFromPdfService(
       }),
     });
 
-    console.log('📡 PDF Extractor Response Status:', response.status, response.statusText);
-    
-    const responseText = await response.text();
-    console.log('📡 PDF Extractor Raw Response (first 500 chars):', responseText.substring(0, 500));
-    
-    let result;
-    try {
-      result = JSON.parse(responseText);
-      console.log('📡 PDF Extractor Parsed Response:', {
-        ok: result.ok,
-        success: result.success,
-        hasText: !!result.text,
-        textLength: result.text?.length,
-        hasError: !!result.error,
-        error: result.error,
-        hasMessage: !!result.message,
-        message: result.message,
-        hasDebug: !!result.debug,
-        debug: result.debug
-      });
-    } catch (parseError) {
-      console.error('📡 Failed to parse PDF extractor response as JSON:', parseError);
-      return {
-        success: false,
-        error: 'invalid_response',
-        message: 'PDF extraction service returned invalid JSON',
-      };
-    }
+    const result = await response.json();
 
+    // Check HTTP response status
     if (!response.ok) {
-      console.error(`PDF service error (${response.status}):`, result);
-      if (result.debug) {
-        console.error('🔍 PDF EXTRACTOR DEBUG:', JSON.stringify(result.debug, null, 2));
-      }
+      console.error(`PDF service HTTP error (${response.status}):`, result.error, result.message);
       return {
         success: false,
         error: result.error || 'service_error',
@@ -98,11 +69,9 @@ async function extractTextFromPdfService(
       };
     }
 
-    if (!result.ok && result.ok !== undefined) {
+    // Check service response structure (must have "ok" field)
+    if (!result.ok) {
       console.error('PDF extraction failed:', result.error, result.message);
-      if (result.debug) {
-        console.error('🔍 PDF EXTRACTOR DEBUG:', JSON.stringify(result.debug, null, 2));
-      }
       return {
         success: false,
         error: result.error || 'extraction_failed',
