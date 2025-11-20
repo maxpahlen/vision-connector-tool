@@ -2,8 +2,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useDocuments } from '@/hooks/useDocuments';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CheckCircle2, Clock, XCircle, FileText, ExternalLink } from 'lucide-react';
+import { CheckCircle2, Clock, XCircle, FileText, ExternalLink, Eye } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 export function DocumentList() {
   const {
@@ -86,21 +88,22 @@ export function DocumentList() {
                 <TableHead>Type</TableHead>
                 <TableHead>Title</TableHead>
                 <TableHead>PDF</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Text Length</TableHead>
-                <TableHead>Updated</TableHead>
-              </TableRow>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Text Length</TableHead>
+                  <TableHead>Updated</TableHead>
+                  <TableHead className="w-[100px]">Actions</TableHead>
+                </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center">
+                  <TableCell colSpan={8} className="text-center">
                     Loading...
                   </TableCell>
                 </TableRow>
               ) : documents.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground">
                     No documents found
                   </TableCell>
                 </TableRow>
@@ -108,7 +111,7 @@ export function DocumentList() {
                 documents.map((doc) => {
                   const status = getExtractionStatus(doc);
                   return (
-                    <TableRow key={doc.id} className="cursor-pointer hover:bg-muted/50">
+                    <TableRow key={doc.id} className="group">
                       <TableCell className="font-mono text-xs">
                         {doc.doc_number}
                       </TableCell>
@@ -145,6 +148,17 @@ export function DocumentList() {
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {new Date(doc.updated_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        <Link to={`/admin/scraper/document/${doc.id}`}>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </Link>
                       </TableCell>
                     </TableRow>
                   );

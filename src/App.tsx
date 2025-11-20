@@ -8,6 +8,7 @@ import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import PdfTest from "./pages/PdfTest";
 import AdminScraper from "./pages/AdminScraper";
+import DocumentDetail from "./pages/DocumentDetail";
 import ProtectedRoute from "./components/layout/ProtectedRoute";
 
 const queryClient = new QueryClient();
@@ -33,6 +34,11 @@ const App = () => (
           <Route path="/admin/scraper" element={
             <ProtectedRoute>
               <AdminScraper />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/scraper/document/:id" element={
+            <ProtectedRoute>
+              <DocumentDetail />
             </ProtectedRoute>
           } />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
