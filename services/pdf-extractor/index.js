@@ -48,56 +48,148 @@ app.post('/extract', authenticate, async (req, res) => {
   console.log(`[${new Date().toISOString()}] Extraction request: ${docNumber || documentId || 'unknown'}`);
   console.log(`  PDF URL: ${pdfUrl}`);
   
+  let failureStage = null;
+  let failureDetails = null;
+  
   // Validate input
   if (!pdfUrl) {
+    failureStage = 'input_validation';
+    failureDetails = 'Missing pdfUrl parameter';
+    console.log(`[PDF-DEBUG:INPUT] Missing pdfUrl parameter`);
     return res.status(400).json({
       ok: false,
       error: 'unknown_error',
-      message: 'Missing pdfUrl parameter'
+      message: 'Missing pdfUrl parameter',
+      debug: {
+        stage: failureStage,
+        details: failureDetails,
+        timestamp: new Date().toISOString()
+      }
     });
   }
   
   // Step 1: Validate domain
   console.log('  Step 1: Validating domain...');
-  const domainCheck = validator.validatePdfUrl(pdfUrl);
-  if (!domainCheck.valid) {
-    console.log(`  ❌ Domain validation failed: ${domainCheck.error}`);
-    return res.status(403).json({
+  try {
+    const domainCheck = validator.validatePdfUrl(pdfUrl);
+    if (!domainCheck.valid) {
+      failureStage = 'domain_validation';
+      failureDetails = `${domainCheck.error}: ${domainCheck.message}`;
+      console.log(`  ❌ Domain validation failed: ${domainCheck.error}`);
+      return res.status(403).json({
+        ok: false,
+        error: domainCheck.error,
+        message: domainCheck.message,
+        pdfUrl,
+        debug: {
+          stage: failureStage,
+          details: failureDetails,
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+    console.log('  ✅ Domain validation passed');
+  } catch (err) {
+    failureStage = 'domain_validation';
+    failureDetails = `Exception: ${err.message}`;
+    console.log(`[PDF-DEBUG:DOMAIN] Unexpected exception`, { error: err.message, stack: err.stack });
+    return res.status(500).json({
       ok: false,
-      error: domainCheck.error,
-      message: domainCheck.message,
-      pdfUrl
+      error: 'domain_validation_error',
+      message: err.message,
+      pdfUrl,
+      debug: {
+        stage: failureStage,
+        details: failureDetails,
+        timestamp: new Date().toISOString()
+      }
     });
   }
-  console.log('  ✅ Domain validation passed');
   
   // Step 2: Download PDF with size/timeout checks
   console.log('  Step 2: Downloading PDF...');
-  const downloadResult = await extractor.downloadPdf(pdfUrl, config);
-  if (!downloadResult.ok) {
-    console.log(`  ❌ Download failed: ${downloadResult.error}`);
-    return res.status(400).json({
+  let downloadResult;
+  try {
+    downloadResult = await extractor.downloadPdf(pdfUrl, config);
+    if (!downloadResult.ok) {
+      failureStage = 'download';
+      failureDetails = `${downloadResult.error}: ${downloadResult.message}`;
+      console.log(`  ❌ Download failed: ${downloadResult.error}`);
+      return res.status(400).json({
+        ok: false,
+        error: downloadResult.error,
+        message: downloadResult.message,
+        pdfUrl,
+        debug: {
+          stage: failureStage,
+          details: failureDetails,
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+    console.log(`  ✅ Downloaded ${downloadResult.buffer.length} bytes`);
+  } catch (err) {
+    failureStage = 'download';
+    failureDetails = `Unexpected exception: ${err.message}`;
+    console.log(`[PDF-DEBUG:DOWNLOAD] Unexpected exception in main handler`, { error: err.message, stack: err.stack });
+    return res.status(500).json({
       ok: false,
-      error: downloadResult.error,
-      message: downloadResult.message,
-      pdfUrl
+      error: 'download_exception',
+      message: err.message,
+      pdfUrl,
+      debug: {
+        stage: failureStage,
+        details: failureDetails,
+        timestamp: new Date().toISOString()
+      }
     });
   }
-  console.log(`  ✅ Downloaded ${downloadResult.buffer.length} bytes`);
   
   // Step 3: Extract text with timeout
   console.log('  Step 3: Extracting text...');
-  const extractResult = await extractor.extractText(downloadResult.buffer, config);
-  if (!extractResult.ok) {
-    console.log(`  ❌ Extraction failed: ${extractResult.error}`);
-    return res.status(400).json({
+  let extractResult;
+  try {
+    extractResult = await extractor.extractText(downloadResult.buffer, config);
+    if (!extractResult.ok) {
+      failureStage = 'parse';
+      failureDetails = `${extractResult.error}: ${extractResult.message}`;
+      console.log(`  ❌ Extraction failed: ${extractResult.error}`);
+      return res.status(400).json({
+        ok: false,
+        error: extractResult.error,
+        message: extractResult.message,
+        pdfUrl,
+        debug: {
+          stage: failureStage,
+          details: failureDetails,
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+    console.log(`  ✅ Extracted ${extractResult.text.length} characters from ${extractResult.metadata.pageCount} pages`);
+    
+    // Check for silent anomalies
+    if (!extractResult.ok && failureStage === null) {
+      failureStage = 'parse';
+      failureDetails = 'ok became false without exception';
+      console.log(`[PDF-DEBUG:PARSE] ⚠️ ANOMALY: ok is false but no exception thrown`);
+    }
+  } catch (err) {
+    failureStage = 'parse';
+    failureDetails = `Unexpected exception: ${err.message}`;
+    console.log(`[PDF-DEBUG:PARSE] Unexpected exception in main handler`, { error: err.message, stack: err.stack });
+    return res.status(500).json({
       ok: false,
-      error: extractResult.error,
-      message: extractResult.message,
-      pdfUrl
+      error: 'parse_exception',
+      message: err.message,
+      pdfUrl,
+      debug: {
+        stage: failureStage,
+        details: failureDetails,
+        timestamp: new Date().toISOString()
+      }
     });
   }
-  console.log(`  ✅ Extracted ${extractResult.text.length} characters from ${extractResult.metadata.pageCount} pages`);
   
   // Step 4: Sanitize text (first layer)
   console.log('  Step 4: Sanitizing text...');
@@ -105,45 +197,99 @@ app.post('/extract', authenticate, async (req, res) => {
   try {
     sanitizedText = sanitizer.sanitizeText(extractResult.text);
   } catch (err) {
+    failureStage = 'sanitize_1';
+    failureDetails = `Exception: ${err.message}`;
     console.log(`  ❌ Sanitization failed: ${err.message}`);
     return res.status(500).json({
       ok: false,
       error: 'sanitization_error',
       message: err.message,
-      pdfUrl
+      pdfUrl,
+      debug: {
+        stage: failureStage,
+        details: failureDetails,
+        timestamp: new Date().toISOString()
+      }
     });
   }
   
   // Step 5: Validate sanitization
   console.log('  Step 5: Validating sanitization...');
-  const sanitizationCheck = sanitizer.validateSanitization(sanitizedText);
-  if (!sanitizationCheck.valid) {
-    console.log(`  ❌ Sanitization validation failed: ${sanitizationCheck.error}`);
-    return res.status(400).json({
+  try {
+    const sanitizationCheck = sanitizer.validateSanitization(sanitizedText);
+    if (!sanitizationCheck.valid) {
+      failureStage = 'sanitize_2';
+      failureDetails = `${sanitizationCheck.error}: ${sanitizationCheck.message}`;
+      console.log(`  ❌ Sanitization validation failed: ${sanitizationCheck.error}`);
+      return res.status(400).json({
+        ok: false,
+        error: sanitizationCheck.error,
+        message: sanitizationCheck.message,
+        pdfUrl,
+        debug: {
+          stage: failureStage,
+          details: failureDetails,
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+    console.log(`  ✅ Sanitization validated, final length: ${sanitizedText.length} characters`);
+  } catch (err) {
+    failureStage = 'sanitize_2';
+    failureDetails = `Unexpected exception: ${err.message}`;
+    console.log(`[PDF-DEBUG:SANITIZE_2] Unexpected exception in main handler`, { error: err.message, stack: err.stack });
+    return res.status(500).json({
       ok: false,
-      error: sanitizationCheck.error,
-      message: sanitizationCheck.message,
-      pdfUrl
+      error: 'validation_exception',
+      message: err.message,
+      pdfUrl,
+      debug: {
+        stage: failureStage,
+        details: failureDetails,
+        timestamp: new Date().toISOString()
+      }
     });
   }
-  console.log(`  ✅ Sanitization validated, final length: ${sanitizedText.length} characters`);
   
-  // Step 6: Return success with cleaned text
-  const duration = Date.now() - startTime;
-  console.log(`  ✅ Extraction complete in ${duration}ms`);
-  
-  return res.status(200).json({
-    ok: true,
-    text: sanitizedText,
-    metadata: {
-      ...extractResult.metadata,
+  // Step 6: Build metadata and return success
+  console.log('  Step 6: Building final response...');
+  try {
+    const duration = Date.now() - startTime;
+    console.log(`[PDF-DEBUG:RESPONSE] Building successful response`, {
       textLength: sanitizedText.length,
-      documentId,
-      docNumber,
-      extractedAt: new Date().toISOString(),
-      processingTimeMs: duration
-    }
-  });
+      pageCount: extractResult.metadata.pageCount,
+      duration
+    });
+    console.log(`  ✅ Extraction complete in ${duration}ms`);
+    
+    return res.status(200).json({
+      ok: true,
+      text: sanitizedText,
+      metadata: {
+        ...extractResult.metadata,
+        textLength: sanitizedText.length,
+        documentId,
+        docNumber,
+        extractedAt: new Date().toISOString(),
+        processingTimeMs: duration
+      }
+    });
+  } catch (err) {
+    failureStage = 'response';
+    failureDetails = `Exception building response: ${err.message}`;
+    console.log(`[PDF-DEBUG:RESPONSE] Exception building response`, { error: err.message, stack: err.stack });
+    return res.status(500).json({
+      ok: false,
+      error: 'response_error',
+      message: err.message,
+      pdfUrl,
+      debug: {
+        stage: failureStage,
+        details: failureDetails,
+        timestamp: new Date().toISOString()
+      }
+    });
+  }
 });
 
 // 404 handler
