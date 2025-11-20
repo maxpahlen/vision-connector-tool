@@ -1,14 +1,15 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import {
+  corsHeaders,
+  handleCorsPreflightRequest,
+  createErrorResponse,
+  createSuccessResponse,
+} from '../_shared/http-utils.ts';
 
 // ============================================
 // Constants and Types
 // ============================================
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
 
 const RequestSchema = z.object({
   limit: z.number().int().positive().max(100).optional().default(10),
@@ -40,30 +41,6 @@ interface Task {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function handleCorsPreflightRequest(): Response {
-  return new Response(null, { headers: corsHeaders });
-}
-
-function createErrorResponse(error: string, details?: any, status = 400): Response {
-  return new Response(
-    JSON.stringify({ error, details }),
-    { 
-      status,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    }
-  );
-}
-
-function createSuccessResponse(data: any, status = 200): Response {
-  return new Response(
-    JSON.stringify(data),
-    {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status,
-    }
-  );
 }
 
 // ============================================
@@ -236,7 +213,10 @@ Deno.serve(async (req) => {
     const validationResult = RequestSchema.safeParse(body);
     
     if (!validationResult.success) {
-      return createErrorResponse('Invalid request body', validationResult.error.issues);
+      return createErrorResponse(
+        'Invalid request body',
+        validationResult.error.issues.map(i => i.message).join(', ')
+      );
     }
 
     const { limit, task_type, rate_limit_ms } = validationResult.data;
@@ -315,6 +295,6 @@ Deno.serve(async (req) => {
     const errorMsg = error instanceof Error ? error.message : String(error);
     console.error('Fatal error in process-task-queue:', error);
     
-    return createErrorResponse(errorMsg, null, 500);
+    return createErrorResponse(errorMsg, 'An unexpected error occurred', 500);
   }
 });

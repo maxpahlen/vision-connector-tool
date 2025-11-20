@@ -1,65 +1,95 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import {
+  handleCorsPreflightRequest,
+  createErrorResponse,
+  createSuccessResponse,
+} from '../_shared/http-utils.ts';
+import { sanitizeText } from '../_shared/text-utils.ts';
 
 // ============================================
-// Constants and Types
+// Request Validation
 // ============================================
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
 
 const RequestSchema = z.object({
   documentId: z.string().uuid().optional(),
   pdfUrl: z.string().url().optional(),
+  task_id: z.string().uuid().optional(),
 }).refine(
   (data) => data.documentId || data.pdfUrl,
   { message: 'Either documentId or pdfUrl must be provided' }
 );
 
 // ============================================
-// Utility Functions
+// PDF Extraction Service Interface
 // ============================================
 
-function handleCorsPreflightRequest(): Response {
-  return new Response(null, { headers: corsHeaders });
+interface PdfExtractionResult {
+  success: boolean;
+  text?: string;
+  metadata?: { 
+    pageCount: number; 
+    byteSize: number;
+  };
+  error?: string;
+  message?: string;
 }
 
-function createErrorResponse(error: string, message: string, status = 400): Response {
-  return new Response(
-    JSON.stringify({ success: false, error, message }),
-    { 
-      status,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+async function extractTextFromPdfService(
+  serviceUrl: string,
+  apiKey: string,
+  pdfUrl: string,
+  documentId?: string,
+  docNumber?: string
+): Promise<PdfExtractionResult> {
+  try {
+    const response = await fetch(`${serviceUrl}/extract`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+      },
+      body: JSON.stringify({
+        pdfUrl,
+        documentId,
+        docNumber,
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      console.error(`PDF service error (${response.status}):`, result);
+      return {
+        success: false,
+        error: result.error || 'service_error',
+        message: result.message || `PDF extraction service returned ${response.status}`,
+      };
     }
-  );
-}
 
-function createSuccessResponse(data: any): Response {
-  return new Response(
-    JSON.stringify(data),
-    { 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200 
+    if (!result.success) {
+      return {
+        success: false,
+        error: result.error || 'extraction_failed',
+        message: result.message || 'PDF text extraction failed',
+      };
     }
-  );
-}
 
-function sanitizeTextFinal(text: string): string {
-  if (!text || typeof text !== 'string') {
-    return '';
+    return {
+      success: true,
+      text: result.text,
+      metadata: result.metadata,
+    };
+
+  } catch (error) {
+    console.error('Error calling PDF extraction service:', error);
+    return {
+      success: false,
+      error: 'service_unreachable',
+      message: error instanceof Error ? error.message : 'Failed to reach PDF extraction service',
+    };
   }
-  
-  let cleaned = text.replace(/\u0000/g, '');
-  cleaned = cleaned.replace(/\r\n/g, '\n');
-  cleaned = cleaned.replace(/\r/g, '\n');
-  cleaned = cleaned.replace(/\n{4,}/g, '\n\n\n');
-  cleaned = cleaned.normalize('NFC');
-  cleaned = cleaned.trim();
-  
-  return cleaned;
 }
 
 // ============================================
@@ -83,11 +113,7 @@ serve(async (req) => {
       );
     }
 
-    const { documentId, pdfUrl } = validationResult.data;
-
-    if (!documentId && !pdfUrl) {
-      throw new Error('Either documentId or pdfUrl must be provided');
-    }
+    const { documentId, pdfUrl, task_id } = validationResult.data;
 
     console.log(`Processing PDF for document: ${documentId || pdfUrl}`);
 
@@ -96,7 +122,7 @@ serve(async (req) => {
     const pdfExtractorApiKey = Deno.env.get('PDF_EXTRACTOR_API_KEY');
 
     if (!pdfExtractorUrl || !pdfExtractorApiKey) {
-      throw new Error('PDF extraction service not configured. Missing PDF_EXTRACTOR_URL or PDF_EXTRACTOR_API_KEY');
+      throw new Error('PDF extraction service not configured');
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -129,13 +155,17 @@ serve(async (req) => {
       }
     }
 
+    if (!targetPdfUrl) {
+      throw new Error('No PDF URL provided');
+    }
+
     console.log(`Calling PDF extraction service for: ${targetPdfUrl}`);
 
-    // Call external PDF extraction service (targetPdfUrl is guaranteed to be non-null here due to prior checks)
+    // Call external PDF extraction service
     const extractionResult = await extractTextFromPdfService(
       pdfExtractorUrl,
       pdfExtractorApiKey,
-      targetPdfUrl!,
+      targetPdfUrl,
       documentId,
       docNumber
     );
@@ -158,6 +188,18 @@ serve(async (req) => {
           .eq('id', documentId);
       }
 
+      // Mark task as failed if task_id provided
+      if (task_id) {
+        await supabase
+          .from('agent_tasks')
+          .update({
+            status: 'failed',
+            error_message: extractionResult.message || 'PDF extraction failed',
+            completed_at: new Date().toISOString(),
+          })
+          .eq('id', task_id);
+      }
+
       return createErrorResponse(
         extractionResult.error || 'extraction_failed',
         extractionResult.message || 'PDF text extraction failed',
@@ -165,11 +207,12 @@ serve(async (req) => {
       );
     }
 
-    console.log('Applying final sanitization');
-    const finalText = sanitizeTextFinal(extractionResult.text || '');
+    console.log('Sanitizing extracted text');
+    const finalText = sanitizeText(extractionResult.text || '');
 
     console.log(`Successfully extracted ${finalText.length} characters from PDF`);
 
+    // Update document in database if documentId provided
     if (documentId) {
       const successMetadata = {
         ...document?.metadata,
@@ -194,11 +237,29 @@ serve(async (req) => {
         throw updateError;
       }
 
-      console.log(`Successfully updated document ${documentId} with extracted text (${finalText.length} chars, ${extractionResult.metadata?.pageCount} pages)`);
+      console.log(
+        `Successfully updated document ${documentId} with extracted text ` +
+        `(${finalText.length} chars, ${extractionResult.metadata?.pageCount} pages)`
+      );
+    }
+
+    // Mark task as completed if task_id provided
+    if (task_id) {
+      await supabase
+        .from('agent_tasks')
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          output_data: {
+            document_id: documentId,
+            text_length: finalText.length,
+            page_count: extractionResult.metadata?.pageCount,
+          },
+        })
+        .eq('id', task_id);
     }
 
     return createSuccessResponse({
-      success: true,
       text: finalText,
       metadata: {
         pageCount: extractionResult.metadata?.pageCount,
@@ -210,78 +271,27 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Error in process-sou-pdf:', error);
+    
+    // Mark task as failed if task_id provided
+    const body = await req.json().catch(() => ({}));
+    const task_id = body?.task_id;
+    
+    if (task_id) {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+      
+      await supabase
+        .from('agent_tasks')
+        .update({
+          status: 'failed',
+          error_message: error instanceof Error ? error.message : String(error),
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', task_id);
+    }
+    
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return createErrorResponse('processing_error', errorMessage, 500);
   }
 });
-
-/**
- * Calls the external Node.js PDF extraction service
- */
-async function extractTextFromPdfService(
-  serviceUrl: string,
-  apiKey: string,
-  pdfUrl: string,
-  documentId?: string,
-  docNumber?: string
-): Promise<{
-  success: boolean;
-  text?: string;
-  metadata?: { pageCount: number; byteSize: number };
-  error?: string;
-  message?: string;
-}> {
-  try {
-    const response = await fetch(`${serviceUrl}/extract`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        pdfUrl,
-        documentId,
-        docNumber,
-      }),
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      // Service returned an error response
-      console.error(`PDF service error (${response.status}):`, result);
-      return {
-        success: false,
-        error: result.error || 'service_error',
-        message: result.message || `Service returned status ${response.status}`,
-      };
-    }
-
-    if (!result.success && !result.ok) {
-      // Service processed but extraction failed
-      console.error('PDF extraction failed:', result);
-      return {
-        success: false,
-        error: result.error || 'extraction_failed',
-        message: result.message || 'PDF extraction failed',
-      };
-    }
-
-    // Success case
-    return {
-      success: true,
-      text: result.text,
-      metadata: result.metadata,
-    };
-
-  } catch (error) {
-    console.error('Error calling PDF extraction service:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return {
-      success: false,
-      error: 'service_unavailable',
-      message: `Failed to connect to PDF extraction service: ${errorMessage}`,
-    };
-  }
-}
-

@@ -6,6 +6,8 @@ This directory contains reusable utility modules for the edge functions. These m
 
 - [html-parser.ts](#html-parserts)
 - [pdf-scorer.ts](#pdf-scorerts)
+- [http-utils.ts](#http-utilsts)
+- [text-utils.ts](#text-utilsts)
 - [Architecture Principles](#architecture-principles)
 - [Extending the Modules](#extending-the-modules)
 
@@ -231,6 +233,144 @@ Captures relevant HTML sections for debugging.
 **Captures:**
 - Download sections (`.list--icons`, `.download`)
 - \"Ladda ner\" heading contexts
+
+---
+
+## http-utils.ts
+
+### Purpose
+
+Provides common HTTP utilities for edge functions including CORS handling and standardized response creators.
+
+### Core Functions
+
+#### `corsHeaders`
+
+Standard CORS headers for all edge functions.
+
+```typescript
+export const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+```
+
+#### `handleCorsPreflightRequest()`
+
+Handles OPTIONS requests for CORS preflight.
+
+**Returns:** `Response`
+
+**Usage:**
+```typescript
+if (req.method === 'OPTIONS') {
+  return handleCorsPreflightRequest();
+}
+```
+
+#### `createErrorResponse(error, message, status?)`
+
+Creates a standardized error response.
+
+**Parameters:**
+- `error: string` - Error code/type
+- `message: string` - Human-readable error message
+- `status?: number` - HTTP status code (default: 400)
+
+**Returns:** `Response`
+
+**Example:**
+```typescript
+return createErrorResponse(
+  'validation_failed',
+  'Email is required',
+  400
+);
+```
+
+#### `createSuccessResponse(data)`
+
+Creates a standardized success response.
+
+**Parameters:**
+- `data: Record<string, unknown>` - Response data object
+
+**Returns:** `Response` with `{ success: true, ...data }`
+
+**Example:**
+```typescript
+return createSuccessResponse({
+  documentId: '123',
+  text: 'Extracted content...',
+  metadata: { pageCount: 10 }
+});
+```
+
+---
+
+## text-utils.ts
+
+### Purpose
+
+Provides text processing utilities for document content including sanitization and normalization.
+
+### Core Functions
+
+#### `sanitizeText(text)`
+
+Sanitizes and normalizes text extracted from PDFs.
+
+**Operations:**
+- Removes null bytes (`\u0000`)
+- Normalizes line endings (Windows/Mac → Unix)
+- Limits consecutive newlines to maximum 3
+- Applies Unicode NFC normalization
+- Trims leading/trailing whitespace
+
+**Returns:** `string`
+
+**Example:**
+```typescript
+const raw = "Text\r\nwith\nmixed\rline\n\n\n\nendings";
+const clean = sanitizeText(raw);
+// Returns: "Text\nwith\nmixed\nline\n\n\nendings"
+```
+
+#### `getTextStats(text)`
+
+Calculates basic text statistics.
+
+**Returns:**
+```typescript
+{
+  characterCount: number;
+  wordCount: number;
+  lineCount: number;
+  paragraphCount: number;
+}
+```
+
+**Example:**
+```typescript
+const stats = getTextStats(extractedText);
+console.log(`${stats.wordCount} words in ${stats.paragraphCount} paragraphs`);
+```
+
+#### `truncateText(text, maxLength)`
+
+Truncates text to maximum length with ellipsis.
+
+**Parameters:**
+- `text: string` - Text to truncate
+- `maxLength: number` - Maximum length including ellipsis
+
+**Returns:** `string`
+
+**Example:**
+```typescript
+const preview = truncateText(longText, 100);
+// Returns: "First 97 characters of text..."
+```
 
 ---
 
