@@ -251,45 +251,22 @@ app.post('/extract', authenticate, async (req, res) => {
     });
   }
   
-  // Step 6: Build metadata and return success
-  console.log('  Step 6: Building final response...');
-  try {
-    const duration = Date.now() - startTime;
-    console.log(`[PDF-DEBUG:RESPONSE] Building successful response`, {
+  // Step 6: Return success with cleaned text
+  const duration = Date.now() - startTime;
+  console.log(`  ✅ Extraction complete in ${duration}ms`);
+  
+  return res.status(200).json({
+    ok: true,
+    text: sanitizedText,
+    metadata: {
+      ...extractResult.metadata,
       textLength: sanitizedText.length,
-      pageCount: extractResult.metadata.pageCount,
-      duration
-    });
-    console.log(`  ✅ Extraction complete in ${duration}ms`);
-    
-    return res.status(200).json({
-      ok: true,
-      text: sanitizedText,
-      metadata: {
-        ...extractResult.metadata,
-        textLength: sanitizedText.length,
-        documentId,
-        docNumber,
-        extractedAt: new Date().toISOString(),
-        processingTimeMs: duration
-      }
-    });
-  } catch (err) {
-    failureStage = 'response';
-    failureDetails = `Exception building response: ${err.message}`;
-    console.log(`[PDF-DEBUG:RESPONSE] Exception building response`, { error: err.message, stack: err.stack });
-    return res.status(500).json({
-      ok: false,
-      error: 'response_error',
-      message: err.message,
-      pdfUrl,
-      debug: {
-        stage: failureStage,
-        details: failureDetails,
-        timestamp: new Date().toISOString()
-      }
-    });
-  }
+      documentId,
+      docNumber,
+      extractedAt: new Date().toISOString(),
+      processingTimeMs: duration
+    }
+  });
 });
 
 // 404 handler
