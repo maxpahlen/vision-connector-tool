@@ -2,12 +2,15 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
+// ============================================
+// Constants and Types
+// ============================================
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Input validation schema
 const RequestSchema = z.object({
   documentId: z.string().uuid().optional(),
   pdfUrl: z.string().url().optional(),
@@ -16,26 +19,67 @@ const RequestSchema = z.object({
   { message: 'Either documentId or pdfUrl must be provided' }
 );
 
+// ============================================
+// Utility Functions
+// ============================================
+
+function handleCorsPreflightRequest(): Response {
+  return new Response(null, { headers: corsHeaders });
+}
+
+function createErrorResponse(error: string, message: string, status = 400): Response {
+  return new Response(
+    JSON.stringify({ success: false, error, message }),
+    { 
+      status,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    }
+  );
+}
+
+function createSuccessResponse(data: any): Response {
+  return new Response(
+    JSON.stringify(data),
+    { 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200 
+    }
+  );
+}
+
+function sanitizeTextFinal(text: string): string {
+  if (!text || typeof text !== 'string') {
+    return '';
+  }
+  
+  let cleaned = text.replace(/\u0000/g, '');
+  cleaned = cleaned.replace(/\r\n/g, '\n');
+  cleaned = cleaned.replace(/\r/g, '\n');
+  cleaned = cleaned.replace(/\n{4,}/g, '\n\n\n');
+  cleaned = cleaned.normalize('NFC');
+  cleaned = cleaned.trim();
+  
+  return cleaned;
+}
+
+// ============================================
+// Main Handler
+// ============================================
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreflightRequest();
   }
 
   try {
-    // Validate request body
     const body = await req.json();
     const validationResult = RequestSchema.safeParse(body);
     
     if (!validationResult.success) {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Invalid request body',
-          details: validationResult.error.issues 
-        }),
-        { 
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
+      return createErrorResponse(
+        'Invalid request body',
+        validationResult.error.issues.map(i => i.message).join(', '),
+        400
       );
     }
 
@@ -96,12 +140,10 @@ serve(async (req) => {
       docNumber
     );
 
-    // Handle extraction errors
     if (!extractionResult.success) {
       console.error(`PDF extraction failed: ${extractionResult.error}`, extractionResult.message);
 
       if (documentId) {
-        // Store error metadata
         const errorMetadata = {
           ...document?.metadata,
           pdf_text_status: 'error',
@@ -116,26 +158,18 @@ serve(async (req) => {
           .eq('id', documentId);
       }
 
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: extractionResult.error,
-          message: extractionResult.message,
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
+      return createErrorResponse(
+        extractionResult.error || 'extraction_failed',
+        extractionResult.message || 'PDF text extraction failed',
+        400
       );
     }
 
-    // Apply second-layer sanitization (defense in depth)
     console.log('Applying final sanitization');
     const finalText = sanitizeTextFinal(extractionResult.text || '');
 
     console.log(`Successfully extracted ${finalText.length} characters from PDF`);
 
-    // Update document with extracted text and rich metadata
     if (documentId) {
       const successMetadata = {
         ...document?.metadata,
@@ -163,36 +197,21 @@ serve(async (req) => {
       console.log(`Successfully updated document ${documentId} with extracted text (${finalText.length} chars, ${extractionResult.metadata?.pageCount} pages)`);
     }
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        text: finalText,
-        metadata: {
-          pageCount: extractionResult.metadata?.pageCount,
-          textLength: finalText.length,
-          byteSize: extractionResult.metadata?.byteSize,
-        },
-        documentId,
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
+    return createSuccessResponse({
+      success: true,
+      text: finalText,
+      metadata: {
+        pageCount: extractionResult.metadata?.pageCount,
+        textLength: finalText.length,
+        byteSize: extractionResult.metadata?.byteSize,
+      },
+      documentId,
+    });
 
   } catch (error) {
     console.error('Error in process-sou-pdf:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: 'processing_error',
-        message: errorMessage,
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
+    return createErrorResponse('processing_error', errorMessage, 500);
   }
 });
 
@@ -266,33 +285,3 @@ async function extractTextFromPdfService(
   }
 }
 
-/**
- * Second-layer sanitization (defense in depth)
- * Ensures text is safe for PostgreSQL storage
- */
-function sanitizeTextFinal(text: string): string {
-  if (!text || typeof text !== 'string') {
-    return '';
-  }
-
-  try {
-    // Remove null bytes (PostgreSQL cannot store these)
-    let cleaned = text.replace(/\u0000/g, '');
-
-    // Normalize line breaks
-    cleaned = cleaned.replace(/\r\n/g, '\n');
-    cleaned = cleaned.replace(/\r/g, '\n');
-
-    // Remove excessive blank lines (keep max 3 consecutive)
-    cleaned = cleaned.replace(/\n{4,}/g, '\n\n\n');
-
-    // Trim whitespace
-    cleaned = cleaned.trim();
-
-    return cleaned;
-
-  } catch (err) {
-    console.error('Final sanitization failed:', err);
-    return text; // Return original if sanitization fails
-  }
-}

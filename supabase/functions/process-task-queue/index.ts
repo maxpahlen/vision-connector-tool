@@ -1,10 +1,20 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
+// ============================================
+// Constants and Types
+// ============================================
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+const RequestSchema = z.object({
+  limit: z.number().int().positive().max(100).optional().default(10),
+  task_type: z.enum(['fetch_regeringen_document', 'process_pdf']).optional(),
+  rate_limit_ms: z.number().int().min(0).max(10000).optional().default(1000),
+});
 
 interface TaskResult {
   taskId: string;
@@ -14,22 +24,206 @@ interface TaskResult {
   docNumber?: string;
 }
 
-// Sleep utility for rate limiting
+interface Task {
+  id: string;
+  task_type: string;
+  process_id: string | null;
+  document_id: string | null;
+  input_data: any;
+  created_at: string;
+  priority: number;
+}
+
+// ============================================
+// Utility Functions
+// ============================================
+
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Input validation schema
-const RequestSchema = z.object({
-  limit: z.number().int().positive().max(100).optional().default(10),
-  task_type: z.enum(['fetch_regeringen_document', 'process_pdf']).optional(),
-  rate_limit_ms: z.number().int().min(0).max(10000).optional().default(1000),
-});
+function handleCorsPreflightRequest(): Response {
+  return new Response(null, { headers: corsHeaders });
+}
+
+function createErrorResponse(error: string, details?: any, status = 400): Response {
+  return new Response(
+    JSON.stringify({ error, details }),
+    { 
+      status,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    }
+  );
+}
+
+function createSuccessResponse(data: any, status = 200): Response {
+  return new Response(
+    JSON.stringify(data),
+    {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status,
+    }
+  );
+}
+
+// ============================================
+// Task Processing Functions
+// ============================================
+
+async function markTaskAsProcessing(supabase: any, taskId: string): Promise<void> {
+  await supabase
+    .from('agent_tasks')
+    .update({
+      status: 'processing',
+      started_at: new Date().toISOString(),
+    })
+    .eq('id', taskId);
+}
+
+async function markTaskAsCompleted(supabase: any, taskId: string, output_data: any): Promise<void> {
+  const { data: taskCheck } = await supabase
+    .from('agent_tasks')
+    .select('status')
+    .eq('id', taskId)
+    .single();
+  
+  if (taskCheck?.status === 'processing') {
+    await supabase
+      .from('agent_tasks')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        output_data,
+      })
+      .eq('id', taskId);
+  }
+}
+
+async function markTaskAsFailed(supabase: any, taskId: string, errorMsg: string): Promise<void> {
+  await supabase
+    .from('agent_tasks')
+    .update({
+      status: 'failed',
+      error_message: errorMsg,
+      completed_at: new Date().toISOString(),
+    })
+    .eq('id', taskId);
+}
+
+async function processFetchRegeringenTask(
+  supabase: any,
+  task: Task
+): Promise<any> {
+  const regeringenUrl = task.input_data?.regeringen_url;
+  const processId = task.process_id;
+  
+  if (!regeringenUrl || !processId) {
+    throw new Error('Missing regeringen_url or process_id in task input_data');
+  }
+  
+  const { data, error } = await supabase.functions.invoke(
+    'scrape-regeringen-document',
+    {
+      body: {
+        task_id: task.id,
+        regeringen_url: regeringenUrl,
+        process_id: processId,
+      },
+    }
+  );
+  
+  if (error) {
+    throw new Error(`Function invocation failed: ${error.message}`);
+  }
+  
+  return data;
+}
+
+async function processePdfTask(
+  supabase: any,
+  task: Task
+): Promise<any> {
+  const documentId = task.document_id;
+  
+  if (!documentId) {
+    throw new Error('Missing document_id in task');
+  }
+  
+  console.log(`Calling process-sou-pdf for document: ${documentId}`);
+  
+  const { data, error } = await supabase.functions.invoke(
+    'process-sou-pdf',
+    {
+      body: {
+        documentId: documentId,
+      },
+    }
+  );
+  
+  if (error) {
+    throw new Error(`PDF processing failed: ${error.message}`);
+  }
+  
+  return data;
+}
+
+async function processTask(
+  supabase: any,
+  task: Task,
+  index: number,
+  totalTasks: number
+): Promise<TaskResult> {
+  console.log(`Processing task ${index + 1}/${totalTasks}: ${task.id} (type: ${task.task_type})`);
+  
+  try {
+    await markTaskAsProcessing(supabase, task.id);
+    
+    let result;
+    
+    if (task.task_type === 'fetch_regeringen_document') {
+      result = await processFetchRegeringenTask(supabase, task);
+    } else if (task.task_type === 'process_pdf') {
+      result = await processePdfTask(supabase, task);
+    } else {
+      throw new Error(`Unsupported task type: ${task.task_type}`);
+    }
+    
+    if (!result?.success) {
+      throw new Error(result?.error || 'Unknown error from function');
+    }
+    
+    await markTaskAsCompleted(supabase, task.id, result);
+    
+    console.log(`✓ Task ${task.id} completed successfully`);
+    
+    return {
+      taskId: task.id,
+      status: 'success',
+      documentId: result.document_id,
+      docNumber: result.doc_number,
+    };
+    
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`✗ Task ${task.id} failed:`, errorMsg);
+    
+    await markTaskAsFailed(supabase, task.id, errorMsg);
+    
+    return {
+      taskId: task.id,
+      status: 'failed',
+      error: errorMsg,
+    };
+  }
+}
+
+// ============================================
+// Main Handler
+// ============================================
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreflightRequest();
   }
   
   try {
@@ -42,16 +236,7 @@ Deno.serve(async (req) => {
     const validationResult = RequestSchema.safeParse(body);
     
     if (!validationResult.success) {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Invalid request body',
-          details: validationResult.error.issues 
-        }),
-        { 
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      );
+      return createErrorResponse('Invalid request body', validationResult.error.issues);
     }
 
     const { limit, task_type, rate_limit_ms } = validationResult.data;
@@ -81,19 +266,13 @@ Deno.serve(async (req) => {
     
     if (!tasks || tasks.length === 0) {
       console.log('No pending tasks found');
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: 'No pending tasks to process',
-          processed: 0,
-          succeeded: 0,
-          failed: 0,
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200,
-        }
-      );
+      return createSuccessResponse({
+        success: true,
+        message: 'No pending tasks to process',
+        processed: 0,
+        succeeded: 0,
+        failed: 0,
+      });
     }
     
     console.log(`Found ${tasks.length} pending tasks to process`);
@@ -105,132 +284,13 @@ Deno.serve(async (req) => {
     // Process each task with rate limiting
     for (let i = 0; i < tasks.length; i++) {
       const task = tasks[i];
+      const result = await processTask(supabase, task, i, tasks.length);
       
-      try {
-        console.log(`Processing task ${i + 1}/${tasks.length}: ${task.id} (type: ${task.task_type})`);
-        
-        // Mark task as processing
-        await supabase
-          .from('agent_tasks')
-          .update({
-            status: 'processing',
-            started_at: new Date().toISOString(),
-          })
-          .eq('id', task.id);
-        
-        let result;
-        
-        // Route to appropriate function based on task type
-        if (task.task_type === 'fetch_regeringen_document') {
-          // Extract input data for document fetching
-          const regeringenUrl = task.input_data?.regeringen_url;
-          const processId = task.process_id;
-          
-          if (!regeringenUrl || !processId) {
-            throw new Error('Missing regeringen_url or process_id in task input_data');
-          }
-          
-          // Call scrape-regeringen-document function
-          const { data, error: invokeError } = await supabase.functions.invoke(
-            'scrape-regeringen-document',
-            {
-              body: {
-                task_id: task.id,
-                regeringen_url: regeringenUrl,
-                process_id: processId,
-              },
-            }
-          );
-          
-          if (invokeError) {
-            throw new Error(`Function invocation failed: ${invokeError.message}`);
-          }
-          
-          result = data;
-          
-        } else if (task.task_type === 'process_pdf') {
-          // Extract document_id for PDF processing
-          const documentId = task.document_id;
-          
-          if (!documentId) {
-            throw new Error('Missing document_id in task');
-          }
-          
-          console.log(`Calling process-sou-pdf for document: ${documentId}`);
-          
-          // Call process-sou-pdf function
-          const { data, error: invokeError } = await supabase.functions.invoke(
-            'process-sou-pdf',
-            {
-              body: {
-                documentId: documentId,
-              },
-            }
-          );
-          
-          if (invokeError) {
-            throw new Error(`PDF processing failed: ${invokeError.message}`);
-          }
-          
-          result = data;
-          
-        } else {
-          throw new Error(`Unsupported task type: ${task.task_type}`);
-        }
-        
-        if (!result?.success) {
-          throw new Error(result?.error || 'Unknown error from function');
-        }
-        
-        // Update task to completed (only if not already updated by the function)
-        const { data: taskCheck } = await supabase
-          .from('agent_tasks')
-          .select('status')
-          .eq('id', task.id)
-          .single();
-        
-        if (taskCheck?.status === 'processing') {
-          await supabase
-            .from('agent_tasks')
-            .update({
-              status: 'completed',
-              completed_at: new Date().toISOString(),
-              output_data: result,
-            })
-            .eq('id', task.id);
-        }
-        
-        console.log(`✓ Task ${task.id} completed successfully`);
-        
-        results.push({
-          taskId: task.id,
-          status: 'success',
-          documentId: result.document_id,
-          docNumber: result.doc_number,
-        });
-        
+      results.push(result);
+      
+      if (result.status === 'success') {
         succeeded++;
-        
-      } catch (taskError) {
-        const errorMsg = taskError instanceof Error ? taskError.message : String(taskError);
-        console.error(`✗ Task ${task.id} failed:`, errorMsg);
-        
-        // Update task status to failed
-        await supabase
-          .from('agent_tasks')
-          .update({
-            status: 'failed',
-            error_message: errorMsg,
-            completed_at: new Date().toISOString(),
-          })
-          .eq('id', task.id);
-        
-        results.push({
-          taskId: task.id,
-          status: 'failed',
-          error: errorMsg,
-        });
-        
+      } else {
         failed++;
       }
       
@@ -243,33 +303,18 @@ Deno.serve(async (req) => {
     
     console.log(`Queue processing complete: ${succeeded} succeeded, ${failed} failed`);
     
-    return new Response(
-      JSON.stringify({
-        success: true,
-        processed: tasks.length,
-        succeeded,
-        failed,
-        results,
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      }
-    );
+    return createSuccessResponse({
+      success: true,
+      processed: tasks.length,
+      succeeded,
+      failed,
+      results,
+    });
     
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     console.error('Fatal error in process-task-queue:', error);
     
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: errorMsg,
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
-      }
-    );
+    return createErrorResponse(errorMsg, null, 500);
   }
 });
