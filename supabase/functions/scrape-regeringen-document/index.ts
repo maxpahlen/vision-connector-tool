@@ -1,10 +1,28 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { DOMParser, Element, Document } from 'https://deno.land/x/deno_dom@v0.1.43/deno-dom-wasm.ts';
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Input validation schema
+const RequestSchema = z.object({
+  url: z.string().url().refine(
+    (url) => url.startsWith('https://www.regeringen.se/') || url.startsWith('https://regeringen.se/'),
+    { message: 'URL must be from regeringen.se domain' }
+  ).optional(),
+  regeringen_url: z.string().url().refine(
+    (url) => url.startsWith('https://www.regeringen.se/') || url.startsWith('https://regeringen.se/'),
+    { message: 'URL must be from regeringen.se domain' }
+  ).optional(),
+  task_id: z.string().uuid().optional(),
+  process_id: z.string().uuid().optional(),
+}).refine(
+  (data) => data.url || data.regeringen_url,
+  { message: 'Either url or regeringen_url must be provided' }
+);
 
 interface PdfCandidate {
   url: string;
@@ -647,12 +665,28 @@ Deno.serve(async (req) => {
   }
   
   try {
+    // Validate request body
+    const body = await req.json();
+    const validationResult = RequestSchema.safeParse(body);
+    
+    if (!validationResult.success) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Invalid request body',
+          details: validationResult.error.issues 
+        }),
+        { 
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    const { task_id, regeringen_url, process_id, url } = validationResult.data;
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    
-    const body = await req.json();
-    const { task_id, regeringen_url, process_id, url } = body;
     
     // Accept 'url' as an alias for 'regeringen_url'
     const documentUrl = regeringen_url || url;

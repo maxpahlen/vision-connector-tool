@@ -10,6 +10,7 @@ import PdfTest from "./pages/PdfTest";
 import AdminScraper from "./pages/AdminScraper";
 import DocumentDetail from "./pages/DocumentDetail";
 import ProtectedRoute from "./components/layout/ProtectedRoute";
+import AdminRoute from "./components/layout/AdminRoute";
 
 const queryClient = new QueryClient();
 
@@ -31,16 +32,16 @@ const App = () => (
               <PdfTest />
             </ProtectedRoute>
           } />
-          <Route path="/admin/scraper" element={
-            <ProtectedRoute>
-              <AdminScraper />
-            </ProtectedRoute>
-          } />
-          <Route path="/admin/scraper/document/:id" element={
-            <ProtectedRoute>
-              <DocumentDetail />
-            </ProtectedRoute>
-          } />
+        <Route path="/admin/scraper" element={
+          <AdminRoute>
+            <AdminScraper />
+          </AdminRoute>
+        } />
+        <Route path="/admin/scraper/document/:id" element={
+          <AdminRoute>
+            <DocumentDetail />
+          </AdminRoute>
+        } />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

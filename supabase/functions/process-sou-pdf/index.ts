@@ -1,10 +1,20 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Input validation schema
+const RequestSchema = z.object({
+  documentId: z.string().uuid().optional(),
+  pdfUrl: z.string().url().optional(),
+}).refine(
+  (data) => data.documentId || data.pdfUrl,
+  { message: 'Either documentId or pdfUrl must be provided' }
+);
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -12,7 +22,24 @@ serve(async (req) => {
   }
 
   try {
-    const { documentId, pdfUrl } = await req.json();
+    // Validate request body
+    const body = await req.json();
+    const validationResult = RequestSchema.safeParse(body);
+    
+    if (!validationResult.success) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Invalid request body',
+          details: validationResult.error.issues 
+        }),
+        { 
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    const { documentId, pdfUrl } = validationResult.data;
 
     if (!documentId && !pdfUrl) {
       throw new Error('Either documentId or pdfUrl must be provided');
@@ -60,11 +87,11 @@ serve(async (req) => {
 
     console.log(`Calling PDF extraction service for: ${targetPdfUrl}`);
 
-    // Call external PDF extraction service
+    // Call external PDF extraction service (targetPdfUrl is guaranteed to be non-null here due to prior checks)
     const extractionResult = await extractTextFromPdfService(
       pdfExtractorUrl,
       pdfExtractorApiKey,
-      targetPdfUrl,
+      targetPdfUrl!,
       documentId,
       docNumber
     );

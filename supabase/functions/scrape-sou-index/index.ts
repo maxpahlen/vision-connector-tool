@@ -1,10 +1,17 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { DOMParser, Element } from 'https://deno.land/x/deno_dom@v0.1.43/deno-dom-wasm.ts';
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Input validation schema
+const RequestSchema = z.object({
+  pageTypes: z.array(z.enum(['avslutade', 'pagaende'])).optional().default(['avslutade']),
+  maxPages: z.number().int().positive().optional(),
+});
 
 interface InquiryEntry {
   inquiryCode: string;
@@ -140,15 +147,28 @@ Deno.serve(async (req) => {
   }
   
   try {
+    // Validate request body
+    const body = await req.json().catch(() => ({}));
+    const validationResult = RequestSchema.safeParse(body);
+    
+    if (!validationResult.success) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Invalid request body',
+          details: validationResult.error.issues 
+        }),
+        { 
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    const { pageTypes, maxPages } = validationResult.data;
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    
-    // Parse request body for options
-    const { 
-      pageTypes = ['avslutade'],
-      maxPages = null 
-    } = await req.json().catch(() => ({}));
     
   const results = {
     processesCreated: 0,
