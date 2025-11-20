@@ -1,6 +1,18 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { DOMParser, Element, Document } from 'https://deno.land/x/deno_dom@v0.1.43/deno-dom-wasm.ts';
+import { DOMParser, Document } from 'https://deno.land/x/deno_dom@v0.1.43/deno-dom-wasm.ts';
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { 
+  detectDocumentType, 
+  extractMinistry, 
+  extractTitle, 
+  extractPublicationDate 
+} from '../_shared/html-parser.ts';
+import { 
+  extractAndScorePdfs, 
+  captureRelevantHtml,
+  type PdfCandidate,
+  type PdfExtractionResult
+} from '../_shared/pdf-scorer.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -23,25 +35,6 @@ const RequestSchema = z.object({
   (data) => data.url || data.regeringen_url,
   { message: 'Either url or regeringen_url must be provided' }
 );
-
-interface PdfCandidate {
-  url: string;
-  score: number;
-  signals: string[];
-  penalties: string[];
-  linkText: string;
-  filename: string;
-  location: string;
-}
-
-interface PdfExtractionResult {
-  bestPdf: string | null;
-  confidence: number;
-  reasoning: string[];
-  allCandidates: PdfCandidate[];
-  extractionLog: string[];
-  htmlSnapshot: string | null;
-}
 
 interface DocumentMetadata {
   docType: 'sou' | 'directive' | 'ds' | 'unknown';
