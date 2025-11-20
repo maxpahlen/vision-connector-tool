@@ -259,28 +259,42 @@ Deno.serve(async (req) => {
     }
     
     if (metadata.pdfUrl && metadata.pdf_confidence_score >= 40) {
-      console.log(`PDF found with ${metadata.pdf_confidence_score}% confidence. Creating process_pdf task...`);
+      console.log(`PDF found with ${metadata.pdf_confidence_score}% confidence.`);
       
-      const { error: taskError } = await supabase
+      // Check for existing PDF processing tasks to prevent duplicates
+      const { data: existingPdfTask } = await supabase
         .from('agent_tasks')
-        .insert({
-          task_type: 'process_pdf',
-          agent_name: 'pdf_processor',
-          status: 'pending',
-          process_id: process_id || null,
-          document_id: documentId,
-          priority: metadata.pdf_confidence_score >= 70 ? 1 : 2,
-          input_data: {
-            pdf_url: metadata.pdfUrl,
-            doc_number: metadata.docNumber,
-            confidence_score: metadata.pdf_confidence_score,
-          },
-        });
+        .select('id, status')
+        .eq('document_id', documentId)
+        .eq('task_type', 'process_pdf')
+        .in('status', ['pending', 'processing', 'completed'])
+        .maybeSingle();
       
-      if (taskError) {
-        console.error('Error creating PDF task:', taskError);
+      if (existingPdfTask) {
+        console.log(`PDF task already exists for document ${documentId} (status: ${existingPdfTask.status}), skipping duplicate creation`);
       } else {
-        console.log('PDF processing task created successfully');
+        console.log('Creating process_pdf task...');
+        const { error: taskError } = await supabase
+          .from('agent_tasks')
+          .insert({
+            task_type: 'process_pdf',
+            agent_name: 'pdf_processor',
+            status: 'pending',
+            process_id: process_id || null,
+            document_id: documentId,
+            priority: metadata.pdf_confidence_score >= 70 ? 1 : 2,
+            input_data: {
+              pdf_url: metadata.pdfUrl,
+              doc_number: metadata.docNumber,
+              confidence_score: metadata.pdf_confidence_score,
+            },
+          });
+        
+        if (taskError) {
+          console.error('Error creating PDF task:', taskError);
+        } else {
+          console.log('PDF processing task created successfully');
+        }
       }
     } else if (!metadata.pdfUrl) {
       console.log('No PDF found for this document');

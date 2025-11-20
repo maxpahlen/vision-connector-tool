@@ -42,6 +42,14 @@ if (!result.ok && result.ok !== undefined) { ... }
 2. **Integration Test**: Added test validating response structure
 3. **Debug Logging**: Enhanced logging to catch response structure mismatches
 
+## Additional Improvements (Same Session)
+
+### Duplicate PDF Task Prevention
+Added duplicate detection logic to `scrape-regeringen-document/index.ts` to prevent creating multiple PDF processing tasks for the same document:
+- Checks for existing tasks (pending, processing, or completed) before creating new ones
+- Logs when duplicates are prevented for monitoring purposes
+- Aligns with existing duplicate prevention patterns used elsewhere in the codebase
+
 ## Lessons Learned
 1. **Contract Testing**: When refactoring API responses, update all consumers
 2. **Type Safety**: Use TypeScript interfaces to enforce contracts
