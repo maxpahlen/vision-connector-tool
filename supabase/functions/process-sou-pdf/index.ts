@@ -61,6 +61,9 @@ async function extractTextFromPdfService(
 
     if (!response.ok) {
       console.error(`PDF service error (${response.status}):`, result);
+      if (result.debug) {
+        console.error('🔍 PDF EXTRACTOR DEBUG:', JSON.stringify(result.debug, null, 2));
+      }
       return {
         success: false,
         error: result.error || 'service_error',
@@ -69,6 +72,10 @@ async function extractTextFromPdfService(
     }
 
     if (!result.success) {
+      console.error('PDF extraction failed:', result.error, result.message);
+      if (result.debug) {
+        console.error('🔍 PDF EXTRACTOR DEBUG:', JSON.stringify(result.debug, null, 2));
+      }
       return {
         success: false,
         error: result.error || 'extraction_failed',
