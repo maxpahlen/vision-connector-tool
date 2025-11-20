@@ -57,7 +57,34 @@ async function extractTextFromPdfService(
       }),
     });
 
-    const result = await response.json();
+    console.log('📡 PDF Extractor Response Status:', response.status, response.statusText);
+    
+    const responseText = await response.text();
+    console.log('📡 PDF Extractor Raw Response (first 500 chars):', responseText.substring(0, 500));
+    
+    let result;
+    try {
+      result = JSON.parse(responseText);
+      console.log('📡 PDF Extractor Parsed Response:', {
+        ok: result.ok,
+        success: result.success,
+        hasText: !!result.text,
+        textLength: result.text?.length,
+        hasError: !!result.error,
+        error: result.error,
+        hasMessage: !!result.message,
+        message: result.message,
+        hasDebug: !!result.debug,
+        debug: result.debug
+      });
+    } catch (parseError) {
+      console.error('📡 Failed to parse PDF extractor response as JSON:', parseError);
+      return {
+        success: false,
+        error: 'invalid_response',
+        message: 'PDF extraction service returned invalid JSON',
+      };
+    }
 
     if (!response.ok) {
       console.error(`PDF service error (${response.status}):`, result);
@@ -71,7 +98,7 @@ async function extractTextFromPdfService(
       };
     }
 
-    if (!result.success) {
+    if (!result.ok && result.ok !== undefined) {
       console.error('PDF extraction failed:', result.error, result.message);
       if (result.debug) {
         console.error('🔍 PDF EXTRACTOR DEBUG:', JSON.stringify(result.debug, null, 2));
