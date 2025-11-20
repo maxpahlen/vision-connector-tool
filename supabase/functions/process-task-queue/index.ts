@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,6 +19,13 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Input validation schema
+const RequestSchema = z.object({
+  limit: z.number().int().positive().max(100).optional().default(10),
+  task_type: z.enum(['fetch_regeringen_document', 'process_pdf']).optional(),
+  rate_limit_ms: z.number().int().min(0).max(10000).optional().default(1000),
+});
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -29,14 +37,27 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     
-    // Parse request parameters
-    const { 
-      limit = 10, 
-      task_type = null, // Allow processing any task type if not specified
-      rate_limit_ms = 2000 // 2 seconds between requests
-    } = await req.json().catch(() => ({}));
+    // Validate request body
+    const body = await req.json().catch(() => ({}));
+    const validationResult = RequestSchema.safeParse(body);
     
-    console.log(`Starting task queue processing (limit: ${limit}, task_type: ${task_type || 'any'}, rate_limit: ${rate_limit_ms}ms)`);
+    if (!validationResult.success) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Invalid request body',
+          details: validationResult.error.issues 
+        }),
+        { 
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    const { limit, task_type, rate_limit_ms } = validationResult.data;
+    const task_type_value = task_type || null;
+    
+    console.log(`Starting task queue processing (limit: ${limit}, task_type: ${task_type_value || 'any'}, rate_limit: ${rate_limit_ms}ms)`);
     
     // Fetch pending tasks
     let query = supabase
@@ -48,8 +69,8 @@ Deno.serve(async (req) => {
       .limit(limit);
     
     // Filter by task_type if specified
-    if (task_type) {
-      query = query.eq('task_type', task_type);
+    if (task_type_value) {
+      query = query.eq('task_type', task_type_value);
     }
     
     const { data: tasks, error: fetchError } = await query;
