@@ -180,9 +180,7 @@ Deno.serve(async (req) => {
           ? 'https://www.sou.gov.se/avslutade-utredningar/'
           : 'https://www.sou.gov.se/pagaende-utredningar/';
         
-        const url = currentPage === 1 
-          ? baseUrl
-          : `${baseUrl}?page=${currentPage}#result`;
+        const url = `${baseUrl}?page=${currentPage}#result`;
         
         console.log(`[${pageType}] Fetching page ${currentPage}: ${url}`);
         
