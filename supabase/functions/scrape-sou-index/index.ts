@@ -203,12 +203,49 @@ Deno.serve(async (req) => {
           }
           
           const html = await response.text();
-          const entries = parseInquiryList(html, pageType);
+          let entries = parseInquiryList(html, pageType);
           
-          // If no entries found, might be end of pagination
+          // Retry mechanism with exponential backoff for empty pages
           if (entries.length === 0) {
-            console.log(`[${pageType}] Stopping: page ${currentPage} returned no entries`);
-            break;
+            const maxRetries = 3;
+            const baseDelay = 1000; // 1 second
+            
+            for (let retryCount = 1; retryCount <= maxRetries; retryCount++) {
+              const delay = baseDelay * Math.pow(2, retryCount - 1); // 1s, 2s, 4s
+              console.log(`[${pageType}] Page ${currentPage} returned no entries, retry ${retryCount}/${maxRetries} after ${delay}ms`);
+              
+              await new Promise(resolve => setTimeout(resolve, delay));
+              
+              // Retry fetching the page
+              try {
+                const retryResponse = await fetch(url, {
+                  headers: {
+                    'User-Agent': 'Vision-Connector-Tool/1.0 (Educational Research Tool)',
+                  },
+                });
+                
+                if (!retryResponse.ok) {
+                  console.log(`[${pageType}] Retry ${retryCount} failed with HTTP ${retryResponse.status}`);
+                  continue;
+                }
+                
+                const retryHtml = await retryResponse.text();
+                entries = parseInquiryList(retryHtml, pageType);
+                
+                if (entries.length > 0) {
+                  console.log(`[${pageType}] Retry ${retryCount} successful, found ${entries.length} entries`);
+                  break;
+                }
+              } catch (retryError) {
+                console.error(`[${pageType}] Retry ${retryCount} error:`, retryError);
+              }
+            }
+            
+            // If still no entries after retries, stop pagination
+            if (entries.length === 0) {
+              console.log(`[${pageType}] Stopping: page ${currentPage} returned no entries after ${maxRetries} retries`);
+              break;
+            }
           }
           
           console.log(`[${pageType}] Page ${currentPage}: Processing ${entries.length} entries`);
