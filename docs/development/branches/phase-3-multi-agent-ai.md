@@ -1199,3 +1199,58 @@ for (const goldenSou of goldenSet) {
 - **Extensibility:** Design task system for easy agent additions
 - **Transparency:** Audit trail is as important as extracted data
 - **Determinism:** Use LLMs for extraction, not decision logic
+
+---
+
+## Next Steps
+
+### Phase 3.1 Foundation - IN PROGRESS ✅
+- [x] OpenAI API key configured
+- [x] Created `_shared/openai-client.ts` with error handling and retry logic
+- [x] Created `_shared/process-stage-machine.ts` with deterministic stage computation
+- [x] Created `_shared/task-types.ts` for task type registry
+- [x] Updated database schema: Added citation fields to `timeline_events`, `entities`, and `relations`
+- [x] Added CHECK constraint for citation completeness on `timeline_events`
+- [ ] Test state machine with existing process data
+- [ ] Document PDF page boundary strategy for agents
+
+### Phase 3.2 Core Agents - NEXT
+- [ ] Implement Timeline Agent (`agent-timeline`)
+  - [ ] Define tool schemas with citation requirements
+  - [ ] Implement section prioritization logic
+  - [ ] Add skipped section reporting
+- [ ] Implement Metadata Agent (`agent-metadata`)
+  - [ ] Define tool schemas for entity/relation creation
+  - [ ] Implement entity deduplication logic
+  - [ ] Add disambiguation warnings to output
+- [ ] Implement Head Detective (`agent-head-detective`)
+  - [ ] Implement idempotence checks for task creation
+  - [ ] Add orchestration lifecycle logic
+  - [ ] Integrate with state machine for stage updates
+
+### Phase 3.3 Integration & Orchestration
+- [ ] Set up cron jobs for each agent
+- [ ] Create Golden SOU test set (1-2 SOUs with expected outputs)
+- [ ] End-to-end testing with real documents
+- [ ] Verify citation quality and page number accuracy
+- [ ] Test task deduplication and idempotence
+
+### Phase 3.4 Refinement
+- [ ] Optimize prompts based on Golden SOU results
+- [ ] Add comprehensive error handling
+- [ ] Document agent behaviors and limitations
+- [ ] Create admin UI for monitoring agent tasks
+- [ ] Prepare Phase 4 planning (search & discovery)
+
+### Known Issues
+- **Auth Configuration:** Leaked password protection is disabled (pre-existing, should be enabled in auth settings)
+
+---
+
+## Related Documentation
+
+- **Phase 2:** `docs/development/branches/phase-2-sou-scraper.md`
+- **Phase 4:** `docs/development/branches/phase-4-search-and-discovery.md`
+- **Phase 5:** `docs/development/branches/phase-5-user-features.md`
+- **Phase 6:** `docs/development/branches/phase-6-advanced-analysis.md`
+- **Main Branch:** `docs/development/branches/main.md`
