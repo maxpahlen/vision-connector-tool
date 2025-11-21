@@ -133,6 +133,9 @@ export type Database = {
           metadata: Json | null
           name: string
           role: string | null
+          source_document_id: string | null
+          source_excerpt: string | null
+          source_page: number | null
         }
         Insert: {
           created_at?: string | null
@@ -141,6 +144,9 @@ export type Database = {
           metadata?: Json | null
           name: string
           role?: string | null
+          source_document_id?: string | null
+          source_excerpt?: string | null
+          source_page?: number | null
         }
         Update: {
           created_at?: string | null
@@ -149,8 +155,19 @@ export type Database = {
           metadata?: Json | null
           name?: string
           role?: string | null
+          source_document_id?: string | null
+          source_excerpt?: string | null
+          source_page?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "entities_source_document_id_fkey"
+            columns: ["source_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       process_documents: {
         Row: {
@@ -268,7 +285,10 @@ export type Database = {
           id: string
           metadata: Json | null
           relation_type: string
+          source_document_id: string | null
+          source_excerpt: string | null
           source_id: string
+          source_page: number | null
           source_type: string
           target_id: string
           target_type: string
@@ -278,7 +298,10 @@ export type Database = {
           id?: string
           metadata?: Json | null
           relation_type: string
+          source_document_id?: string | null
+          source_excerpt?: string | null
           source_id: string
+          source_page?: number | null
           source_type: string
           target_id: string
           target_type: string
@@ -288,12 +311,23 @@ export type Database = {
           id?: string
           metadata?: Json | null
           relation_type?: string
+          source_document_id?: string | null
+          source_excerpt?: string | null
           source_id?: string
+          source_page?: number | null
           source_type?: string
           target_id?: string
           target_type?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "relations_source_document_id_fkey"
+            columns: ["source_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       timeline_events: {
         Row: {
@@ -365,7 +399,16 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      citation_quality: {
+        Row: {
+          citation_coverage_pct: number | null
+          records_with_excerpt: number | null
+          records_with_page: number | null
+          table_name: string | null
+          total_records: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       has_role: {
