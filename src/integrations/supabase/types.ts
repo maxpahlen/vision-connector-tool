@@ -399,16 +399,7 @@ export type Database = {
       }
     }
     Views: {
-      citation_quality: {
-        Row: {
-          citation_coverage_pct: number | null
-          records_with_excerpt: number | null
-          records_with_page: number | null
-          table_name: string | null
-          total_records: number | null
-        }
-        Relationships: []
-      }
+      [_ in never]: never
     }
     Functions: {
       has_role: {
