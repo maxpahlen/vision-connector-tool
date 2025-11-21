@@ -120,6 +120,118 @@ export const createCompletion = async (params: {
 - **Future:** Per-agent overrides (e.g., timeline on cheaper model)
 - **Constraints:** Never use models without tool calling support
 
+### Error Taxonomy and Retry Strategy
+
+The shared client will classify errors and handle transient failures gracefully:
+
+```typescript
+export enum OpenAIErrorType {
+  RATE_LIMIT = 'rate_limit',
+  TIMEOUT = 'timeout',
+  API_ERROR = 'api_error',
+  VALIDATION_ERROR = 'validation_error',
+  UNKNOWN = 'unknown'
+}
+
+export const classifyError = (error: any): OpenAIErrorType => {
+  if (error.status === 429) return OpenAIErrorType.RATE_LIMIT;
+  if (error.code === 'ETIMEDOUT') return OpenAIErrorType.TIMEOUT;
+  if (error.status >= 500) return OpenAIErrorType.API_ERROR;
+  if (error.status === 400) return OpenAIErrorType.VALIDATION_ERROR;
+  return OpenAIErrorType.UNKNOWN;
+};
+
+// Exponential backoff for transient errors
+export const retryWithBackoff = async <T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  baseDelay = 1000
+): Promise<T> => {
+  let lastError: any;
+  
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const errorType = classifyError(error);
+      
+      // Only retry transient errors
+      if (errorType === OpenAIErrorType.RATE_LIMIT || errorType === OpenAIErrorType.TIMEOUT) {
+        const delay = baseDelay * Math.pow(2, i);
+        console.log(`Retry ${i + 1}/${maxRetries} after ${delay}ms for ${errorType}`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        throw error; // Don't retry validation or unknown errors
+      }
+    }
+  }
+  
+  throw lastError;
+};
+```
+
+**Benefits:**
+- Centralized error handling improves reliability
+- Automatic retry for transient failures (rate limits, timeouts)
+- Detailed error logging for monitoring and debugging
+- Future-ready for telemetry and compliance reporting
+
+---
+
+## PDF Page Boundary Strategy
+
+Agents rely on accurate page detection to produce citations. The current implementation uses the following approach:
+
+### Current Page Boundary Format
+
+**In `documents.raw_content`:**
+- PDF extraction service inserts special markers: `--- PAGE X ---`
+- Example format:
+  ```
+  --- PAGE 1 ---
+  [Content from page 1]
+  
+  --- PAGE 2 ---
+  [Content from page 2]
+  ```
+
+### Agent Implementation Guidelines
+
+**For all agents extracting citations:**
+
+1. **Page Detection:**
+   ```typescript
+   // Split content by page markers
+   const pages = raw_content.split(/--- PAGE (\d+) ---/);
+   
+   // Iterate through pages
+   for (let i = 1; i < pages.length; i += 2) {
+     const pageNumber = parseInt(pages[i]);
+     const pageContent = pages[i + 1];
+     // Process pageContent...
+   }
+   ```
+
+2. **Source Page Assignment:**
+   - When extracting information, note the current page number
+   - Store in `source_page` field (integer)
+
+3. **Source Excerpt Extraction:**
+   - Quote exact text from the document (50-200 chars)
+   - Preserve capitalization and punctuation
+   - Truncate with "..." if needed
+
+4. **Validation:**
+   - All `source_page` values must be positive integers
+   - All `source_excerpt` values must be non-empty strings
+   - Excerpts should be verifiable against `raw_content`
+
+**Fallback Strategy:**
+- If page markers are missing or malformed, log error and skip that document
+- Do not attempt to guess page numbers
+- Mark task as failed with clear error message
+
 ---
 
 ## Citation-First Principle (NON-NEGOTIABLE)
@@ -300,6 +412,62 @@ await supabase
 5. **Update process stage** using state machine
 6. **Mark own task complete** with structured summary
 
+#### Idempotence and Task Management
+
+**Critical Rule: Prevent Duplicate Task Creation**
+
+Head Detective must check for existing tasks before creating new ones:
+
+```typescript
+// Before creating delegate tasks, check if they already exist
+const existingTasks = await supabase
+  .from('agent_tasks')
+  .select('id, task_type, status')
+  .eq('process_id', processId)
+  .in('task_type', ['timeline_extraction', 'metadata_extraction'])
+  .in('status', ['pending', 'processing']);
+
+// Only create tasks if none exist
+if (existingTasks.data?.length === 0) {
+  // Create timeline_extraction task
+  // Create metadata_extraction task
+}
+```
+
+**Orchestration Lifecycle:**
+
+1. **First Run (Initial Analysis):**
+   - Read `agent_tasks` where `agent_name = 'head_detective'` and `status = 'pending'`
+   - Mark task as `processing`
+   - Analyze document structure (sections, length, key areas)
+   - Check if delegate tasks exist for this process
+   - If no delegate tasks exist → create `timeline_extraction` and `metadata_extraction` tasks
+   - Mark own task as `processing` (not completed yet)
+   - Write `output_data` with delegation info
+
+2. **Subsequent Runs (Monitoring):**
+   - Read own task (still `status = 'processing'`)
+   - Check status of delegate tasks
+   - If all delegates are `completed`:
+     - Gather process evidence from database
+     - Call state machine to compute stage
+     - Update `processes.current_stage` and `stage_explanation`
+     - Mark own task as `completed`
+   - If any delegate is `failed`:
+     - Log error in `output_data`
+     - Mark own task as `failed` with explanation
+
+3. **Completion Criteria:**
+   - Own task only marked `completed` when:
+     - All delegate tasks are `completed`
+     - Process stage has been updated
+     - Final summary written to `output_data`
+
+**This ensures:**
+- No duplicate delegate tasks
+- Predictable orchestration flow
+- Clear audit trail of agent coordination
+
 #### Tool Definitions
 
 ```typescript
@@ -453,6 +621,42 @@ interface TimelineAgentOutput {
 }
 ```
 
+#### Section Prioritization Strategy
+
+To handle large SOUs efficiently and avoid overwhelming the model:
+
+**High-Value Sections (Analyze First):**
+1. **Introduction / "Inledning"** - Often contains publication date, directive reference
+2. **"Uppdraget"** - Directive details, committee formation, mandate
+3. **Summary / "Sammanfattning"** - Key dates and decisions
+4. **Committee Composition / "Kommittén"** - Formation date, members
+5. **First 50-100 pages** - Most temporal information concentrated here
+
+**Low-Value Sections (Skip or Defer):**
+- Annexes / "Bilagor" (rarely contain timeline events)
+- Table of contents / "Innehållsförteckning"
+- Reference lists / "Referenser"
+- Detailed appendices
+- Statistical tables (unless explicitly date-related)
+
+**Implementation:**
+```typescript
+// Agent should explicitly report skipped sections
+interface TimelineOutput {
+  events_created: number;
+  event_ids: string[];
+  skipped_sections: string[]; // e.g., ["Bilagor", "Innehållsförteckning", "Pages 200-450"]
+  analyzed_sections: string[]; // e.g., ["Inledning", "Uppdraget", "Sammanfattning"]
+  uncertainties: string[];
+}
+```
+
+**Benefits:**
+- Faster processing (focus on relevant content)
+- Lower token costs
+- Better model performance (less distraction)
+- Transparent about coverage (user knows what was analyzed)
+
 #### System Prompt Guidelines
 
 ```
@@ -468,8 +672,14 @@ SCOPE:
 - Do NOT speculate about future events (remiss, propositions)
 - Focus on: directive dates, committee formation, publication
 
+SECTION PRIORITIZATION:
+- Prioritize: Introduction, "Uppdraget", Summary, Committee composition
+- Skip: Annexes, table of contents, detailed appendices, statistical tables
+- Report all skipped sections in your output
+
 OUTPUT:
 - Be explicit about sections you skipped (e.g., "Annexes not analyzed")
+- List sections you DID analyze (e.g., "Analyzed: Inledning, Uppdraget, Sammanfattning")
 - List any ambiguities (e.g., "Date format unclear on p.12")
 ```
 
@@ -572,6 +782,45 @@ interface MetadataAgentOutput {
 }
 ```
 
+#### Known Limitations: Entity Disambiguation
+
+**Phase 3 Scope (Acceptable):**
+
+1. **Name Deduplication:**
+   - Entities are deduplicated by `(entity_type, name)` tuple
+   - Example: "Anna Svensson" as "person" is treated as one entity across all documents
+
+2. **No Canonical IDs:**
+   - Phase 3 does NOT attempt to resolve entities to canonical ministry IDs or person registries
+   - Ministry names stored as found in documents (e.g., "Justitiedepartementet", "Justice Ministry")
+
+3. **Homonym Problem:**
+   - If two different people have the same name (e.g., "Lars Andersson"), they will be conflated
+   - This is acceptable for Phase 3 MVP
+
+4. **Agency Name Variations:**
+   - "Skatteverket" vs "Swedish Tax Agency" treated as different entities
+   - Abbreviations (e.g., "SKV") treated as separate from full names
+
+**Future Improvements (Phase 4+):**
+- Link entities to external registries (e.g., Riksdagen member database)
+- Add canonical ministry identifiers
+- Implement fuzzy matching for organization names
+- Add disambiguation metadata (e.g., ministry code, person title/role context)
+
+**Documentation for Users:**
+> "Entity names are extracted verbatim from documents. The system does not yet disambiguate between different people with the same name or normalize ministry names to canonical forms. This will be improved in future phases."
+
+**Agent Prompt Note:**
+```
+ENTITY EXTRACTION:
+- Extract names exactly as written in the document
+- Do not attempt to normalize or standardize names
+- If multiple name variants appear (e.g., "Justice Ministry" and "Justitiedepartementet"), 
+  extract each as separate entities with citations
+- The system will handle deduplication based on exact name matching
+```
+
 ---
 
 ## Data Model Usage
@@ -602,6 +851,68 @@ export const TASK_TYPES = {
 
 export type TaskType = typeof TASK_TYPES[keyof typeof TASK_TYPES];
 ```
+
+### Task Queue Batch Limits (Per Task Type)
+
+The `process-task-queue` edge function should support **different batch sizes per task type** to manage costs and rate limits effectively.
+
+**Rationale:**
+- AI-powered agents (Timeline, Metadata, Head Detective) are significantly more expensive than scraping tasks
+- Different agents have different processing times and complexity
+- Rate limits from OpenAI may require throttling AI tasks
+
+**Configuration (Future Implementation):**
+
+```typescript
+// _shared/task-queue-config.ts
+export const TASK_BATCH_LIMITS = {
+  // Scraping tasks - can run many in parallel
+  'scrape_sou_index': 20,
+  'scrape_sou_metadata': 15,
+  'process_pdf': 10,
+  
+  // AI agents - expensive, run fewer
+  'head_detective_analysis': 3,
+  'timeline_extraction': 5,
+  'metadata_extraction': 5,
+  
+  // Default for unknown task types
+  'default': 5,
+} as const;
+
+export const getBatchLimit = (taskType: string): number => {
+  return TASK_BATCH_LIMITS[taskType as keyof typeof TASK_BATCH_LIMITS] 
+    || TASK_BATCH_LIMITS.default;
+};
+```
+
+**Usage in `process-task-queue`:**
+
+```typescript
+// Instead of hardcoded maxTasks
+const { taskType } = await req.json();
+const maxTasks = getBatchLimit(taskType);
+
+const { data: tasks } = await supabase
+  .from('agent_tasks')
+  .select('*')
+  .eq('task_type', taskType)
+  .eq('status', 'pending')
+  .order('priority', { ascending: false })
+  .order('created_at', { ascending: true })
+  .limit(maxTasks);
+```
+
+**Phase 3 Implementation:**
+- Start with hardcoded limits per task type
+- Later phases can move to database-driven configuration
+- Add monitoring to track actual costs per task type
+
+**Benefits:**
+- Prevents runaway costs from AI agents
+- Respects OpenAI rate limits
+- Allows fine-tuning based on observed performance
+- Easy to adjust without code changes (if DB-driven)
 
 ---
 
@@ -697,6 +1008,85 @@ interface HeadDetectiveOutput extends AgentOutputBase {
   - ✓ Excerpts match PDF content
   - ✓ Process stage is correct
   - ✓ No hallucinated data
+
+### Golden SOU Set (Regression Benchmark)
+
+To ensure consistent quality over time, we will establish a "Golden SOU Set" with manually verified expected outputs.
+
+**Purpose:**
+- Deterministic validation for future refactorings
+- Measure quality impact of prompt changes
+- Regression testing for model upgrades
+- Benchmark for performance optimization
+
+**Selection Criteria:**
+- Choose 1-2 representative SOUs (mix of sizes and complexity)
+- SOUs with clear, unambiguous timeline events
+- SOUs with well-defined entities (utredare, ministry)
+- Available in Phase 2 database (already scraped and extracted)
+
+**Golden Set Documentation:**
+
+For each SOU, manually create:
+
+```yaml
+# golden-set/SOU-2023-XX.yml
+document:
+  doc_number: "SOU 2023:XX"
+  title: "..."
+  
+expected_timeline_events:
+  - event_type: "directive_issued"
+    event_date: "2022-06-15"
+    source_page: 5
+    source_excerpt: "Regeringen beslutade den 15 juni 2022..."
+    
+  - event_type: "committee_formed"
+    event_date: "2022-09-01"
+    source_page: 12
+    source_excerpt: "Kommittén tillsattes den 1 september..."
+    
+expected_entities:
+  - name: "Anna Svensson"
+    entity_type: "person"
+    role: "utredare"
+    source_page: 8
+    source_excerpt: "Anna Svensson utsågs till särskild utredare..."
+    
+  - name: "Justitiedepartementet"
+    entity_type: "ministry"
+    role: "ministry_responsible"
+    source_page: 3
+    
+expected_process_stage: "published"
+expected_stage_explanation: "SOU published and available for review"
+```
+
+**Validation Script (Future):**
+
+```typescript
+// Run golden set validation
+for (const goldenSou of goldenSet) {
+  const actualEvents = await fetchTimelineEvents(goldenSou.doc_number);
+  const actualEntities = await fetchEntities(goldenSou.doc_number);
+  
+  // Compare actual vs expected
+  const eventMatches = compareEvents(actualEvents, goldenSou.expected_timeline_events);
+  const entityMatches = compareEntities(actualEntities, goldenSou.expected_entities);
+  
+  console.log(`${goldenSou.doc_number}: ${eventMatches}% events, ${entityMatches}% entities`);
+}
+```
+
+**Success Criteria:**
+- Golden set should match 90%+ of expected events
+- Golden set should match 85%+ of expected entities
+- Any regression from baseline triggers investigation
+
+**Location:**
+- Store in `docs/testing/golden-set/`
+- Include SOUs and expected outputs
+- Update as system improves (but maintain history)
 
 ---
 
