@@ -1,8 +1,9 @@
 # Phase 3: Multi-Agent AI System
 
-**Status:** Planning  
+**Status:** In Progress - Foundation Complete ✅  
 **Branch:** `phase-3-multi-agent-ai`  
 **Started:** 2025-11-21  
+**Updated:** 2025-11-25  
 **Dependencies:** Phase 2 (SOU Scraper & PDF Extraction)
 
 ---
@@ -23,7 +24,7 @@ Build a multi-agent AI system that extracts structured, citation-backed intellig
 ### Success Criteria
 
 - [ ] All extracted data includes `source_page` and `source_excerpt`
-- [ ] Process stages determined by state machine logic, not LLM guesses
+- [x] Process stages determined by state machine logic, not LLM guesses ✅
 - [ ] Agents communicate only via database (blackboard pattern)
 - [ ] Head Detective successfully orchestrates timeline and metadata agents
 - [ ] Structured `output_data` enables audit trail for all agent actions
@@ -1228,22 +1229,85 @@ for (const goldenSou of goldenSet) {
 
 ---
 
+## State Machine Test Results (2025-11-25)
+
+### Test Execution Summary
+
+**Edge Function:** `test-stage-machine`  
+**Results:** 93/105 processes match computed stages
+
+| Metric | Count | Status |
+|--------|-------|--------|
+| Total Processes | 105 | - |
+| **Matches** | **93** | ✅ Perfect |
+| Mismatches | 12 | ⚠️ Expected |
+| Invalid Transitions | 12 | ⚠️ Expected |
+
+### Key Findings
+
+#### ✅ Success: `directive_issued` Stage Implementation
+
+All 93 processes with `directive_issued` status now correctly match the state machine's computed stage. This validates our evidence-based approach:
+
+- **Evidence Required:** At least one directive document linked to the process
+- **Explanation:** "Direktiv har utfärdats. Utredningsarbete kan påbörjas."
+- **Result:** 100% match rate for this stage
+
+#### ⚠️ Expected Mismatches: `published` Stage (12 processes)
+
+These processes are currently marked as `published` in the database but compute as `directive` because they're missing `sou_published` timeline events:
+
+**Evidence Gap:**
+```json
+{
+  "current_stage": "published",
+  "computed_stage": "directive", 
+  "evidence": {
+    "hasSou": true,              // ✅ SOU document exists
+    "hasSouPublishedEvent": false // ❌ Timeline event missing
+  }
+}
+```
+
+**Why This Is Correct Behavior:**
+
+Our evidence-based approach requires **BOTH**:
+1. SOU document exists in database
+2. `sou_published` timeline event confirmed
+
+This is the "forensic-grade traceability" philosophy in action. Without the timeline event, we cannot be 100% certain the SOU is officially published (could be a draft, in review, etc.).
+
+**Resolution Path:**
+
+These 12 mismatches will be automatically resolved when the **Timeline Agent** is implemented (Phase 3.2), which will:
+1. Extract `sou_published` events from document content
+2. Create timeline events with page citations
+3. State machine will then see both pieces of evidence
+4. Processes will correctly transition to `published`
+
+This is exactly the phased, evidence-based approach we designed! 🎯
+
+---
+
 ## Next Steps
 
-### Phase 3.1 Foundation - IN PROGRESS ✅
+### Phase 3.1 Foundation - COMPLETE ✅
 - [x] OpenAI API key configured
 - [x] Created `_shared/openai-client.ts` with error handling and retry logic
 - [x] Created `_shared/process-stage-machine.ts` with deterministic stage computation
 - [x] Created `_shared/task-types.ts` for task type registry
 - [x] Updated database schema: Added citation fields to `timeline_events`, `entities`, and `relations`
 - [x] Added CHECK constraint for citation completeness on `timeline_events`
-- [ ] Test state machine with existing process data
-- [ ] Document PDF page boundary strategy for agents
+- [x] Implemented evidence-based stage transitions (`directive_issued` stage)
+- [x] Created `test-stage-machine` function for validation
+- [x] Tested state machine with existing process data (93/105 matches)
+- [x] Documented PDF page boundary strategy for agents
 
-### Phase 3.2 Core Agents - NEXT
-- [ ] Implement Timeline Agent (`agent-timeline`)
+### Phase 3.2 Core Agents - IN PROGRESS 🚀
+- [ ] **Implement Timeline Agent (`agent-timeline`)** ← NEXT MILESTONE
   - [ ] Define tool schemas with citation requirements
-  - [ ] Implement section prioritization logic
+  - [ ] Implement section prioritization logic (Sammanfattning → Förslag → Direktiv)
+  - [ ] Extract `sou_published` events to resolve 12 remaining test mismatches
   - [ ] Add skipped section reporting
 - [ ] Implement Metadata Agent (`agent-metadata`)
   - [ ] Define tool schemas for entity/relation creation
