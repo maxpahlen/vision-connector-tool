@@ -1,17 +1,28 @@
 // ============================================
 // Process Stage Machine - Deterministic stage computation
 // ============================================
+//
+// PHILOSOPHY:
+// The platform must feel like a forensic research tool, not a magic trick.
+// We only move stages when we can point to VERIFIABLE EVIDENCE in the data.
+// Fewer stages with 100% reliability is more valuable than more stages with speculation.
+//
+// Note: 'writing' is intentionally NOT modeled - we cannot reliably distinguish
+// "directive issued" from "committee actively writing" without external evidence.
+// Any time-based heuristic would be speculation. We add stages only when we have
+// real signals from the data (e.g., 'committee_formed', 'experts_added').
+// ============================================
 
 /**
- * Valid process lifecycle stages
+ * Valid process lifecycle stages (evidence-based only)
  */
 export type ProcessStage = 
-  | 'directive'      // Directive issued, committee forming or working
-  | 'writing'        // Committee actively writing report
-  | 'published'      // SOU published, awaiting remiss
-  | 'remiss'         // In remiss consultation period
-  | 'proposition'    // Government proposition submitted to Riksdag
-  | 'law'            // Law enacted and in force
+  | 'directive'          // Process exists, no directive document yet
+  | 'directive_issued'   // Directive document linked (evidence: directive doc exists)
+  | 'published'          // SOU published (evidence: SOU doc + sou_published event)
+  | 'remiss'             // In remiss consultation period (future: Phase 4)
+  | 'proposition'        // Government proposition submitted to Riksdag (future: Phase 4-5)
+  | 'law'                // Law enacted and in force (future: Phase 5-6)
 
 /**
  * Evidence collected from database about a process
@@ -51,6 +62,14 @@ export interface StageResult {
  * 
  * This is a pure function - no database access, no LLM calls.
  * All decisions are deterministic based on the evidence provided.
+ * 
+ * EVIDENCE-BASED TRANSITIONS (strict priority order):
+ * 1. hasLaw → 'law'
+ * 2. hasProposition → 'proposition'
+ * 3. hasRemissDocument || hasRemissEvents → 'remiss'
+ * 4. hasSou && hasSouPublishedEvent → 'published' (BOTH required!)
+ * 5. hasDirective || hasDirectiveIssuedEvent → 'directive_issued'
+ * 6. default → 'directive'
  */
 export function computeProcessStage(evidence: ProcessEvidence): StageResult {
   // Stage 6: Law enacted (highest priority)
@@ -77,8 +96,8 @@ export function computeProcessStage(evidence: ProcessEvidence): StageResult {
     };
   }
   
-  // Stage 3: SOU published
-  if (evidence.hasSou || evidence.hasSouPublishedEvent) {
+  // Stage 3: SOU published (BOTH SOU doc AND event required for high confidence)
+  if (evidence.hasSou && evidence.hasSouPublishedEvent) {
     const dateStr = evidence.souPublicationDate 
       ? ` (${formatSwedishDate(evidence.souPublicationDate)})`
       : '';
@@ -89,18 +108,18 @@ export function computeProcessStage(evidence: ProcessEvidence): StageResult {
     };
   }
   
-  // Stage 2: Committee writing (has directive but no SOU yet)
+  // Stage 2: Directive issued (evidence: directive document exists)
   if (evidence.hasDirective || evidence.hasDirectiveIssuedEvent) {
     return {
-      stage: 'writing',
-      explanation: 'Kommittén arbetar med utredningen enligt direktiv.',
+      stage: 'directive_issued',
+      explanation: 'Direktiv har utfärdats. Utredningsarbete kan påbörjas.',
     };
   }
   
-  // Stage 1: Directive stage (default/initial)
+  // Stage 1: Directive stage (default/initial - no documents yet)
   return {
     stage: 'directive',
-    explanation: 'Utredning planerad eller pågående. Väntar på mer information.',
+    explanation: 'Utredning planerad eller pågående. Väntar på direktiv eller mer information.',
   };
 }
 
@@ -130,7 +149,7 @@ export function isValidTransition(
 ): boolean {
   const stageOrder: ProcessStage[] = [
     'directive',
-    'writing',
+    'directive_issued',
     'published',
     'remiss',
     'proposition',
