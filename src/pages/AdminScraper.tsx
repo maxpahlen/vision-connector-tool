@@ -1,4 +1,5 @@
 import { ScraperControls } from '@/components/admin/ScraperControls';
+import { StateMachineTest } from '@/components/admin/StateMachineTest';
 import { TaskQueueMonitor } from '@/components/admin/TaskQueueMonitor';
 import { ProcessList } from '@/components/admin/ProcessList';
 import { DocumentList } from '@/components/admin/DocumentList';
@@ -14,7 +15,10 @@ export default function AdminScraper() {
       </div>
 
       <div className="grid gap-6">
-        <ScraperControls />
+        <div className="grid gap-6 md:grid-cols-2">
+          <ScraperControls />
+          <StateMachineTest />
+        </div>
         <TaskQueueMonitor />
         <ProcessList />
         <DocumentList />
