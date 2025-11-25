@@ -296,18 +296,44 @@ All agent system prompts must include:
 
 Process lifecycle is **deterministic**, not LLM-driven.
 
+### Philosophy / Reasoning
+
+> **The platform must feel like a forensic research tool, not a magic trick.**  
+> We only move stages when we can point to **verifiable evidence in the data**.  
+> Fewer stages with 100% reliability is more valuable than more stages with speculation.
+
+**Key Principle:** We add stages ONLY when we have real, observable signals from the data. No time-based heuristics. No LLM intuition. Evidence only.
+
+### Current Stage Model (Conservative & Evidence-Based)
+
+| Stage | Meaning | Evidence Required |
+|-------|---------|-------------------|
+| `directive` | Process exists, awaiting directive | No directive document linked yet |
+| `directive_issued` | Directive released | At least one directive document exists |
+| `published` | SOU completed and published | SOU document **AND** `sou_published` timeline event (both required) |
+| `remiss` | In remiss phase | Future stage (Phase 4 – regeringen.se crawler) |
+| `proposition` | Government bill submitted | Future stage (Phase 4-5 – Riksdagen crawler) |
+| `law` | Law enacted | Future stage (Phase 5-6 – Riksdagen crawler) |
+
+**Important:** `writing` is **intentionally NOT modeled**. We cannot reliably distinguish between "directive issued" and "committee actively writing" without external evidence. Any time-based heuristic (e.g., "directive older than 1 year = writing") would be speculation. When external crawlers for regeringen.se / Riksdagen are implemented in Phase 4+, we will revisit the stage machine and decide when to introduce `writing` based on **real-world observable events** (e.g., `committee_formed`, `experts_added`).
+
 ### State Machine Module
 
 **File:** `supabase/functions/_shared/process-stage-machine.ts`
 
 ```typescript
+// PHILOSOPHY:
+// The platform must feel like a forensic research tool, not a magic trick.
+// We only move stages when we can point to VERIFIABLE EVIDENCE in the data.
+// Fewer stages with 100% reliability is more valuable than more stages with speculation.
+
 export type ProcessStage = 
-  | 'directive' 
-  | 'writing' 
-  | 'published' 
-  | 'remiss' 
-  | 'proposition' 
-  | 'law';
+  | 'directive'          // Process exists, no directive document yet
+  | 'directive_issued'   // Directive document linked (evidence: directive doc exists)
+  | 'published'          // SOU published (evidence: SOU doc + sou_published event)
+  | 'remiss'             // In remiss consultation period (future: Phase 4)
+  | 'proposition'        // Government proposition submitted to Riksdag (future: Phase 4-5)
+  | 'law';               // Law enacted and in force (future: Phase 5-6)
 
 export interface ProcessEvidence {
   hasDirective: boolean;
@@ -325,6 +351,13 @@ export interface StageResult {
 
 export const computeProcessStage = (evidence: ProcessEvidence): StageResult => {
   // Pure function - no side effects, no LLM calls
+  // EVIDENCE-BASED TRANSITIONS (strict priority order):
+  // 1. hasLaw → 'law'
+  // 2. hasProposition → 'proposition'
+  // 3. hasRemissDocument || hasRemissEvents → 'remiss'
+  // 4. hasSou && hasSouPublishedEvent → 'published' (BOTH required!)
+  // 5. hasDirective || hasDirectiveIssuedEvent → 'directive_issued'
+  // 6. default → 'directive'
   
   if (evidence.hasLaw) {
     return {
@@ -350,27 +383,20 @@ export const computeProcessStage = (evidence: ProcessEvidence): StageResult => {
   if (evidence.hasSou && evidence.hasSouPublishedEvent) {
     return {
       stage: 'published',
-      explanation: 'SOU published and available for review'
-    };
-  }
-  
-  if (evidence.hasSou) {
-    return {
-      stage: 'writing',
-      explanation: 'SOU document received but not yet confirmed as published'
+      explanation: 'SOU published and available for review (both SOU doc + event confirmed)'
     };
   }
   
   if (evidence.hasDirective) {
     return {
-      stage: 'directive',
-      explanation: 'Directive issued, committee work in progress'
+      stage: 'directive_issued',
+      explanation: 'Directive issued, committee can begin work'
     };
   }
   
   return {
     stage: 'directive',
-    explanation: 'Process initiated, awaiting detailed information'
+    explanation: 'Process initiated, awaiting directive or detailed information'
   };
 };
 ```

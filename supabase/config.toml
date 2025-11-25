@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.process-sou-pdf]
 verify_jwt = false
+
+[functions.test-stage-machine]
+verify_jwt = false
