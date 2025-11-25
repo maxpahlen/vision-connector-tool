@@ -2,7 +2,7 @@
 // OpenAI Client - Shared wrapper for all agent LLM calls
 // ============================================
 
-import OpenAI from 'https://deno.land/x/openai@v4.68.4/mod.ts';
+import OpenAI from "https://esm.sh/openai@4.68.4";
 
 // Default model - configurable via environment or this constant
 export const DEFAULT_MODEL = 'gpt-4o-2024-08-06';
