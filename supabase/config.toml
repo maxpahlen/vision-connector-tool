@@ -1,5 +1,8 @@
 project_id = "oxwizikytcdevwkjaegq"
 
+[functions.agent-timeline]
+verify_jwt = false
+
 [functions.scrape-sou-index]
 verify_jwt = false
 
