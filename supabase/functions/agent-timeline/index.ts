@@ -250,13 +250,24 @@ Task: Extract the sou_published event if valid evidence exists. Remember: ONLY c
       ? estimatePageFromCharPosition(excerptPosition)
       : 1; // Default to page 1 if not found (front matter)
 
+    // Normalize date format: PostgreSQL date type requires YYYY-MM-DD
+    // If we have YYYY-MM, convert to YYYY-MM-01 (first day of month)
+    let normalizedDate = extractedEvent.event_date;
+    if (/^\d{4}-\d{2}$/.test(normalizedDate)) {
+      normalizedDate = `${normalizedDate}-01`;
+      console.log('[Timeline Agent v1] Normalized partial date', { 
+        original: extractedEvent.event_date, 
+        normalized: normalizedDate 
+      });
+    }
+
     // Insert timeline event
     const { data: insertedEvent, error: insertError } = await supabase
       .from('timeline_events')
       .insert({
         process_id,
         event_type: 'sou_published',
-        event_date: extractedEvent.event_date,
+        event_date: normalizedDate,
         description: extractedEvent.description,
         source_page: estimatedPage,
         source_excerpt: extractedEvent.source_excerpt,
