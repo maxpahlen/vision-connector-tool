@@ -6,6 +6,9 @@ verify_jwt = false
 [functions.agent-head-detective]
 verify_jwt = false
 
+[functions.agent-metadata]
+verify_jwt = false
+
 [functions.scrape-sou-index]
 verify_jwt = false
 
