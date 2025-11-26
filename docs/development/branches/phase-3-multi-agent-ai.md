@@ -10,49 +10,112 @@
 
 ## Recent Progress (2025-11-26)
 
-### 🚀 Head Detective Agent v1 - TESTING IN PROGRESS
+### ✅ Head Detective Agent v1 - PRODUCTION READY
 
-**Current Status:** Implementation complete, initial testing shows strong results
+**Status:** All testing complete, ready for production deployment  
+**Achievement:** Successfully completed all 6 test groups, validated orchestration loop
 
 **Test Results Summary (2025-11-26):**
-- ✅ Test Group 2: Idempotency - **PASSED**
+- ✅ Test Group 1: Single Candidate Process - **PASSED** (stage transition `directive` → `published`)
+- ✅ Test Group 2: Idempotency - **PASSED** (no duplicate tasks or events)
 - ✅ Test Group 3: Batch Mode - **PASSED** (7 processes analyzed correctly)
 - ✅ Test Group 4: Empty Input - **PASSED** (graceful handling)
 - ✅ Test Group 5: Evidence-Based Behavior - **PASSED** (no speculative reasoning)
-- ⏳ Test Group 1: Single Candidate - **PENDING** (need earlier stage process)
-- ⏳ Test Group 6: Pending Task Reuse - **PENDING** (not yet tested)
+- ✅ Test Group 6: Pending Task Reuse - **PASSED** (reuses existing pending tasks)
 
-**What's Working:**
-- ✅ Batch orchestration with 7 processes
-- ✅ Timeline Agent delegation and completion waiting
-- ✅ Idempotent behavior (no duplicate tasks or events)
-- ✅ Evidence-based stage validation via `computeProcessStage()`
-- ✅ Structured `output_data` with detailed summary
-- ✅ All timeline events extracted with valid citations
-
-**Scope (Timeline-Only Orchestration):**
-- ✅ Detects candidate processes (has SOU, no sou_published event)
-- ✅ Creates or reuses Timeline Agent tasks (idempotency)
-- ✅ Waits for Timeline Agent completion (polling with timeout)
-- ✅ Updates process stage using `computeProcessStage()` from state machine
-- ✅ Returns detailed, auditable summary in `output_data`
-- ✅ Supports single-process and batch modes
-- ✅ Integrates with task queue system
+**Production Guarantees:**
+- ✅ 100% idempotent (safe to re-run via cron)
+- ✅ Evidence-based stage transitions (no speculation)
+- ✅ Task delegation without duplication
+- ✅ Detailed audit trail in `output_data`
+- ✅ Graceful timeout handling for pending tasks
+- ✅ Batch and single-process modes validated
 
 **Implementation:**
 - Edge Function: `supabase/functions/agent-head-detective/index.ts`
-- Task Queue Integration: Extended `process-task-queue/index.ts`
+- Task Queue Integration: `process-task-queue/index.ts`
+- State Machine: `_shared/process-stage-machine.ts`
 - Test UI: `src/components/admin/HeadDetectiveTest.tsx`
-- Configuration: Added to `supabase/config.toml`
 
-**Remaining Testing:**
-- [ ] Find/create process in `directive_issued` stage
-- [ ] Test stage transition from earlier stage → `published`
-- [ ] Test pending task reuse scenario
-- [ ] Validate single process mode with stage change
-- [ ] Document complete end-to-end flow
+**Next Steps:**
+- [ ] Set up cron scheduling (daily at 2 AM UTC)
+- [ ] Begin Metadata Agent v1 implementation (Phase 3.3)
 
-**Assessment:** Core orchestration loop validated. Need additional test scenarios with processes in earlier lifecycle stages to complete v1 validation.
+---
+
+### 🎯 Metadata Agent v1 - PLANNING PHASE
+
+**Status:** Specification complete, ready for implementation  
+**Objective:** Extract people, ministries, and committee names with forensic-grade citations
+
+**v1 Scope (Approved):**
+- Lead investigator (utredare / särskild utredare) - **REQUIRED**
+- Responsible ministry (departement) - **REQUIRED**
+- Committee name - **OPTIONAL** (include if trivial)
+
+**Design Principles:**
+- Citation-first (every entity needs `source_page` + `source_excerpt`)
+- Evidence-only (no citations → skip entity)
+- Strictly scoped v1 (fewer types, higher reliability)
+- Extensible design (easy to add roles later)
+
+**Out of Scope (Future):**
+- Secretariat members
+- Experts and expert groups
+- Reference groups
+- Deadlines / mandatperiod
+- Tilläggsdirektiv
+
+**Implementation Plan:**
+- [ ] Create edge function: `supabase/functions/agent-metadata/index.ts`
+- [ ] Implement `report_metadata_entity` tool
+- [ ] Add entity deduplication logic
+- [ ] Create test protocol (6 test groups)
+- [ ] Integrate with Head Detective
+- [ ] Validate and deploy
+
+---
+
+### ✅ Timeline Agent v1 - COMPLETE
+
+---
+
+## Head Detective v1 – Production Behavior & Known Limitations
+
+### What Head Detective v1 *does* (production guarantees):
+
+* ✅ Processes all SOUs that are linked to processes via `process_documents`
+* ✅ Delegates to Timeline Agent using `timeline_extraction` tasks
+* ✅ Reuses pending tasks instead of creating duplicates (idempotency)
+* ✅ Waits for tasks to complete before updating stage (polling with timeout)
+* ✅ Updates stage deterministically via `computeProcessStage()` state machine
+* ✅ 100% idempotent — safe to re-run repeatedly and via cron
+* ✅ Provides detailed, auditable `output_data` with summary and metrics
+* ✅ Supports both single-process and batch modes
+* ✅ Evidence-based decision making (no speculative reasoning)
+
+### What Head Detective v1 *does NOT* do (intentionally):
+
+* ❌ Does not crawl SOUs for missing process–document links (assumes data integrity from Phase 2)
+* ❌ Does not detect publication date beyond the front-matter text (Timeline Agent limitation)
+* ❌ Does not trigger task queue execution directly (delegates only via task creation)
+* ❌ Does not call Metadata Agent yet (Phase 3.3 - not implemented)
+* ❌ Does not modify processes without evidence (citation-first principle)
+
+### Timeout behavior (not a bug):
+
+**Expected Behavior:** If a Timeline Agent task exists in `pending` status but has not yet been executed by `process-task-queue`, Head Detective will wait (polling with 30s timeout) and eventually time out.
+
+**Why this is correct:**
+- Head Detective is the **orchestrator**, not the **executor**
+- Task execution is delegated to `process-task-queue` edge function
+- Timeout ensures Head Detective doesn't hang indefinitely
+- The pending task remains in the queue for later execution
+- On next Head Detective run, it will detect and reuse the same pending task
+
+**Operational Note:** In production with cron scheduling, `process-task-queue` should run frequently (every 5-10 minutes) to minimize timeout occurrences. Head Detective creates tasks, task queue processor executes them.
+
+---
 
 ### ✅ Timeline Agent v1 - COMPLETE
 
@@ -785,141 +848,431 @@ OUTPUT:
 
 ---
 
-### 3. Metadata Agent
+### 3. Metadata Agent v1 - SPECIFICATION
 
-**Edge Function:** `supabase/functions/agent-metadata/index.ts`
+**Status:** Planning Phase  
+**Edge Function:** `supabase/functions/agent-metadata/index.ts` (to be created)  
+**Dependencies:** Timeline Agent v1, Head Detective v1
 
-#### Extraction Targets
+---
 
-- **Utredare** (lead investigator): Usually in "Uppdraget" or "Kommittén"
-- **Sekretariat members**: Committee composition section
-- **Expert group members**: If listed
-- **Ministry**: Responsible department
-- **Reference groups**: If mentioned
+#### Design Principles
 
-#### Tool Definitions
+Metadata Agent v1 follows the same philosophy that made Timeline Agent v1 and Head Detective v1 successful:
+
+1. **Citation-first:** Every entity extraction MUST include `source_page` + `source_excerpt`
+2. **Evidence-only:** If citation is missing → skip, don't guess
+3. **Strictly scoped v1:** Fewer entity types with high reliability
+4. **Extensible:** Design makes it easy to add more roles in future phases
+
+**Core Philosophy:**
+> "We extract what we can prove. If we can't cite it from the document, we don't create it."
+
+---
+
+#### v1 Scope (Approved)
+
+Metadata Agent v1 extracts ONLY the following entity types:
+
+| Entity Type | Role | Example Citation | Required? |
+|-------------|------|------------------|-----------|
+| **Lead Investigator** | `utredare` or `särskild_utredare` | "Som särskild utredare förordnades Anders Borg..." | **YES** |
+| **Responsible Ministry** | `ministry_responsible` | "Näringsdepartementet har tillkallat en utredning..." | **YES** |
+| **Committee Name** | `committee` | "Utredningen om klimatanpassning (K 2024:01)..." | Optional but include if trivial |
+
+**Extraction Quality Requirements:**
+- Each entity must be verifiable with exact page number and source excerpt
+- Names must be extracted as written in the document (no normalization)
+- If no clear citation exists → skip that entity
+- Never infer or assume entity information
+
+---
+
+#### v1 Explicitly Out of Scope (Future Phases)
+
+Keep these documented but **DO NOT implement in v1:**
+
+| Entity Type | Why Deferred | Future Phase |
+|-------------|--------------|--------------|
+| Secretariat members | Often listed in complex tables, harder to extract reliably | Phase 4 |
+| Experts | May require disambiguation, variable formatting | Phase 4 |
+| Reference groups | Not consistently documented across SOUs | Phase 4 |
+| Deadlines / mandatperiod | Requires date parsing complexity beyond v1 | Phase 4 |
+| Tilläggsdirektiv / extensions | Requires document linking logic | Phase 4 |
+
+**Important:** These remain visible in documentation as planned future work.
+
+---
+
+#### Tool Definition
+
+Metadata Agent v1 uses **one tool** for all entity extraction:
 
 ```typescript
 const metadataTools = [
   {
     type: "function",
     function: {
-      name: "create_entity_and_relation",
-      description: "Create entity and link to document with citation",
+      name: "report_metadata_entity",
+      description: "Report a single entity (person, ministry, committee) found in the SOU with citation",
       parameters: {
         type: "object",
         properties: {
           entity_type: {
             type: "string",
-            enum: ["person", "agency", "ministry"]
+            enum: ["person", "ministry", "committee"],
+            description: "Type of entity being reported"
           },
-          name: { type: "string" },
+          name: {
+            type: "string",
+            description: "Entity name as written in document (do not normalize)"
+          },
           role: {
             type: "string",
             enum: [
               "utredare",
-              "sekretariat",
-              "expert",
-              "ministry_responsible"
-            ]
+              "särskild_utredare",
+              "ministry_responsible",
+              "committee"
+            ],
+            description: "Specific role of the entity"
           },
-          document_id: { type: "string" },
-          source_page: { type: "integer" },
-          source_excerpt: { type: "string" }
+          source_page: {
+            type: "integer",
+            description: "PDF page number where entity is mentioned"
+          },
+          source_excerpt: {
+            type: "string",
+            description: "Direct quote from document (50-200 chars) proving entity role"
+          }
         },
-        required: ["entity_type", "name", "role", "document_id", "source_page"]
+        required: ["entity_type", "name", "role", "source_page", "source_excerpt"]
       }
     }
   }
 ];
 ```
 
-#### Deduplication Logic
+**Tool Design Notes:**
+- Single tool keeps agent focus simple
+- All required fields enforce citation-first principle
+- Enum constraints prevent invalid data
+- Agent calls tool once per entity found
+- No batch operations (simpler, more reliable)
 
+---
+
+#### Output Destination
+
+For each entity extracted:
+
+1. **Create or reuse entity in `entities` table:**
+   ```typescript
+   // Check if entity exists (deduplication by name + type)
+   const existingEntity = await supabase
+     .from('entities')
+     .select('id')
+     .eq('entity_type', entity_type)
+     .eq('name', name)
+     .maybeSingle();
+   
+   let entityId: string;
+   if (existingEntity) {
+     entityId = existingEntity.id;
+   } else {
+     const { data } = await supabase
+       .from('entities')
+       .insert({
+         entity_type,
+         name,
+         role,
+         source_document_id: document_id,
+         source_page,
+         source_excerpt
+       })
+       .select('id')
+       .single();
+     entityId = data.id;
+   }
+   ```
+
+2. **Create relation in `relations` table:**
+   ```typescript
+   await supabase.from('relations').insert({
+     source_id: entityId,
+     source_type: 'entity',
+     target_id: document_id,
+     target_type: 'document',
+     relation_type: mapRoleToRelationType(role), // e.g., 'led_by', 'published_by'
+     source_document_id: document_id,
+     source_page,
+     source_excerpt,
+     metadata: {
+       extraction_date: new Date().toISOString(),
+       agent_version: '1.0.0'
+     }
+   });
+   ```
+
+**Relation Type Mapping:**
 ```typescript
-// Check if entity exists
-const existingEntity = await supabase
-  .from('entities')
-  .select('id')
-  .eq('entity_type', entity_type)
-  .eq('name', name)
-  .maybeSingle();
-
-let entityId: string;
-
-if (existingEntity) {
-  entityId = existingEntity.id;
-} else {
-  // Create new entity
-  const { data } = await supabase
-    .from('entities')
-    .insert({ entity_type, name, role })
-    .select('id')
-    .single();
-  entityId = data.id;
-}
-
-// Create relation (always, even if entity exists)
-await supabase.from('relations').insert({
-  source_id: entityId,
-  source_type: 'entity',
-  target_id: document_id,
-  target_type: 'document',
-  relation_type: determineRelationType(role), // 'led_by', 'authored_by', etc.
-  metadata: { source_page, source_excerpt }
-});
+const mapRoleToRelationType = (role: string): string => {
+  const mapping = {
+    'utredare': 'led_by',
+    'särskild_utredare': 'led_by',
+    'ministry_responsible': 'commissioned_by',
+    'committee': 'conducted_by'
+  };
+  return mapping[role] || 'related_to';
+};
 ```
+
+---
+
+#### System Prompt (v1)
+
+```
+You are a Metadata Extraction Agent analyzing Swedish government reports (SOUs).
+
+MISSION:
+Extract people, ministries, and committee names mentioned in the SOU with forensic-grade citations.
+
+CITATION POLICY (NON-NEGOTIABLE):
+- Only extract entities if you can cite BOTH:
+  1. Specific page number in the PDF
+  2. Direct quote (50-200 chars) proving the entity's role
+- If you cannot find a clear citation → do not report the entity
+- Never invent or infer names, ministries, or roles
+
+SCOPE (v1 - STRICTLY LIMITED):
+Extract ONLY these entity types:
+1. Lead investigator (utredare / särskild utredare)
+   - Look for: "Som särskild utredare förordnades..."
+   - Extract name exactly as written
+2. Responsible ministry (departement)
+   - Look for: "...har tillkallat en utredning..."
+   - Common: Justitiedepartementet, Näringsdepartementet, etc.
+3. Committee name (optional but include if trivial)
+   - Look for: "Utredningen om...", "Kommittén..."
+
+DO NOT EXTRACT (deferred to future phases):
+- Secretariat members
+- Experts or expert groups
+- Reference groups (remissinstanser)
+- Deadlines or mandatperiod
+- Tilläggsdirektiv
+
+SECTION PRIORITIZATION:
+Focus analysis on:
+- Front matter (first 5-10 pages)
+- "Uppdraget" section
+- "Kommittén" or "Kommittédirektiv" section
+- Introduction / "Inledning"
+
+Skip:
+- Annexes / "Bilagor"
+- Table of contents
+- Reference lists
+- Detailed technical appendices
+
+EXTRACTION RULES:
+1. Extract names EXACTLY as written (no normalization)
+2. If multiple name variants exist (e.g., "Justice Ministry" and "Justitiedepartementet"), extract each with separate citations
+3. One entity = one tool call with citation
+4. If uncertain about a name or role → skip it
+5. Ministry names: prefer Swedish form found in document
+
+OUTPUT:
+Use the `report_metadata_entity` tool for each entity found.
+Be explicit about sections you analyzed and skipped.
+```
+
+---
 
 #### Output Data Structure
 
 ```typescript
 interface MetadataAgentOutput {
-  entities_created: number;
-  entities_linked: number;
-  relations_created: number;
-  skipped_sections: string[];
-  completed_at: string;
+  agent_version: '1.0.0';
+  model_used: string; // e.g., 'gpt-4.1'
+  completed_at: string; // ISO timestamp
+  processing_time_ms: number;
+  
+  // Results
+  entities_reported: number; // Total tool calls made
+  entities_created: number;  // New entities in DB
+  entities_reused: number;   // Existing entities linked
+  relations_created: number; // Always equals entities_reported
+  
+  // Breakdown by type
+  entity_breakdown: {
+    person: number;
+    ministry: number;
+    committee: number;
+  };
+  
+  // Transparency
+  analyzed_sections: string[]; // e.g., ["Uppdraget", "Kommittén", "Pages 1-15"]
+  skipped_sections: string[];  // e.g., ["Bilagor", "Pages 200+"]
+  uncertainties: string[];     // e.g., ["Ministry name unclear on p.8"]
 }
 ```
 
-#### Known Limitations: Entity Disambiguation
+---
 
-**Phase 3 Scope (Acceptable):**
+#### Deduplication Logic (v1)
 
-1. **Name Deduplication:**
-   - Entities are deduplicated by `(entity_type, name)` tuple
-   - Example: "Anna Svensson" as "person" is treated as one entity across all documents
+**Strategy:** Simple name-based deduplication per entity type
 
-2. **No Canonical IDs:**
-   - Phase 3 does NOT attempt to resolve entities to canonical ministry IDs or person registries
-   - Ministry names stored as found in documents (e.g., "Justitiedepartementet", "Justice Ministry")
+```typescript
+// Entities are deduplicated by (entity_type, name) tuple
+// Example: "Anders Borg" as "person" is treated as one entity across all documents
 
-3. **Homonym Problem:**
-   - If two different people have the same name (e.g., "Lars Andersson"), they will be conflated
-   - This is acceptable for Phase 3 MVP
+// KNOWN LIMITATION (acceptable for v1):
+// - Two different people with same name will be conflated
+// - Ministry name variations (e.g., "Skatteverket" vs "Swedish Tax Agency") treated as separate
+// - Abbreviations (e.g., "SKV") treated as separate from full names
 
-4. **Agency Name Variations:**
-   - "Skatteverket" vs "Swedish Tax Agency" treated as different entities
-   - Abbreviations (e.g., "SKV") treated as separate from full names
-
-**Future Improvements (Phase 4+):**
-- Link entities to external registries (e.g., Riksdagen member database)
-- Add canonical ministry identifiers
-- Implement fuzzy matching for organization names
-- Add disambiguation metadata (e.g., ministry code, person title/role context)
-
-**Documentation for Users:**
-> "Entity names are extracted verbatim from documents. The system does not yet disambiguate between different people with the same name or normalize ministry names to canonical forms. This will be improved in future phases."
-
-**Agent Prompt Note:**
+// FUTURE IMPROVEMENTS (Phase 4+):
+// - Link to external registries (Riksdagen member database)
+// - Canonical ministry identifiers
+// - Fuzzy matching for organization names
 ```
-ENTITY EXTRACTION:
-- Extract names exactly as written in the document
-- Do not attempt to normalize or standardize names
-- If multiple name variants appear (e.g., "Justice Ministry" and "Justitiedepartementet"), 
-  extract each as separate entities with citations
-- The system will handle deduplication based on exact name matching
+
+**User-Facing Documentation:**
+> "Entity names are extracted exactly as they appear in documents. The system does not yet disambiguate between different people with the same name or normalize ministry names to canonical forms. This will be improved in future phases."
+
+---
+
+#### Test Protocol (Metadata Agent v1)
+
+Following the same rigorous approach used for Timeline Agent and Head Detective:
+
+**Test Group 1: Single Entity Extraction**
+- **Objective:** Verify basic extraction with citation
+- **Setup:** Use SOU 2025:32 (or similar well-structured SOU)
+- **Expected:** Extract lead investigator + ministry with valid citations
+- **Validation:** Check `entities` and `relations` tables for correct `source_page` + `source_excerpt`
+
+**Test Group 2: Idempotency**
+- **Objective:** Verify agent doesn't create duplicate entities or relations
+- **Setup:** Run agent twice on same document
+- **Expected:** First run creates entities + relations, second run reuses entities + creates no duplicates
+- **Validation:** Check entity count remains same, relation count increases only once
+
+**Test Group 3: Batch Mode**
+- **Objective:** Verify agent handles multiple documents correctly
+- **Setup:** Process 5-10 SOUs in batch
+- **Expected:** All entities extracted with citations, no cross-contamination
+- **Validation:** Each SOU has appropriate entities linked
+
+**Test Group 4: Empty Input / Missing Data**
+- **Objective:** Verify graceful handling when no entities found
+- **Setup:** Use document with no clear lead investigator or ministry mention
+- **Expected:** Agent completes successfully with zero entities extracted
+- **Validation:** `output_data` reflects zero results, no errors
+
+**Test Group 5: Evidence Integrity**
+- **Objective:** Verify citation-first principle enforcement
+- **Setup:** Review extracted entities and validate citations manually
+- **Expected:** All entities have valid `source_page` + `source_excerpt` that match document content
+- **Validation:** Manual audit of 10+ random extractions
+
+**Test Group 6: Pending Task Reuse**
+- **Objective:** Verify Head Detective doesn't create duplicate metadata tasks
+- **Setup:** Create pending metadata task manually, then run Head Detective
+- **Expected:** Head Detective reuses existing pending task
+- **Validation:** Task count doesn't increase
+
+---
+
+#### Known Limitations (v1)
+
+**Limitation 1: Name Disambiguation**
+- People with same name treated as same entity
+- Impact: Rare false positives (same-name collision)
+- Mitigation: Future phase will add disambiguation metadata
+
+**Limitation 2: Ministry Name Variations**
+- "Justitiedepartementet" vs "Justice Ministry" treated as separate
+- Impact: Entity fragmentation across documents
+- Mitigation: Phase 4 will add canonical ministry identifiers
+
+**Limitation 3: Front-Matter Focus**
+- Agent primarily analyzes first 50-100 pages
+- Impact: May miss entities mentioned only in later sections
+- Mitigation: Acceptable tradeoff for v1 (most entities in front matter)
+
+**Limitation 4: No Cross-Document Linking**
+- Agent doesn't link entities across multiple SOUs
+- Impact: Same investigator in multiple SOUs not connected
+- Mitigation: Future phase will add entity relationship graphs
+
+---
+
+#### Integration with Head Detective
+
+Once Metadata Agent v1 is implemented, Head Detective will be updated to delegate metadata extraction:
+
+```typescript
+// In Head Detective orchestration loop
+if (!hasMetadataTask) {
+  const { data: metadataTask } = await supabase
+    .from('agent_tasks')
+    .insert({
+      task_type: 'metadata_extraction',
+      agent_name: 'agent-metadata',
+      document_id: souDocument.id,
+      process_id: process.id,
+      status: 'pending',
+      priority: 5,
+      input_data: {
+        document_id: souDocument.id,
+        focus_sections: ['Uppdraget', 'Kommittén', 'Inledning']
+      }
+    })
+    .select()
+    .single();
+  
+  delegatedTasks.push({ type: 'metadata_extraction', id: metadataTask.id });
+}
 ```
+
+**Head Detective Stage Logic Update:**
+- Metadata extraction does NOT affect process stage in v1
+- Stage remains determined by Timeline Agent (sou_published event)
+- Metadata is supplementary enrichment data
+
+---
+
+#### Implementation Checklist
+
+- [ ] Create edge function: `supabase/functions/agent-metadata/index.ts`
+- [ ] Implement tool: `report_metadata_entity` with validation
+- [ ] Add entity deduplication logic
+- [ ] Add relation creation with citation storage
+- [ ] Implement system prompt with v1 scope constraints
+- [ ] Add structured `output_data` logging
+- [ ] Update `supabase/config.toml` with new function
+- [ ] Create test UI component: `src/components/admin/MetadataAgentTest.tsx`
+- [ ] Update `process-task-queue` to handle `metadata_extraction` tasks
+- [ ] Run all 6 test groups
+- [ ] Document test results
+- [ ] Update Head Detective to delegate metadata tasks
+- [ ] Deploy to production with cron scheduling
+
+---
+
+#### Success Criteria (v1 Complete)
+
+- [ ] All 6 test groups pass
+- [ ] 100% of extracted entities have valid citations (`source_page` + `source_excerpt`)
+- [ ] Zero duplicate entities created across multiple runs (idempotency)
+- [ ] Agent completes gracefully when no entities found
+- [ ] Manual audit confirms citation accuracy (10+ samples)
+- [ ] Structured `output_data` enables full audit trail
+- [ ] Integration with Head Detective validated (delegation + task reuse)
+- [ ] Production deployment with cron scheduling
 
 ---
 
