@@ -1,10 +1,39 @@
 # Phase 3: Multi-Agent AI System
 
-**Status:** In Progress - Foundation Complete ✅  
+**Status:** In Progress - Timeline Agent Complete ✅  
 **Branch:** `phase-3-multi-agent-ai`  
 **Started:** 2025-11-21  
-**Updated:** 2025-11-25  
+**Updated:** 2025-11-26  
 **Dependencies:** Phase 2 (SOU Scraper & PDF Extraction)
+
+---
+
+## Recent Progress (2025-11-26)
+
+### ✅ Timeline Agent v1 - COMPLETE
+
+**Achievement:** Successfully implemented and tested the Timeline Agent with full citation-backed extraction.
+
+**Key Features Delivered:**
+- ✅ Extracts SOU publication dates from PDF content
+- ✅ Handles partial date formats (YYYY-MM) and normalizes to PostgreSQL date format (YYYY-MM-DD)
+- ✅ Provides forensic-grade citations with `source_page` and `source_excerpt`
+- ✅ Extracts actors (people, committees, agencies) from publication events
+- ✅ Implements proper error handling and detailed logging
+- ✅ Follows citation-first principle (no data without citations)
+
+**Test Results (SOU 2025:32):**
+- Date extraction: "april 2025" → normalized to `2025-04-01` ✅
+- Page citation: Correctly identified page 1 ✅
+- Excerpt: 239 chars including both handover statement and date ✅
+- Actors: Successfully extracted 4 actors (ministry names) ✅
+- Description: Clear, concise event description ✅
+
+**Technical Implementation:**
+- Edge Function: `supabase/functions/agent-timeline/index.ts`
+- Tool: `add_timeline_event` with strict citation requirements
+- Date normalization: YYYY-MM → YYYY-MM-01 for PostgreSQL compatibility
+- Page estimation: Character position-based page inference from PDF markers
 
 ---
 
@@ -23,12 +52,12 @@ Build a multi-agent AI system that extracts structured, citation-backed intellig
 
 ### Success Criteria
 
-- [ ] All extracted data includes `source_page` and `source_excerpt`
+- [x] All extracted data includes `source_page` and `source_excerpt` ✅ (Timeline Agent verified)
 - [x] Process stages determined by state machine logic, not LLM guesses ✅
-- [ ] Agents communicate only via database (blackboard pattern)
-- [ ] Head Detective successfully orchestrates timeline and metadata agents
-- [ ] Structured `output_data` enables audit trail for all agent actions
-- [ ] System can process 10+ SOUs end-to-end without manual intervention
+- [x] Agents communicate only via database (blackboard pattern) ✅ (Timeline Agent verified)
+- [ ] Head Detective successfully orchestrates timeline and metadata agents (Next: full integration test)
+- [x] Structured `output_data` enables audit trail for all agent actions ✅ (Timeline Agent verified)
+- [ ] System can process 10+ SOUs end-to-end without manual intervention (Pending: Metadata Agent + full orchestration)
 
 ---
 
