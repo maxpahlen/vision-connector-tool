@@ -56,7 +56,7 @@ export function ScraperControls() {
             Scrape Ongoing
           </Button>
           <Button
-            onClick={() => handleScrapeIndex(['avslutade'])}
+            onClick={() => handleScrapeIndex(['avslutade'], 3)}
             disabled={loading !== null}
           >
             {loading === 'avslutade' ? (
