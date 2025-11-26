@@ -13,7 +13,7 @@ import {
 
 const RequestSchema = z.object({
   limit: z.number().int().positive().max(100).optional().default(10),
-  task_type: z.enum(['fetch_regeringen_document', 'process_pdf']).optional(),
+  task_type: z.enum(['fetch_regeringen_document', 'process_pdf', 'timeline_extraction', 'head_detective']).optional(),
   rate_limit_ms: z.number().int().min(0).max(10000).optional().default(1000),
 });
 
@@ -144,6 +144,67 @@ async function processePdfTask(
   return data;
 }
 
+async function processTimelineExtractionTask(
+  supabase: any,
+  task: Task
+): Promise<any> {
+  const documentId = task.document_id;
+  const processId = task.process_id;
+  
+  if (!documentId || !processId) {
+    throw new Error('Missing document_id or process_id in task');
+  }
+  
+  console.log(`Calling agent-timeline for document: ${documentId}, process: ${processId}`);
+  
+  const { data, error } = await supabase.functions.invoke(
+    'agent-timeline',
+    {
+      body: {
+        document_id: documentId,
+        process_id: processId,
+        task_id: task.id,
+      },
+    }
+  );
+  
+  if (error) {
+    throw new Error(`Timeline extraction failed: ${error.message}`);
+  }
+  
+  return data;
+}
+
+async function processHeadDetectiveTask(
+  supabase: any,
+  task: Task
+): Promise<any> {
+  const processId = task.process_id;
+  
+  console.log(`Calling agent-head-detective${processId ? ` for process: ${processId}` : ' in batch mode'}`);
+  
+  const body: any = {
+    task_id: task.id,
+  };
+  
+  if (processId) {
+    body.process_id = processId;
+  } else {
+    body.batch_mode = true;
+  }
+  
+  const { data, error } = await supabase.functions.invoke(
+    'agent-head-detective',
+    { body }
+  );
+  
+  if (error) {
+    throw new Error(`Head Detective failed: ${error.message}`);
+  }
+  
+  return data;
+}
+
 async function processTask(
   supabase: any,
   task: Task,
@@ -161,6 +222,10 @@ async function processTask(
       result = await processFetchRegeringenTask(supabase, task);
     } else if (task.task_type === 'process_pdf') {
       result = await processePdfTask(supabase, task);
+    } else if (task.task_type === 'timeline_extraction') {
+      result = await processTimelineExtractionTask(supabase, task);
+    } else if (task.task_type === 'head_detective') {
+      result = await processHeadDetectiveTask(supabase, task);
     } else {
       throw new Error(`Unsupported task type: ${task.task_type}`);
     }
