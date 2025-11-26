@@ -1062,6 +1062,191 @@ interface HeadDetectiveOutput extends AgentOutputBase {
 
 ## Testing Strategy
 
+### Head Detective v1 Test Protocol — Full Orchestration Validation
+
+**Purpose:** Validate the complete orchestration loop before marking v1 as production-ready.
+
+Head Detective v1 is considered **correct and production-ready** only when **ALL** of the following test groups pass:
+
+#### ✅ Test Group 1: Single Candidate Process
+
+**Setup:** Find a process that has an SOU document but NO `sou_published` event.
+
+**Expected Behavior:**
+- Head Detective creates a Timeline Agent task (or reuses if pending)
+- Waits for Timeline Agent to complete
+- Calls `computeProcessStage()` with gathered evidence
+- Updates `processes.current_stage` → `"published"`
+- Updates `processes.stage_explanation` with Swedish description from state machine
+- `output_data` contains:
+  - `action: "stage_updated"`
+  - `previous_stage` and `new_stage`
+  - `timeline_event_id` with proof
+  - `proof_page` number
+
+**Pass Criteria:**
+- [ ] Stage transitions from previous → `published`
+- [ ] `stage_explanation` matches state machine output
+- [ ] Timeline event exists with valid citation
+- [ ] `output_data.action = "stage_updated"`
+
+#### ✅ Test Group 2: Idempotency Test
+
+**Setup:** Run Head Detective again on the **same process** from Test Group 1.
+
+**Expected Behavior:**
+- No new Timeline Agent tasks created
+- No new timeline events created
+- No stage change (already correct)
+- `output_data.action` should be `"skipped_no_action"`
+- `output_data.skipped_reason` explains why
+
+**Pass Criteria:**
+- [ ] No duplicate tasks in `agent_tasks`
+- [ ] No duplicate events in `timeline_events`
+- [ ] `output_data.action = "skipped_no_action"`
+- [ ] Process stage remains unchanged
+- [ ] Proves safe re-runs
+
+#### ✅ Test Group 3: Batch Mode Test
+
+**Setup:** Run Head Detective without specifying `process_id` (batch mode).
+
+**Expected Behavior:**
+- Only processes missing `sou_published` events are included
+- No duplicate tasks or events
+- `output_data.summary` includes:
+  - `processes_with_sou`
+  - `timeline_tasks_created`
+  - `timeline_tasks_reused`
+  - `published_stages_updated`
+  - `skipped_no_action`
+- `output_data.details[]` contains one entry per process
+
+**Pass Criteria:**
+- [ ] Summary counts are accurate
+- [ ] Each process in details has correct `action`
+- [ ] No duplicates created
+- [ ] Multiple processes handled correctly
+
+#### ✅ Test Group 4: Empty Input Test (No Candidates)
+
+**Setup:** Run Head Detective when all processes are already up to date.
+
+**Expected Behavior:**
+- Returns **success** (not error)
+- `output_data.summary.processes_with_sou = 0`
+- `output_data.no_candidates = true`
+- Never throws or logs an error
+
+**Pass Criteria:**
+- [ ] Returns HTTP 200 success
+- [ ] `no_candidates` flag is set
+- [ ] No error messages in logs
+- [ ] Graceful handling of "nothing to do"
+
+#### ✅ Test Group 5: Evidence-Based Behavior (Non-Negotiable)
+
+**Setup:** Process has SOU document but Timeline Agent has NOT yet extracted `sou_published` event.
+
+**Expected Behavior:**
+- Head Detective must **NOT** mark process as `published`
+- Must wait for Timeline Agent evidence
+- Should show `action: "waiting_for_timeline_event"` or similar
+- Never "infers" or "assumes" publication
+
+**Pass Criteria:**
+- [ ] Does not update stage without timeline evidence
+- [ ] Preserves forensic integrity principle
+- [ ] No speculative reasoning
+- [ ] Evidence-only decision making
+
+#### ✅ Test Group 6: Pending Task Reuse
+
+**Setup:** Start a Timeline Agent task manually, then run Head Detective while task is still `pending` or `running`.
+
+**Expected Behavior:**
+- Head Detective reuses the existing pending task
+- Does not create a duplicate
+- Waits for the original task to complete
+- `output_data` shows `timeline_tasks_reused = 1`
+
+**Pass Criteria:**
+- [ ] No duplicate tasks created
+- [ ] Existing pending task is reused
+- [ ] Waits for completion correctly
+
+---
+
+### 📌 Required Output Data Structure
+
+For each run (single or batch), `output_data` must contain:
+
+```json
+{
+  "version": "1.0.0",
+  "mode": "single" | "batch",
+  "no_candidates": false,
+  "summary": {
+    "processes_with_sou": 5,
+    "timeline_tasks_created": 2,
+    "timeline_tasks_reused": 1,
+    "published_stages_updated": 3,
+    "skipped_no_action": 2
+  },
+  "details": [
+    {
+      "process_id": "...",
+      "process_key": "li-2024-01",
+      "action": "stage_updated" | "timeline_created" | "skipped_no_action" | "waiting_for_timeline_event",
+      "previous_stage": "directive_issued",
+      "new_stage": "published",
+      "timeline_event_id": "...",
+      "proof_page": 1,
+      "skipped_reason": "Already at correct stage with evidence"
+    }
+  ]
+}
+```
+
+**Observability Requirement:** Debugging must be possible *without opening edge function logs*.
+
+---
+
+### 🔄 Test Execution Order
+
+Execute tests in this sequence:
+
+1. **Single process run** → verify stage update works
+2. **Idempotency run** → same process again, verify no duplicates
+3. **Batch run** → multi-process orchestration
+4. **Empty run** → all processes complete, verify graceful handling
+5. **Evidence-only check** → verify no speculative reasoning
+6. **Pending task reuse** → verify task deduplication
+
+---
+
+### ✅ Completion Criteria for Head Detective v1
+
+Head Detective v1 is **COMPLETE** and ready for production when:
+
+```
+✓ ALL 6 test groups pass
+✓ output_data structure is complete and accurate
+✓ No duplicate timeline events exist
+✓ No duplicate agent tasks created
+✓ State machine transitions match expectations
+✓ Evidence-based principle is preserved
+✓ Idempotent behavior verified
+```
+
+**At that point:**
+- Phase 3.2 = COMPLETE
+- Mark milestone in documentation
+- Proceed to Metadata Agent (Phase 3.3)
+
+---
+
 ### Unit Tests (Future)
 
 - Test state machine logic independently
