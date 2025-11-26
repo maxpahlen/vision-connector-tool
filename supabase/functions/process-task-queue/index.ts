@@ -13,7 +13,7 @@ import {
 
 const RequestSchema = z.object({
   limit: z.number().int().positive().max(100).optional().default(10),
-  task_type: z.enum(['fetch_regeringen_document', 'process_pdf', 'timeline_extraction', 'head_detective']).optional(),
+  task_type: z.enum(['fetch_regeringen_document', 'process_pdf', 'timeline_extraction', 'head_detective', 'metadata_extraction']).optional(),
   rate_limit_ms: z.number().int().min(0).max(10000).optional().default(1000),
 });
 
@@ -205,6 +205,28 @@ async function processHeadDetectiveTask(
   return data;
 }
 
+async function processMetadataExtractionTask(
+  supabase: any,
+  task: Task
+): Promise<any> {
+  console.log('[Task Queue] Calling agent-metadata', { task_id: task.id });
+  
+  const { data, error } = await supabase.functions.invoke('agent-metadata', {
+    body: {
+      document_id: task.document_id,
+      process_id: task.process_id,
+      task_id: task.id,
+      ...task.input_data
+    }
+  });
+  
+  if (error) {
+    throw new Error(`Metadata Agent failed: ${error.message}`);
+  }
+  
+  return data;
+}
+
 async function processTask(
   supabase: any,
   task: Task,
@@ -226,6 +248,8 @@ async function processTask(
       result = await processTimelineExtractionTask(supabase, task);
     } else if (task.task_type === 'head_detective') {
       result = await processHeadDetectiveTask(supabase, task);
+    } else if (task.task_type === 'metadata_extraction') {
+      result = await processMetadataExtractionTask(supabase, task);
     } else {
       throw new Error(`Unsupported task type: ${task.task_type}`);
     }
