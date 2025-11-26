@@ -1,6 +1,7 @@
 import { ScraperControls } from '@/components/admin/ScraperControls';
 import { StateMachineTest } from '@/components/admin/StateMachineTest';
 import { TimelineAgentTest } from '@/components/admin/TimelineAgentTest';
+import { HeadDetectiveTest } from '@/components/admin/HeadDetectiveTest';
 import { TaskQueueMonitor } from '@/components/admin/TaskQueueMonitor';
 import { ProcessList } from '@/components/admin/ProcessList';
 import { DocumentList } from '@/components/admin/DocumentList';
@@ -21,6 +22,7 @@ export default function AdminScraper() {
           <StateMachineTest />
         </div>
         <TimelineAgentTest />
+        <HeadDetectiveTest />
         <TaskQueueMonitor />
         <ProcessList />
         <DocumentList />

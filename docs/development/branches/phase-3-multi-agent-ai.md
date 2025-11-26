@@ -10,6 +10,32 @@
 
 ## Recent Progress (2025-11-26)
 
+### 🚀 Head Detective Agent v1 - IN PROGRESS
+
+**Current Status:** Implementation complete, ready for testing
+
+**Scope (Timeline-Only Orchestration):**
+- ✅ Detects candidate processes (has SOU, no sou_published event)
+- ✅ Creates or reuses Timeline Agent tasks (idempotency)
+- ✅ Waits for Timeline Agent completion (polling with timeout)
+- ✅ Updates process stage using `computeProcessStage()` from state machine
+- ✅ Returns detailed, auditable summary in `output_data`
+- ✅ Supports single-process and batch modes
+- ✅ Integrates with task queue system
+
+**Implementation:**
+- Edge Function: `supabase/functions/agent-head-detective/index.ts`
+- Task Queue Integration: Extended `process-task-queue/index.ts`
+- Test UI: `src/components/admin/HeadDetectiveTest.tsx`
+- Configuration: Added to `supabase/config.toml`
+
+**Next Steps:**
+- [ ] Test single process orchestration
+- [ ] Test idempotency (re-run on same process)
+- [ ] Test batch mode on multiple candidates
+- [ ] Verify stage transitions are evidence-based
+- [ ] Validate output_data structure
+
 ### ✅ Timeline Agent v1 - COMPLETE
 
 **Achievement:** Successfully implemented and tested the Timeline Agent with full citation-backed extraction.
@@ -55,9 +81,9 @@ Build a multi-agent AI system that extracts structured, citation-backed intellig
 - [x] All extracted data includes `source_page` and `source_excerpt` ✅ (Timeline Agent verified)
 - [x] Process stages determined by state machine logic, not LLM guesses ✅
 - [x] Agents communicate only via database (blackboard pattern) ✅ (Timeline Agent verified)
-- [ ] Head Detective successfully orchestrates timeline and metadata agents (Next: full integration test)
-- [x] Structured `output_data` enables audit trail for all agent actions ✅ (Timeline Agent verified)
-- [ ] System can process 10+ SOUs end-to-end without manual intervention (Pending: Metadata Agent + full orchestration)
+- [ ] Head Detective successfully orchestrates timeline agent (IN TESTING - v1 implementation complete)
+- [x] Structured `output_data` enables audit trail for all agent actions ✅ (Timeline Agent verified, Head Detective implemented)
+- [ ] System can process 10+ SOUs end-to-end without manual intervention (Pending: full orchestration test + Metadata Agent)
 
 ---
 
