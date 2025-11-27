@@ -13,8 +13,7 @@ import {
 } from '../_shared/process-stage-machine.ts';
 
 // ============================================
-// # Protected Code - Do Not Edit
-// Head Detective Agent v1 - Timeline-Only Orchestrator
+// Head Detective Agent v2 - Multi-Agent Orchestrator
 // ============================================
 //
 // PHILOSOPHY:
@@ -22,18 +21,19 @@ import {
 // It reacts ONLY to evidence produced by specialist agents.
 // If Timeline Agent did not extract a published event, Head Detective does not guess.
 //
-// V1 SCOPE (Timeline-Only):
-// - Detect candidate processes (has SOU, no sou_published event)
+// V2 SCOPE (Timeline + Metadata):
+// - Detect candidate processes (has SOU, needs timeline or metadata extraction)
 // - Create or reuse Timeline Agent tasks (no duplicates)
-// - Wait for Timeline Agent completion
+// - Create or reuse Metadata Agent tasks (no duplicates)
+// - Wait for both agents' completion
 // - Update process stage using evidence-based state machine
 // - Return detailed, auditable summary
 //
-// OUT OF SCOPE FOR V1:
-// - Metadata extraction
-// - Entity extraction
-// - Multiple agent delegation
-// - Multi-document reasoning
+// AGENT COORDINATION:
+// - Timeline Agent: Extracts dates and events with citations
+// - Metadata Agent: Extracts entities (people, ministries, committees) with citations
+// - Both agents run independently via task queue
+// - Head Detective waits for both before updating process stage
 // ============================================
 
 const RequestSchema = z.object({
@@ -54,12 +54,17 @@ interface ProcessCandidate {
 interface ProcessResult {
   process_id: string;
   process_key: string;
-  action: 'timeline_created' | 'timeline_reused' | 'stage_updated' | 'skipped';
+  action: 'tasks_created' | 'tasks_reused' | 'stage_updated' | 'skipped';
   previous_stage: string;
   new_stage: string | null;
+  timeline_task_id: string | null;
+  timeline_task_created: boolean;
+  metadata_task_id: string | null;
+  metadata_task_created: boolean;
   timeline_event_id: string | null;
   proof_page: number | null;
   sou_published_event_found: boolean;
+  entities_extracted: number;
   reason?: string;
 }
 
@@ -119,30 +124,12 @@ async function findCandidateProcesses(
   
   console.log(`Found ${souDocuments.length} SOU documents with content`);
   
-  // Filter out processes that already have sou_published events
+  // Include all processes with SOUs - we'll check for needed tasks during processing
   const candidates: ProcessCandidate[] = [];
   
   for (const doc of souDocuments) {
     const processData = doc.process_documents?.[0]?.processes;
     if (!processData) continue;
-    
-    // Check if this process already has a sou_published event
-    const { data: existingEvents, error: eventError } = await supabase
-      .from('timeline_events')
-      .select('id')
-      .eq('process_id', processData.id)
-      .eq('event_type', 'sou_published')
-      .limit(1);
-    
-    if (eventError) {
-      console.error(`Error checking events for process ${processData.id}:`, eventError);
-      continue;
-    }
-    
-    if (existingEvents && existingEvents.length > 0) {
-      console.log(`⏭️  Process ${processData.process_key} already has sou_published event - skipping`);
-      continue;
-    }
     
     candidates.push({
       id: processData.id,
@@ -154,7 +141,7 @@ async function findCandidateProcesses(
     });
   }
   
-  console.log(`✅ Found ${candidates.length} candidate processes needing timeline extraction`);
+  console.log(`✅ Found ${candidates.length} candidate processes with SOU documents`);
   
   return candidates;
 }
@@ -219,6 +206,62 @@ async function getOrCreateTimelineTask(
   return { taskId: newTask.id, created: true };
 }
 
+async function getOrCreateMetadataTask(
+  supabase: any,
+  processId: string,
+  documentId: string
+): Promise<{ taskId: string; created: boolean }> {
+  console.log(`🔍 Checking for existing metadata task (process: ${processId}, doc: ${documentId})`);
+  
+  // Check for existing task (pending, processing, or completed)
+  const { data: existingTasks, error: fetchError } = await supabase
+    .from('agent_tasks')
+    .select('id, status')
+    .eq('task_type', 'metadata_extraction')
+    .eq('process_id', processId)
+    .eq('document_id', documentId)
+    .in('status', ['pending', 'processing', 'completed'])
+    .order('created_at', { ascending: false })
+    .limit(1);
+  
+  if (fetchError) {
+    throw new Error(`Failed to check existing metadata tasks: ${fetchError.message}`);
+  }
+  
+  if (existingTasks && existingTasks.length > 0) {
+    console.log(`♻️  Reusing existing metadata task: ${existingTasks[0].id} (status: ${existingTasks[0].status})`);
+    return { taskId: existingTasks[0].id, created: false };
+  }
+  
+  // No existing task - create new one
+  console.log('✨ Creating new metadata extraction task');
+  
+  const { data: newTask, error: createError } = await supabase
+    .from('agent_tasks')
+    .insert({
+      task_type: 'metadata_extraction',
+      agent_name: 'metadata-agent',
+      process_id: processId,
+      document_id: documentId,
+      status: 'pending',
+      priority: 90, // Slightly lower priority than timeline
+      input_data: {
+        source: 'head_detective',
+        created_by: 'agent-head-detective-v2',
+      },
+    })
+    .select('id')
+    .single();
+  
+  if (createError) {
+    throw new Error(`Failed to create metadata task: ${createError.message}`);
+  }
+  
+  console.log(`✅ Created metadata task: ${newTask.id}`);
+  
+  return { taskId: newTask.id, created: true };
+}
+
 // ============================================
 // Task Polling & Completion
 // ============================================
@@ -273,7 +316,12 @@ async function gatherEvidenceAndUpdateStage(
   supabase: any,
   processId: string,
   processKey: string,
-  previousStage: string
+  previousStage: string,
+  souDocumentId: string,
+  timelineTaskId: string | null,
+  metadataTaskId: string | null,
+  timelineCreated: boolean,
+  metadataCreated: boolean
 ): Promise<ProcessResult> {
   console.log(`📊 Gathering evidence for process ${processKey}...`);
   
@@ -337,6 +385,12 @@ async function gatherEvidenceAndUpdateStage(
     }
   }
   
+  // Count extracted entities from the SOU document
+  const { count: entityCount } = await supabase
+    .from('entities')
+    .select('*', { count: 'exact', head: true })
+    .eq('source_document_id', souDocumentId);
+  
   // Compute new stage using state machine
   const stageResult = computeProcessStage(evidence);
   
@@ -369,9 +423,14 @@ async function gatherEvidenceAndUpdateStage(
       action: 'stage_updated',
       previous_stage: previousStage,
       new_stage: stageResult.stage,
+      timeline_task_id: timelineTaskId,
+      timeline_task_created: timelineCreated,
+      metadata_task_id: metadataTaskId,
+      metadata_task_created: metadataCreated,
       timeline_event_id: souPublishedEventId,
       proof_page: souPublishedPage,
       sou_published_event_found: evidence.hasSouPublishedEvent,
+      entities_extracted: entityCount || 0,
     };
   } else {
     console.log(`⏭️  No stage change needed for ${processKey}`);
@@ -382,9 +441,14 @@ async function gatherEvidenceAndUpdateStage(
       action: 'skipped',
       previous_stage: previousStage,
       new_stage: null,
+      timeline_task_id: timelineTaskId,
+      timeline_task_created: timelineCreated,
+      metadata_task_id: metadataTaskId,
+      metadata_task_created: metadataCreated,
       timeline_event_id: souPublishedEventId,
       proof_page: souPublishedPage,
       sou_published_event_found: evidence.hasSouPublishedEvent,
+      entities_extracted: entityCount || 0,
       reason: 'Stage computation resulted in same stage',
     };
   }
@@ -403,57 +467,88 @@ async function processCandidate(
   console.log(`   SOU document: ${candidate.sou_doc_number}`);
   
   try {
-    // Step 1: Get or create timeline task (idempotency check)
-    const { taskId, created } = await getOrCreateTimelineTask(
+    // Step 1: Get or create both timeline and metadata tasks (idempotency checks)
+    const { taskId: timelineTaskId, created: timelineCreated } = await getOrCreateTimelineTask(
       supabase,
       candidate.id,
       candidate.sou_document_id
     );
     
-    // Step 2: If we created a new task, trigger the task queue to process it
-    if (created) {
-      console.log('🚀 Triggering timeline agent via task queue...');
+    const { taskId: metadataTaskId, created: metadataCreated } = await getOrCreateMetadataTask(
+      supabase,
+      candidate.id,
+      candidate.sou_document_id
+    );
+    
+    // Step 2: If we created new tasks, trigger the task queue to process them
+    if (timelineCreated || metadataCreated) {
+      console.log('🚀 Triggering task queue for new tasks...');
       
-      // Invoke the task queue processor for this specific task
+      // Invoke the task queue processor
       const { error: queueError } = await supabase.functions.invoke(
         'process-task-queue',
         {
           body: {
-            limit: 1,
-            task_type: 'timeline_extraction',
+            limit: 10, // Process multiple tasks in batch
           },
         }
       );
       
       if (queueError) {
         console.error('Warning: Failed to trigger task queue:', queueError);
-        // Don't throw - task is still pending and can be processed later
+        // Don't throw - tasks are still pending and can be processed later
       }
     }
     
-    // Step 3: Wait for task completion
-    const taskResult = await waitForTaskCompletion(supabase, taskId);
+    // Step 3: Wait for both tasks to complete
+    console.log('⏳ Waiting for both Timeline and Metadata agents...');
     
-    if (taskResult.status === 'failed') {
+    const [timelineResult, metadataResult] = await Promise.all([
+      waitForTaskCompletion(supabase, timelineTaskId),
+      waitForTaskCompletion(supabase, metadataTaskId),
+    ]);
+    
+    // Check for failures
+    const failures = [];
+    if (timelineResult.status === 'failed') {
+      failures.push(`Timeline: ${timelineResult.error_message}`);
+    }
+    if (metadataResult.status === 'failed') {
+      failures.push(`Metadata: ${metadataResult.error_message}`);
+    }
+    
+    if (failures.length > 0) {
       return {
         process_id: candidate.id,
         process_key: candidate.process_key,
         action: 'skipped',
         previous_stage: candidate.current_stage,
         new_stage: null,
+        timeline_task_id: timelineTaskId,
+        timeline_task_created: timelineCreated,
+        metadata_task_id: metadataTaskId,
+        metadata_task_created: metadataCreated,
         timeline_event_id: null,
         proof_page: null,
         sou_published_event_found: false,
-        reason: `Timeline extraction failed: ${taskResult.error_message}`,
+        entities_extracted: 0,
+        reason: `Agent failures: ${failures.join('; ')}`,
       };
     }
+    
+    console.log('✅ Both agents completed successfully');
     
     // Step 4: Gather evidence and update stage
     return await gatherEvidenceAndUpdateStage(
       supabase,
       candidate.id,
       candidate.process_key,
-      candidate.current_stage
+      candidate.current_stage,
+      candidate.sou_document_id,
+      timelineTaskId,
+      metadataTaskId,
+      timelineCreated,
+      metadataCreated
     );
     
   } catch (error) {
@@ -465,9 +560,14 @@ async function processCandidate(
       action: 'skipped',
       previous_stage: candidate.current_stage,
       new_stage: null,
+      timeline_task_id: null,
+      timeline_task_created: false,
+      metadata_task_id: null,
+      metadata_task_created: false,
       timeline_event_id: null,
       proof_page: null,
       sou_published_event_found: false,
+      entities_extracted: 0,
       reason: error instanceof Error ? error.message : String(error),
     };
   }
@@ -520,14 +620,19 @@ Deno.serve(async (req) => {
       console.log(`ℹ️  ${message}`);
       
       const output_data = {
-        version: '1.0.0',
+        version: '2.0.0',
         mode,
+        agents: ['timeline-agent', 'metadata-agent'],
         summary: {
-          processes_with_sou: 0,
+          processes_analyzed: 0,
           timeline_tasks_created: 0,
           timeline_tasks_reused: 0,
-          published_stages_updated: 0,
-          skipped_no_action: 0,
+          metadata_tasks_created: 0,
+          metadata_tasks_reused: 0,
+          stages_updated: 0,
+          published_stages: 0,
+          total_entities_extracted: 0,
+          skipped: 0,
         },
         details: [],
       };
@@ -561,27 +666,23 @@ Deno.serve(async (req) => {
     
     // Compute summary statistics
     const summary = {
-      processes_with_sou: candidates.length,
-      timeline_tasks_created: results.filter(r => 
-        r.action === 'timeline_created'
-      ).length,
-      timeline_tasks_reused: results.filter(r => 
-        r.action === 'timeline_reused'
-      ).length,
-      published_stages_updated: results.filter(r => 
-        r.action === 'stage_updated' && r.new_stage === 'published'
-      ).length,
-      skipped_no_action: results.filter(r => 
-        r.action === 'skipped'
-      ).length,
+      processes_analyzed: candidates.length,
+      timeline_tasks_created: results.filter(r => r.timeline_task_created).length,
+      timeline_tasks_reused: results.filter(r => r.timeline_task_id && !r.timeline_task_created).length,
+      metadata_tasks_created: results.filter(r => r.metadata_task_created).length,
+      metadata_tasks_reused: results.filter(r => r.metadata_task_id && !r.metadata_task_created).length,
+      stages_updated: results.filter(r => r.action === 'stage_updated').length,
+      published_stages: results.filter(r => r.new_stage === 'published').length,
+      total_entities_extracted: results.reduce((sum, r) => sum + r.entities_extracted, 0),
+      skipped: results.filter(r => r.action === 'skipped').length,
     };
     
     const processingTime = Date.now() - startTime;
     
     const output_data = {
-      version: '1.0.0',
+      version: '2.0.0',
       mode,
-      model: 'state-machine-only',
+      agents: ['timeline-agent', 'metadata-agent'],
       processing_time_ms: processingTime,
       summary,
       details: results,
@@ -599,10 +700,13 @@ Deno.serve(async (req) => {
         .eq('id', task_id);
     }
     
-    console.log('\n✅ Head Detective completed');
-    console.log(`   Processed: ${candidates.length} candidates`);
-    console.log(`   Updated: ${summary.published_stages_updated} to published`);
-    console.log(`   Skipped: ${summary.skipped_no_action}`);
+    console.log('\n✅ Head Detective v2 completed');
+    console.log(`   Analyzed: ${summary.processes_analyzed} processes`);
+    console.log(`   Timeline tasks: ${summary.timeline_tasks_created} created, ${summary.timeline_tasks_reused} reused`);
+    console.log(`   Metadata tasks: ${summary.metadata_tasks_created} created, ${summary.metadata_tasks_reused} reused`);
+    console.log(`   Stages updated: ${summary.stages_updated} (${summary.published_stages} to published)`);
+    console.log(`   Entities extracted: ${summary.total_entities_extracted}`);
+    console.log(`   Skipped: ${summary.skipped}`);
     console.log(`   Time: ${processingTime}ms`);
     
     return createSuccessResponse({
