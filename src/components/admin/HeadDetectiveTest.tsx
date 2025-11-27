@@ -21,19 +21,33 @@ interface ProcessResult {
   action: string;
   previous_stage: string;
   new_stage: string | null;
+  timeline_task_id: string | null;
+  timeline_task_created: boolean;
+  metadata_task_id: string | null;
+  metadata_task_created: boolean;
   sou_published_event_found: boolean;
+  entities_extracted: number;
   reason?: string;
 }
 
 interface TestResult {
   success: boolean;
   mode: string;
+  version?: string;
+  agents?: string[];
   summary: {
-    processes_with_sou: number;
+    processes_analyzed?: number;
+    processes_with_sou?: number;
     timeline_tasks_created: number;
     timeline_tasks_reused: number;
-    published_stages_updated: number;
-    skipped_no_action: number;
+    metadata_tasks_created?: number;
+    metadata_tasks_reused?: number;
+    stages_updated?: number;
+    published_stages?: number;
+    published_stages_updated?: number;
+    total_entities_extracted?: number;
+    skipped?: number;
+    skipped_no_action?: number;
   };
   details: ProcessResult[];
 }
@@ -50,7 +64,7 @@ export function HeadDetectiveTest() {
   const loadCandidates = async () => {
     setLoadingCandidates(true);
     try {
-      // Find processes with SOU documents but no sou_published events
+      // Find ALL processes with SOU documents (v2 orchestrates both agents)
       const { data: souDocs, error: docError } = await supabase
         .from('documents')
         .select(`
@@ -67,11 +81,11 @@ export function HeadDetectiveTest() {
           )
         `)
         .eq('doc_type', 'sou')
-        .not('raw_content', 'is', null);
+        .not('raw_content', 'is', null)
+        .limit(10); // Limit to first 10 for testing
 
       if (docError) throw docError;
 
-      // Filter out processes that already have sou_published events
       const candidateList: Candidate[] = [];
       
       if (souDocs) {
@@ -79,28 +93,19 @@ export function HeadDetectiveTest() {
           const processData = doc.process_documents?.[0]?.processes;
           if (!processData) continue;
 
-          const { data: existingEvents } = await supabase
-            .from('timeline_events')
-            .select('id')
-            .eq('process_id', processData.id)
-            .eq('event_type', 'sou_published')
-            .limit(1);
-
-          if (!existingEvents || existingEvents.length === 0) {
-            candidateList.push({
-              id: processData.id,
-              process_key: processData.process_key,
-              title: processData.title,
-              current_stage: processData.current_stage,
-            });
-          }
+          candidateList.push({
+            id: processData.id,
+            process_key: processData.process_key,
+            title: processData.title,
+            current_stage: processData.current_stage,
+          });
         }
       }
 
       setCandidates(candidateList);
       toast({
         title: 'Candidates Loaded',
-        description: `Found ${candidateList.length} processes needing timeline extraction`,
+        description: `Found ${candidateList.length} processes with SOU documents (limited to 10 for testing)`,
       });
     } catch (error) {
       console.error('Error loading candidates:', error);
@@ -133,10 +138,14 @@ export function HeadDetectiveTest() {
 
       setResult(data as TestResult);
 
+      const processedCount = data.summary.processes_analyzed || data.summary.processes_with_sou || 0;
+      const stagesUpdated = data.summary.stages_updated || data.summary.published_stages_updated || 0;
+      const entitiesExtracted = data.summary.total_entities_extracted || 0;
+
       toast({
         title: data.success ? 'Success' : 'Failed',
         description: data.success
-          ? `Processed ${data.summary.processes_with_sou} processes, updated ${data.summary.published_stages_updated} stages`
+          ? `Processed ${processedCount} processes, updated ${stagesUpdated} stages, extracted ${entitiesExtracted} entities`
           : 'Head Detective execution failed',
         variant: data.success ? 'default' : 'destructive',
       });
@@ -157,11 +166,11 @@ export function HeadDetectiveTest() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <span className="text-2xl">🕵️</span>
-          Head Detective Agent v1 (Timeline-Only)
+          Head Detective Agent v2 (Multi-Agent)
         </CardTitle>
         <CardDescription>
-          Orchestrates Timeline Agent to extract publication events and update process stages.
-          V1 scope: Timeline extraction only (no metadata or entities).
+          Orchestrates Timeline and Metadata agents to extract events, entities, and update process stages.
+          V2 scope: Timeline + Metadata extraction with parallel agent coordination.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -182,7 +191,7 @@ export function HeadDetectiveTest() {
           </Button>
           {candidates.length > 0 && (
             <p className="text-sm text-muted-foreground mt-2">
-              Found {candidates.length} process{candidates.length !== 1 ? 'es' : ''} needing timeline extraction
+              Found {candidates.length} process{candidates.length !== 1 ? 'es' : ''} ready for multi-agent analysis
             </p>
           )}
         </div>
@@ -265,26 +274,38 @@ export function HeadDetectiveTest() {
             <h4 className="font-medium">Results:</h4>
             
             {/* Summary */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
               <div className="text-center p-2 border rounded-md">
-                <div className="text-2xl font-bold text-primary">{result.summary.processes_with_sou}</div>
+                <div className="text-2xl font-bold text-primary">
+                  {result.summary.processes_analyzed || result.summary.processes_with_sou || 0}
+                </div>
                 <div className="text-xs text-muted-foreground">Processes</div>
               </div>
               <div className="text-center p-2 border rounded-md">
-                <div className="text-2xl font-bold text-green-600">{result.summary.published_stages_updated}</div>
-                <div className="text-xs text-muted-foreground">Published</div>
+                <div className="text-2xl font-bold text-green-600">
+                  {result.summary.stages_updated || result.summary.published_stages_updated || 0}
+                </div>
+                <div className="text-xs text-muted-foreground">Updated</div>
               </div>
               <div className="text-center p-2 border rounded-md">
                 <div className="text-2xl font-bold text-blue-600">{result.summary.timeline_tasks_created}</div>
-                <div className="text-xs text-muted-foreground">Created</div>
+                <div className="text-xs text-muted-foreground">Timeline↑</div>
               </div>
               <div className="text-center p-2 border rounded-md">
                 <div className="text-2xl font-bold text-purple-600">{result.summary.timeline_tasks_reused}</div>
-                <div className="text-xs text-muted-foreground">Reused</div>
+                <div className="text-xs text-muted-foreground">Timeline♻</div>
               </div>
               <div className="text-center p-2 border rounded-md">
-                <div className="text-2xl font-bold text-gray-600">{result.summary.skipped_no_action}</div>
-                <div className="text-xs text-muted-foreground">Skipped</div>
+                <div className="text-2xl font-bold text-orange-600">{result.summary.metadata_tasks_created || 0}</div>
+                <div className="text-xs text-muted-foreground">Metadata↑</div>
+              </div>
+              <div className="text-center p-2 border rounded-md">
+                <div className="text-2xl font-bold text-pink-600">{result.summary.metadata_tasks_reused || 0}</div>
+                <div className="text-xs text-muted-foreground">Metadata♻</div>
+              </div>
+              <div className="text-center p-2 border rounded-md">
+                <div className="text-2xl font-bold text-cyan-600">{result.summary.total_entities_extracted || 0}</div>
+                <div className="text-xs text-muted-foreground">Entities</div>
               </div>
             </div>
 
@@ -315,8 +336,13 @@ export function HeadDetectiveTest() {
                           {detail.reason && (
                             <p className="text-xs text-muted-foreground">{detail.reason}</p>
                           )}
-                          <div className="text-xs space-x-2">
-                            <span>Event found: {detail.sou_published_event_found ? '✅' : '❌'}</span>
+                          <div className="text-xs flex gap-3 flex-wrap">
+                            <span>Timeline: {detail.timeline_task_created ? '✅ Created' : detail.timeline_task_id ? '♻️ Reused' : '❌'}</span>
+                            <span>Metadata: {detail.metadata_task_created ? '✅ Created' : detail.metadata_task_id ? '♻️ Reused' : '❌'}</span>
+                            <span>Event: {detail.sou_published_event_found ? '✅' : '❌'}</span>
+                            {detail.entities_extracted > 0 && (
+                              <span>Entities: {detail.entities_extracted}</span>
+                            )}
                           </div>
                         </div>
                       </AlertDescription>
