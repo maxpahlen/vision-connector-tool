@@ -354,6 +354,24 @@ Task: Extract lead investigator (actual name only, not role title) and committee
           continue;
         }
 
+        // Reject ministry/department names (ending with "departementet")
+        if (name.toLowerCase().endsWith('departementet')) {
+          console.warn('[Metadata Agent v1] Rejecting person entity (ministry name detected)', { 
+            document_id, 
+            rejected_name: name 
+          });
+          continue;
+        }
+
+        // Reject minister titles (ending with "minister" or "ministern")
+        if (name.toLowerCase().endsWith('minister') || name.toLowerCase().endsWith('ministern')) {
+          console.warn('[Metadata Agent v1] Rejecting person entity (minister title detected)', { 
+            document_id, 
+            rejected_name: name 
+          });
+          continue;
+        }
+
         // Reject placeholder names (stoplist - case insensitive)
         const placeholderStoplist = [
           'not specified',
@@ -363,7 +381,12 @@ Task: Extract lead investigator (actual name only, not role title) and committee
           'särskild utredare',
           'utredaren',
           'samordnaren',
-          'ordföranden'
+          'ordföranden',
+          'socialtjänstministern',
+          'klimatministern',
+          'näringsministern',
+          'utbildningsministern',
+          'justitieministern'
         ];
         
         const lowerName = name.toLowerCase();
@@ -400,7 +423,9 @@ Task: Extract lead investigator (actual name only, not role title) and committee
           'ordföranden',
           'utredaren',
           'särskilde utredaren',
-          'vice ordföranden'
+          'vice ordföranden',
+          'sekreteraren',
+          'kommittén'
         ];
         
         if (roleStoplist.some(role => lowerName === role || lowerName.startsWith(role + ' ') || lowerName.endsWith(' ' + role))) {
