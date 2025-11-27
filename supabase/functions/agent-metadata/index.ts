@@ -21,9 +21,9 @@ interface MetadataAgentRequest {
 }
 
 interface EntityReport {
-  entity_type: 'person' | 'ministry' | 'committee';
+  entity_type: 'person' | 'committee';
   name: string;
-  role: 'utredare' | 'särskild_utredare' | 'ministry_responsible' | 'committee';
+  role: 'utredare' | 'särskild_utredare' | 'committee';
   source_page: number;
   source_excerpt: string;
 }
@@ -39,7 +39,6 @@ interface MetadataAgentOutput {
   relations_created: number;
   entity_breakdown: {
     person: number;
-    ministry: number;
     committee: number;
   };
   analyzed_sections: string[];
@@ -54,7 +53,6 @@ function mapRoleToRelationType(role: string): string {
   const mapping: Record<string, string> = {
     'utredare': 'led_by',
     'särskild_utredare': 'led_by',
-    'ministry_responsible': 'commissioned_by',
     'committee': 'conducted_by'
   };
   return mapping[role] || 'related_to';
@@ -135,23 +133,23 @@ serve(async (req) => {
       type: "function" as const,
       function: {
         name: "report_metadata_entity",
-        description: "Report a single entity (person, ministry, committee) found in the SOU with forensic citation. Call this once for each entity you find with clear evidence.",
+        description: "Report a single entity (person or committee) found in the document with forensic citation. Call this once for each entity you find with clear evidence.",
         parameters: {
           type: "object",
           properties: {
             entity_type: {
               type: "string",
-              enum: ["person", "ministry", "committee"],
+              enum: ["person", "committee"],
               description: "Type of entity being reported"
             },
             name: {
               type: "string",
-              description: "Entity name exactly as written in document. Do NOT normalize or standardize."
+              description: "Entity name exactly as written in document. For persons: MUST be actual first + surname (e.g., 'Peter Norman'), NOT role titles. Do NOT normalize or standardize."
             },
             role: {
               type: "string",
-              enum: ["utredare", "särskild_utredare", "ministry_responsible", "committee"],
-              description: "Specific role: 'utredare' or 'särskild_utredare' for lead investigators, 'ministry_responsible' for the commissioning ministry, 'committee' for committee name"
+              enum: ["utredare", "särskild_utredare", "committee"],
+              description: "Specific role: 'utredare' or 'särskild_utredare' for lead investigators, 'committee' for committee name"
             },
             source_page: {
               type: "number",
@@ -169,38 +167,35 @@ serve(async (req) => {
     };
 
     // System prompt emphasizing v1 scope and citation-first principle
-    const systemPrompt = `You are a Metadata Extraction Agent analyzing Swedish government reports (SOUs).
+    const systemPrompt = `You are a Metadata Extraction Agent analyzing Swedish government reports (SOUs and directives).
 
 MISSION:
-Extract people, ministries, and committee names mentioned in the SOU with forensic-grade citations.
+Extract lead investigators and committee names mentioned in the document with forensic-grade citations.
 
 CITATION POLICY (NON-NEGOTIABLE):
 - Only extract entities if you can cite BOTH:
   1. Specific page number in the PDF (estimate from text position if needed)
   2. Direct quote (50-200 chars) proving the entity's role
 - If you cannot find a clear citation → do not report the entity
-- Never invent or infer names, ministries, or roles
+- Never invent or infer names or roles
 
 SCOPE (v1 - STRICTLY LIMITED):
 Extract ONLY these entity types:
 
 1. **Lead investigator** (utredare / särskild utredare)
    - Look for phrases like: "Som särskild utredare förordnades...", "Utredare:", "Särskild utredare:"
-   - Extract name exactly as written (e.g., "Anna Svensson", "Lars Andersson")
+   - CRITICAL: Extract ONLY actual NAMES containing first name + surname (e.g., "Peter Norman", "Anna Lindh")
+   - DO NOT extract role titles alone (e.g., "Särskild utredare", "Samordnaren", "Ordföranden")
+   - If only a role title appears WITHOUT an actual name → skip it
    - Role: Use 'särskild_utredare' if title mentions "särskild", otherwise 'utredare'
 
-2. **Responsible ministry** (departement)
-   - Look for phrases like: "...har tillkallat en utredning...", "beslutade [ministry] att tillkalla..."
-   - Common ministries: Justitiedepartementet, Näringsdepartementet, Finansdepartementet, etc.
-   - Role: Always 'ministry_responsible'
-   - Extract Swedish name as written in document
-
-3. **Committee name** (optional but include if trivial)
+2. **Committee name** (optional but include if clearly stated)
    - Look for: "Utredningen om...", "Kommittén för...", committee identifiers like "(Fi 2024:03)"
    - Role: 'committee'
    - Include full name as stated
 
-DO NOT EXTRACT (deferred to future phases):
+DO NOT EXTRACT (explicitly out of scope):
+- Ministry (already available in documents.ministry from scraper - more accurate than AI extraction)
 - Secretariat members
 - Experts or expert groups
 - Reference groups (remissinstanser)
@@ -208,27 +203,37 @@ DO NOT EXTRACT (deferred to future phases):
 - Tilläggsdirektiv
 - Anyone except the lead investigator
 
+PERSON NAME VALIDATION RULES:
+- MUST contain at least first name + surname (requires at least one space)
+- MUST NOT be just a role title like:
+  * "Särskild utredare"
+  * "Samordnaren"
+  * "Ordföranden"
+  * "Utredaren"
+  * Any other generic role without an actual name
+- Valid examples: "Peter Norman", "Anna Svensson", "Lars-Erik Andersson"
+- Invalid examples: "Särskild utredare", "Utredaren", "Samordnaren"
+
 EXTRACTION RULES:
 1. Extract names EXACTLY as written (no normalization)
 2. If multiple name variants exist, extract each with separate citations
 3. One entity = one tool call with citation
 4. If uncertain about a name or role → skip it
-5. Ministry names: prefer Swedish form found in document
-6. Call the tool multiple times (once per entity found)
+5. Call the tool multiple times (once per entity found)
 
 OUTPUT TRANSPARENCY:
 After your tool calls, briefly note:
 - Which sections you analyzed (e.g., "Analyzed: Uppdraget, Kommittén, pages 1-8")
 - Which sections you skipped (e.g., "Skipped: Bilagor, pages 100+")
-- Any uncertainties (e.g., "Ministry name unclear on page 5")`;
+- Any uncertainties (e.g., "Name unclear on page 5")`;
 
-    const userPrompt = `Analyze this content from SOU document "${document.title}" (${document.doc_number}):
+    const userPrompt = `Analyze this content from document "${document.title}" (${document.doc_number}):
 
 --- CONTENT START ---
 ${focusContent}
 --- CONTENT END ---
 
-Task: Extract lead investigator, responsible ministry, and committee name (if clearly stated) using the report_metadata_entity tool. Call the tool once for each entity you find with valid citation. Remember: citation-first principle - no citation = no extraction.`;
+Task: Extract lead investigator (actual name only, not role title) and committee name (if clearly stated) using the report_metadata_entity tool. Call the tool once for each entity you find with valid citation. Remember: citation-first principle - no citation = no extraction. Person names MUST be actual names (first + surname), NOT role titles.`;
 
     // Call OpenAI with tool schema
     console.log('[Metadata Agent v1] Calling OpenAI', { document_id });
@@ -261,7 +266,7 @@ Task: Extract lead investigator, responsible ministry, and committee name (if cl
         entities_created: 0,
         entities_reused: 0,
         relations_created: 0,
-        entity_breakdown: { person: 0, ministry: 0, committee: 0 },
+        entity_breakdown: { person: 0, committee: 0 },
         analyzed_sections: ["Front matter", "First 15000 characters"],
         skipped_sections: ["Annexes", "Remaining document"],
         uncertainties: message.content ? [message.content] : []
@@ -315,7 +320,7 @@ Task: Extract lead investigator, responsible ministry, and committee name (if cl
     let entitiesCreated = 0;
     let entitiesReused = 0;
     let relationsCreated = 0;
-    const entityBreakdown = { person: 0, ministry: 0, committee: 0 };
+    const entityBreakdown = { person: 0, committee: 0 };
 
     for (const entity of extractedEntities) {
       // Validate entity data
@@ -325,6 +330,39 @@ Task: Extract lead investigator, responsible ministry, and committee name (if cl
           entity: entity.name 
         });
         continue;
+      }
+
+      // Additional validation for person entities: reject role titles
+      if (entity.entity_type === 'person') {
+        const name = entity.name.trim();
+        
+        // Must contain at least one space (first + surname)
+        if (!name.includes(' ')) {
+          console.warn('[Metadata Agent v1] Rejecting person entity (no space in name)', { 
+            document_id, 
+            rejected_name: name 
+          });
+          continue;
+        }
+
+        // Reject common role titles
+        const roleStoplist = [
+          'särskild utredare',
+          'samordnaren',
+          'ordföranden',
+          'utredaren',
+          'särskilde utredaren',
+          'vice ordföranden'
+        ];
+        
+        const lowerName = name.toLowerCase();
+        if (roleStoplist.some(role => lowerName === role || lowerName.startsWith(role + ' ') || lowerName.endsWith(' ' + role))) {
+          console.warn('[Metadata Agent v1] Rejecting person entity (role title detected)', { 
+            document_id, 
+            rejected_name: name 
+          });
+          continue;
+        }
       }
 
       // Truncate excerpt if too long
@@ -395,9 +433,30 @@ Task: Extract lead investigator, responsible ministry, and committee name (if cl
         });
       }
 
-      // Create relation (always, even if entity was reused)
+      // Check if relation already exists (deduplication)
       const relationType = mapRoleToRelationType(entity.role);
       
+      const { data: existingRelation } = await supabase
+        .from('relations')
+        .select('id')
+        .eq('source_id', entityId)
+        .eq('target_id', document_id)
+        .eq('relation_type', relationType)
+        .maybeSingle();
+
+      if (existingRelation) {
+        console.log('[Metadata Agent v1] Relation already exists, skipping', { 
+          document_id,
+          entity_id: entityId,
+          relation_id: existingRelation.id,
+          relation_type: relationType
+        });
+        // Don't increment relationsCreated, but do count entity type
+        entityBreakdown[entity.entity_type]++;
+        continue;
+      }
+
+      // Create relation (only if it doesn't exist)
       const { error: relationError } = await supabase
         .from('relations')
         .insert({

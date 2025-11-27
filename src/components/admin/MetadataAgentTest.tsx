@@ -41,6 +41,7 @@ export function MetadataAgentTest() {
   const { toast } = useToast();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [selectedDocumentId, setSelectedDocumentId] = useState<string>("");
+  const [docTypeFilter, setDocTypeFilter] = useState<string>("all");
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<MetadataTestResult | null>(null);
@@ -48,20 +49,32 @@ export function MetadataAgentTest() {
   const loadDocuments = async () => {
     setLoadingDocuments(true);
     try {
-      // Find SOU documents with raw_content
-      const { data: docs, error } = await supabase
+      // Build query based on filter
+      let query = supabase
         .from("documents")
         .select("id, doc_number, title, doc_type")
-        .eq("doc_type", "sou")
         .not("raw_content", "is", null)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      // Apply doc_type filter
+      if (docTypeFilter === "sou") {
+        query = query.eq("doc_type", "sou");
+      } else if (docTypeFilter === "directive") {
+        query = query.eq("doc_type", "dir");
+      }
+      // "all" means no filter
+
+      const { data: docs, error } = await query;
 
       if (error) throw error;
 
       setDocuments(docs || []);
+      
+      const filterLabel = docTypeFilter === "all" ? "all" : docTypeFilter === "sou" ? "SOU" : "directive";
       toast({
         title: "Documents Loaded",
-        description: `Found ${docs?.length || 0} SOU documents with content`,
+        description: `Found ${docs?.length || 0} ${filterLabel} documents with content`,
       });
     } catch (error) {
       console.error("Error loading documents:", error);
@@ -140,10 +153,25 @@ export function MetadataAgentTest() {
             Metadata Agent v1 Test
           </CardTitle>
           <CardDescription>
-            Extract people, ministries, and committee names from SOU documents with forensic citations
+            Extract lead investigators and committee names from documents with forensic citations
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Document Type Filter */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Document Type:</label>
+            <Select value={docTypeFilter} onValueChange={setDocTypeFilter}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Documents</SelectItem>
+                <SelectItem value="sou">SOUs Only</SelectItem>
+                <SelectItem value="directive">Directives Only</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Load Documents */}
           <div className="flex gap-2">
             <Button onClick={loadDocuments} disabled={loadingDocuments} variant="outline" className="gap-2">
@@ -183,8 +211,8 @@ export function MetadataAgentTest() {
           {/* Info Alert */}
           <Alert>
             <AlertDescription className="text-sm">
-              <strong>v1 Scope:</strong> Extracts only lead investigators, responsible ministries, and committee names.
-              Secretariat members, experts, and reference groups will be added in future phases.
+              <strong>v1 Scope:</strong> Extracts only lead investigators (actual names, not roles) and committee names.
+              Ministry data comes from scraper (already in documents.ministry). Secretariat members, experts, and reference groups will be added in future phases.
             </AlertDescription>
           </Alert>
         </CardContent>
@@ -227,7 +255,6 @@ export function MetadataAgentTest() {
                   <div className="text-sm font-medium">Entity Breakdown:</div>
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="default">People: {result.output_data.entity_breakdown.person}</Badge>
-                    <Badge variant="secondary">Ministries: {result.output_data.entity_breakdown.ministry}</Badge>
                     <Badge variant="outline">Committees: {result.output_data.entity_breakdown.committee}</Badge>
                   </div>
                 </div>
