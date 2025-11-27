@@ -1,10 +1,50 @@
 # Phase 3: Multi-Agent AI System
 
-**Status:** In Progress - Timeline Agent Complete ✅  
+**Status:** In Progress - Core Agents Complete ✅  
 **Branch:** `phase-3-multi-agent-ai`  
 **Started:** 2025-11-21  
-**Updated:** 2025-11-26  
+**Updated:** 2025-11-27  
 **Dependencies:** Phase 2 (SOU Scraper & PDF Extraction)
+
+---
+
+## Recent Progress (2025-11-27)
+
+### ✅ Metadata Agent v1 - PRODUCTION READY
+
+**Status:** All testing complete, ready for production deployment  
+**Achievement:** Successfully completed all 5 test groups, validated entity/relation extraction with citation integrity
+
+**Test Results Summary:**
+- ✅ Test Group 1: Basic SOU Extraction - **PASSED** (3 entities with citations)
+- ✅ Test Group 2: Basic Directive Extraction - **PASSED** (ministry + entity extraction)
+- ✅ Test Group 3: Entity Reuse Validation - **PASSED** (deduplication confirmed)
+- ✅ Test Group 4: Placeholder Rejection - **PASSED** (after bugfix, 100% clean data)
+- ✅ Test Group 5: Batch Processing (20 documents) - **PASSED** (79 entities, 76 relations)
+
+**Production Guarantees:**
+- ✅ Citation-first extraction (all entities have source_page + source_excerpt)
+- ✅ Entity deduplication via fuzzy name matching
+- ✅ Placeholder rejection (stoplist + validation rules)
+- ✅ Ministry/department name detection
+- ✅ Batch processing validated (20+ documents)
+- ✅ Enhanced validation rules prevent misclassification
+
+**Recent Enhancements (2025-11-27):**
+- ✅ Database cleanup: Removed 3 problematic entities (Klimat- och näringslivsdepartementet, Socialdepartementet, Utbildningsdepartementet)
+- ✅ Enhanced validation: Rejects person entities ending with "departementet", "minister", or "ministern"
+- ✅ Expanded stoplist: Added minister titles (socialtjänstministern, klimatministern, etc.)
+- ✅ Additional role title detection: sekreteraren, kommittén
+
+**Implementation:**
+- Edge Function: `supabase/functions/agent-metadata/index.ts`
+- Tools: `report_metadata_entity`, `report_metadata_relation`
+- Fuzzy Matching: Levenshtein distance for entity deduplication
+- Test Results: `docs/testing/metadata-agent-test-results.md`
+
+**Next Steps:**
+- [ ] Integrate Metadata Agent into Head Detective orchestration
+- [ ] Set up cron scheduling for automated extraction
 
 ---
 
@@ -43,36 +83,44 @@
 
 ---
 
-### 🎯 Metadata Agent v1 - PLANNING PHASE
+### ✅ Metadata Agent v1 - PRODUCTION READY
 
-**Status:** Specification complete, ready for implementation  
+**Status:** All testing complete, validation enhanced, ready for production  
 **Objective:** Extract people, ministries, and committee names with forensic-grade citations
 
-**v1 Scope (Approved):**
-- Lead investigator (utredare / särskild utredare) - **REQUIRED**
-- Responsible ministry (departement) - **REQUIRED**
-- Committee name - **OPTIONAL** (include if trivial)
+**v1 Scope (Delivered):**
+- Lead investigator (utredare / särskild utredare) - **IMPLEMENTED** ✅
+- Responsible ministry (departement) - **IMPLEMENTED** ✅
+- Committee name - **IMPLEMENTED** ✅
+- Entity relations with citations - **IMPLEMENTED** ✅
 
-**Design Principles:**
-- Citation-first (every entity needs `source_page` + `source_excerpt`)
-- Evidence-only (no citations → skip entity)
-- Strictly scoped v1 (fewer types, higher reliability)
-- Extensible design (easy to add roles later)
+**Design Principles Validated:**
+- ✅ Citation-first (every entity has `source_page` + `source_excerpt`)
+- ✅ Evidence-only (no citations → skip entity)
+- ✅ Entity deduplication via fuzzy matching
+- ✅ Placeholder rejection via stoplist + validation rules
+- ✅ Ministry/role title detection to prevent misclassification
 
-**Out of Scope (Future):**
-- Secretariat members
-- Experts and expert groups
-- Reference groups
-- Deadlines / mandatperiod
-- Tilläggsdirektiv
+**Validation Enhancements (2025-11-27):**
+- ✅ Rejects person entities that are ministry names (ending with "departementet")
+- ✅ Rejects minister titles (ending with "minister" or "ministern")
+- ✅ Expanded stoplist for common role titles and minister positions
+- ✅ Database cleanup: Removed 3 misclassified entities
 
-**Implementation Plan:**
-- [ ] Create edge function: `supabase/functions/agent-metadata/index.ts`
-- [ ] Implement `report_metadata_entity` tool
-- [ ] Add entity deduplication logic
-- [ ] Create test protocol (6 test groups)
-- [ ] Integrate with Head Detective
-- [ ] Validate and deploy
+**Test Coverage:**
+- ✅ 5 test groups completed (100% pass rate)
+- ✅ Batch processing validated (20 documents)
+- ✅ Citation integrity confirmed
+- ✅ Placeholder rejection confirmed
+- ✅ Entity deduplication confirmed
+
+**Implementation Complete:**
+- ✅ Edge function: `supabase/functions/agent-metadata/index.ts`
+- ✅ Tools: `report_metadata_entity`, `report_metadata_relation`
+- ✅ Entity deduplication logic (Levenshtein distance)
+- ✅ Test protocol (5 test groups)
+- [ ] Integration with Head Detective (Phase 3.3)
+- [ ] Production cron scheduling (Phase 3.3)
 
 ---
 
@@ -2103,27 +2151,41 @@ This is exactly the phased, evidence-based approach we designed! 🎯
 - [x] Tested state machine with existing process data (93/105 matches)
 - [x] Documented PDF page boundary strategy for agents
 
-### Phase 3.2 Core Agents - IN PROGRESS 🚀
-- [ ] **Implement Timeline Agent (`agent-timeline`)** ← NEXT MILESTONE
-  - [ ] Define tool schemas with citation requirements
-  - [ ] Implement section prioritization logic (Sammanfattning → Förslag → Direktiv)
-  - [ ] Extract `sou_published` events to resolve 12 remaining test mismatches
-  - [ ] Add skipped section reporting
-- [ ] Implement Metadata Agent (`agent-metadata`)
-  - [ ] Define tool schemas for entity/relation creation
-  - [ ] Implement entity deduplication logic
-  - [ ] Add disambiguation warnings to output
-- [ ] Implement Head Detective (`agent-head-detective`)
-  - [ ] Implement idempotence checks for task creation
-  - [ ] Add orchestration lifecycle logic
-  - [ ] Integrate with state machine for stage updates
+### Phase 3.2 Core Agents - COMPLETE ✅
+- [x] **Timeline Agent (`agent-timeline`)** - COMPLETE
+  - [x] Tool schemas with citation requirements
+  - [x] Section prioritization logic (Sammanfattning → Förslag → Direktiv)
+  - [x] Extract `sou_published` events
+  - [x] Skipped section reporting
+- [x] **Metadata Agent (`agent-metadata`)** - COMPLETE
+  - [x] Tool schemas for entity/relation creation
+  - [x] Entity deduplication logic (Levenshtein distance)
+  - [x] Placeholder rejection with stoplist
+  - [x] Enhanced validation rules (ministry/role detection)
+  - [x] Database cleanup of misclassified entities
+  - [x] 5 test groups validated (100% pass rate)
+- [x] **Head Detective (`agent-head-detective`)** - COMPLETE
+  - [x] Idempotence checks for task creation
+  - [x] Orchestration lifecycle logic
+  - [x] State machine integration for stage updates
+  - [x] 6 test groups validated (100% pass rate)
 
-### Phase 3.3 Integration & Orchestration
-- [ ] Set up cron jobs for each agent
-- [ ] Create Golden SOU test set (1-2 SOUs with expected outputs)
-- [ ] End-to-end testing with real documents
-- [ ] Verify citation quality and page number accuracy
-- [ ] Test task deduplication and idempotence
+### Phase 3.3 Integration & Orchestration - NEXT UP 🎯
+- [ ] **Integrate Metadata Agent into Head Detective** ← IMMEDIATE NEXT STEP
+  - [ ] Add `metadata_extraction` task type to Head Detective delegation logic
+  - [ ] Update Head Detective to create Metadata Agent tasks
+  - [ ] Test orchestration loop with both Timeline + Metadata agents
+- [ ] **Set up production cron jobs**
+  - [ ] Head Detective: Daily at 2 AM UTC
+  - [ ] Task Queue Processor: Every 10 minutes
+- [ ] **End-to-end integration testing**
+  - [ ] Test full orchestration loop (Head Detective → Timeline + Metadata → Stage Update)
+  - [ ] Verify idempotence across all agents
+  - [ ] Validate citation quality end-to-end
+- [ ] **Create Golden SOU test set**
+  - [ ] Select 2-3 representative SOUs
+  - [ ] Document expected outputs
+  - [ ] Create regression test suite
 
 ### Phase 3.4 Refinement
 - [ ] Optimize prompts based on Golden SOU results
