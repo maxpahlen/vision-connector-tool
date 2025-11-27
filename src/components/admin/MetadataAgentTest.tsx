@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Play, Search, Users } from "lucide-react";
+import { Loader2, Play, Search, Users, Zap, PlayCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface Document {
@@ -45,6 +45,25 @@ export function MetadataAgentTest() {
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<MetadataTestResult | null>(null);
+  const [unprocessedCount, setUnprocessedCount] = useState<number>(0);
+  const [processingBatch, setProcessingBatch] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ processed: number; total: number } | null>(null);
+
+  const loadUnprocessedCount = async () => {
+    try {
+      // Count documents with content but no entities
+      const { count, error } = await supabase
+        .from("documents")
+        .select("id", { count: "exact", head: true })
+        .not("raw_content", "is", null)
+        .filter("id", "not.in", `(SELECT DISTINCT source_document_id FROM entities WHERE source_document_id IS NOT NULL)`);
+
+      if (error) throw error;
+      setUnprocessedCount(count || 0);
+    } catch (error) {
+      console.error("Error counting unprocessed documents:", error);
+    }
+  };
 
   const loadDocuments = async () => {
     setLoadingDocuments(true);
@@ -76,6 +95,9 @@ export function MetadataAgentTest() {
         title: "Documents Loaded",
         description: `Found ${docs?.length || 0} ${filterLabel} documents with content`,
       });
+
+      // Also load unprocessed count
+      await loadUnprocessedCount();
     } catch (error) {
       console.error("Error loading documents:", error);
       toast({
@@ -85,6 +107,90 @@ export function MetadataAgentTest() {
       });
     } finally {
       setLoadingDocuments(false);
+    }
+  };
+
+  const processBatchDocuments = async (limit: number | null) => {
+    setProcessingBatch(true);
+    setBatchProgress(null);
+
+    try {
+      // Get unprocessed documents
+      const { data: unprocessedDocs, error: queryError } = await supabase
+        .from("documents")
+        .select("id, doc_number")
+        .not("raw_content", "is", null)
+        .filter("id", "not.in", `(SELECT DISTINCT source_document_id FROM entities WHERE source_document_id IS NOT NULL)`)
+        .order("created_at", { ascending: false })
+        .limit(limit || 1000);
+
+      if (queryError) throw queryError;
+
+      if (!unprocessedDocs || unprocessedDocs.length === 0) {
+        toast({
+          title: "No Documents to Process",
+          description: "All documents with content already have entities extracted",
+        });
+        return;
+      }
+
+      const total = unprocessedDocs.length;
+      setBatchProgress({ processed: 0, total });
+
+      toast({
+        title: "Batch Processing Started",
+        description: `Creating tasks for ${total} documents...`,
+      });
+
+      // Create tasks for each document
+      let tasksCreated = 0;
+      for (const doc of unprocessedDocs) {
+        // Get process_id if exists
+        const { data: processDoc } = await supabase
+          .from("process_documents")
+          .select("process_id")
+          .eq("document_id", doc.id)
+          .maybeSingle();
+
+        // Create task
+        const { error: taskError } = await supabase
+          .from("agent_tasks")
+          .insert({
+            task_type: "metadata_extraction",
+            agent_name: "agent-metadata",
+            status: "pending",
+            priority: 5,
+            document_id: doc.id,
+            process_id: processDoc?.process_id || null,
+            input_data: {
+              document_id: doc.id,
+              process_id: processDoc?.process_id || null,
+            },
+          });
+
+        if (!taskError) {
+          tasksCreated++;
+          setBatchProgress({ processed: tasksCreated, total });
+        }
+      }
+
+      toast({
+        title: "Batch Tasks Created",
+        description: `Created ${tasksCreated} metadata extraction tasks. Use Task Queue Monitor to process them.`,
+      });
+
+      // Refresh unprocessed count
+      await loadUnprocessedCount();
+    } catch (error) {
+      console.error("Error processing batch:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to process batch",
+        variant: "destructive",
+      });
+    } finally {
+      setProcessingBatch(false);
+      setBatchProgress(null);
     }
   };
 
@@ -179,7 +285,53 @@ export function MetadataAgentTest() {
               Load Documents
             </Button>
             {documents.length > 0 && <Badge variant="secondary">{documents.length} documents</Badge>}
+            {unprocessedCount > 0 && <Badge variant="outline">{unprocessedCount} unprocessed</Badge>}
           </div>
+
+          {/* Batch Processing */}
+          {unprocessedCount > 0 && (
+            <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
+              <div className="text-sm font-medium">Batch Processing</div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => processBatchDocuments(10)}
+                  disabled={processingBatch}
+                  variant="secondary"
+                  className="gap-2"
+                >
+                  {processingBatch ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <PlayCircle className="h-4 w-4" />
+                  )}
+                  Process 10 Documents
+                </Button>
+                <Button
+                  onClick={() => processBatchDocuments(null)}
+                  disabled={processingBatch}
+                  variant="default"
+                  className="gap-2"
+                >
+                  {processingBatch ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Zap className="h-4 w-4" />
+                  )}
+                  Process All ({unprocessedCount})
+                </Button>
+              </div>
+              {batchProgress && (
+                <div className="text-sm text-muted-foreground">
+                  Creating tasks: {batchProgress.processed} / {batchProgress.total}
+                </div>
+              )}
+              <Alert>
+                <AlertDescription className="text-xs">
+                  These buttons create tasks in the queue. Use the <strong>Task Queue Monitor</strong> below to process them with rate limiting.
+                </AlertDescription>
+              </Alert>
+            </div>
+          )}
 
           {/* Document Selection */}
           {documents.length > 0 && (
