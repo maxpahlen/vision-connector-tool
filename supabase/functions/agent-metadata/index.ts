@@ -332,10 +332,49 @@ Task: Extract lead investigator (actual name only, not role title) and committee
         continue;
       }
 
-      // Additional validation for person entities: reject role titles
+      // Additional validation for person entities: reject role titles and placeholders
       if (entity.entity_type === 'person') {
         const name = entity.name.trim();
         
+        // Reject empty/whitespace names
+        if (!name) {
+          console.warn('[Metadata Agent v1] Rejecting person entity (empty name)', { 
+            document_id, 
+            rejected_name: name 
+          });
+          continue;
+        }
+
+        // Reject names containing parentheses (placeholder indicators)
+        if (name.includes('(') || name.includes(')')) {
+          console.warn('[Metadata Agent v1] Rejecting person entity (contains parentheses/placeholder)', { 
+            document_id, 
+            rejected_name: name 
+          });
+          continue;
+        }
+
+        // Reject placeholder names (stoplist - case insensitive)
+        const placeholderStoplist = [
+          'not specified',
+          '(not specified)',
+          'okänd',
+          'ej angiven',
+          'särskild utredare',
+          'utredaren',
+          'samordnaren',
+          'ordföranden'
+        ];
+        
+        const lowerName = name.toLowerCase();
+        if (placeholderStoplist.includes(lowerName)) {
+          console.warn('[Metadata Agent v1] Rejecting person entity (placeholder/stoplist match)', { 
+            document_id, 
+            rejected_name: name 
+          });
+          continue;
+        }
+
         // Must contain at least one space (first + surname)
         if (!name.includes(' ')) {
           console.warn('[Metadata Agent v1] Rejecting person entity (no space in name)', { 
@@ -345,7 +384,16 @@ Task: Extract lead investigator (actual name only, not role title) and committee
           continue;
         }
 
-        // Reject common role titles
+        // Must contain at least one alphabetical character
+        if (!/[a-zA-ZåäöÅÄÖ]/.test(name)) {
+          console.warn('[Metadata Agent v1] Rejecting person entity (no alphabetical characters)', { 
+            document_id, 
+            rejected_name: name 
+          });
+          continue;
+        }
+
+        // Reject common role titles (extended stoplist)
         const roleStoplist = [
           'särskild utredare',
           'samordnaren',
@@ -355,7 +403,6 @@ Task: Extract lead investigator (actual name only, not role title) and committee
           'vice ordföranden'
         ];
         
-        const lowerName = name.toLowerCase();
         if (roleStoplist.some(role => lowerName === role || lowerName.startsWith(role + ' ') || lowerName.endsWith(' ' + role))) {
           console.warn('[Metadata Agent v1] Rejecting person entity (role title detected)', { 
             document_id, 
