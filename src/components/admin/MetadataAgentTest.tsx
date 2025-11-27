@@ -51,17 +51,30 @@ export function MetadataAgentTest() {
 
   const loadUnprocessedCount = async () => {
     try {
-      // Count documents with content but no entities
-      const { count, error } = await supabase
-        .from("documents")
-        .select("id", { count: "exact", head: true })
-        .not("raw_content", "is", null)
-        .filter("id", "not.in", `(SELECT DISTINCT source_document_id FROM entities WHERE source_document_id IS NOT NULL)`);
+      // Get all document IDs that have entities
+      const { data: processedDocs, error: entitiesError } = await supabase
+        .from("entities")
+        .select("source_document_id")
+        .not("source_document_id", "is", null);
 
-      if (error) throw error;
-      setUnprocessedCount(count || 0);
+      if (entitiesError) throw entitiesError;
+
+      const processedIds = new Set(processedDocs?.map(e => e.source_document_id) || []);
+
+      // Count documents with content
+      const { data: allDocs, error: docsError } = await supabase
+        .from("documents")
+        .select("id")
+        .not("raw_content", "is", null);
+
+      if (docsError) throw docsError;
+
+      // Count unprocessed
+      const unprocessed = allDocs?.filter(d => !processedIds.has(d.id)).length || 0;
+      setUnprocessedCount(unprocessed);
     } catch (error) {
       console.error("Error counting unprocessed documents:", error);
+      setUnprocessedCount(0);
     }
   };
 
@@ -115,16 +128,27 @@ export function MetadataAgentTest() {
     setBatchProgress(null);
 
     try {
-      // Get unprocessed documents
-      const { data: unprocessedDocs, error: queryError } = await supabase
+      // Get all document IDs that have entities
+      const { data: processedDocs, error: entitiesError } = await supabase
+        .from("entities")
+        .select("source_document_id")
+        .not("source_document_id", "is", null);
+
+      if (entitiesError) throw entitiesError;
+
+      const processedIds = new Set(processedDocs?.map(e => e.source_document_id) || []);
+
+      // Get all documents with content
+      const { data: allDocs, error: docsError } = await supabase
         .from("documents")
         .select("id, doc_number")
         .not("raw_content", "is", null)
-        .filter("id", "not.in", `(SELECT DISTINCT source_document_id FROM entities WHERE source_document_id IS NOT NULL)`)
-        .order("created_at", { ascending: false })
-        .limit(limit || 1000);
+        .order("created_at", { ascending: false });
 
-      if (queryError) throw queryError;
+      if (docsError) throw docsError;
+
+      // Filter to unprocessed only
+      const unprocessedDocs = allDocs?.filter(d => !processedIds.has(d.id)).slice(0, limit || undefined);
 
       if (!unprocessedDocs || unprocessedDocs.length === 0) {
         toast({
@@ -289,13 +313,13 @@ export function MetadataAgentTest() {
           </div>
 
           {/* Batch Processing */}
-          {unprocessedCount > 0 && (
+          {documents.length > 0 && (
             <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
               <div className="text-sm font-medium">Batch Processing</div>
               <div className="flex flex-wrap gap-2">
                 <Button
                   onClick={() => processBatchDocuments(10)}
-                  disabled={processingBatch}
+                  disabled={processingBatch || unprocessedCount === 0}
                   variant="secondary"
                   className="gap-2"
                 >
@@ -308,7 +332,7 @@ export function MetadataAgentTest() {
                 </Button>
                 <Button
                   onClick={() => processBatchDocuments(null)}
-                  disabled={processingBatch}
+                  disabled={processingBatch || unprocessedCount === 0}
                   variant="default"
                   className="gap-2"
                 >
