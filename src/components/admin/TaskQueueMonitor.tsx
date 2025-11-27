@@ -119,6 +119,87 @@ export function TaskQueueMonitor() {
               Process PDF Tasks (5)
             </Button>
           </div>
+
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium">Timeline Extraction Tasks</h3>
+            <div className="flex gap-2 text-sm">
+              <Badge variant="outline">
+                Pending: {getTaskTypeCount('timeline_extraction', 'pending')}
+              </Badge>
+              <Badge variant="secondary">
+                Processing: {getTaskTypeCount('timeline_extraction', 'processing')}
+              </Badge>
+              <Badge>Completed: {getTaskTypeCount('timeline_extraction', 'completed')}</Badge>
+              <Badge variant="destructive">
+                Failed: {getTaskTypeCount('timeline_extraction', 'failed')}
+              </Badge>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => handleProcessTasks('timeline_extraction', 5)}
+              disabled={
+                processTasksMutation.isPending ||
+                getTaskTypeCount('timeline_extraction', 'pending') === 0
+              }
+            >
+              <PlayCircle className="h-4 w-4 mr-2" />
+              Process Timeline Tasks (5)
+            </Button>
+          </div>
+
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium">Metadata Extraction Tasks</h3>
+            <div className="flex gap-2 text-sm">
+              <Badge variant="outline">
+                Pending: {getTaskTypeCount('metadata_extraction', 'pending')}
+              </Badge>
+              <Badge variant="secondary">
+                Processing: {getTaskTypeCount('metadata_extraction', 'processing')}
+              </Badge>
+              <Badge>Completed: {getTaskTypeCount('metadata_extraction', 'completed')}</Badge>
+              <Badge variant="destructive">
+                Failed: {getTaskTypeCount('metadata_extraction', 'failed')}
+              </Badge>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => handleProcessTasks('metadata_extraction', 10)}
+              disabled={
+                processTasksMutation.isPending ||
+                getTaskTypeCount('metadata_extraction', 'pending') === 0
+              }
+            >
+              <PlayCircle className="h-4 w-4 mr-2" />
+              Process Metadata Tasks (10)
+            </Button>
+          </div>
+
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium">Head Detective Tasks</h3>
+            <div className="flex gap-2 text-sm">
+              <Badge variant="outline">
+                Pending: {getTaskTypeCount('head_detective_analysis', 'pending')}
+              </Badge>
+              <Badge variant="secondary">
+                Processing: {getTaskTypeCount('head_detective_analysis', 'processing')}
+              </Badge>
+              <Badge>Completed: {getTaskTypeCount('head_detective_analysis', 'completed')}</Badge>
+              <Badge variant="destructive">
+                Failed: {getTaskTypeCount('head_detective_analysis', 'failed')}
+              </Badge>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => handleProcessTasks('head_detective_analysis', 10)}
+              disabled={
+                processTasksMutation.isPending ||
+                getTaskTypeCount('head_detective_analysis', 'pending') === 0
+              }
+            >
+              <PlayCircle className="h-4 w-4 mr-2" />
+              Process Detective Tasks (10)
+            </Button>
+          </div>
         </div>
 
         {/* Retry Failed Button */}
