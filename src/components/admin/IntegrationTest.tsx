@@ -115,6 +115,19 @@ export function IntegrationTest() {
           { name: 'No placeholder values', status: 'pending' },
         ],
       },
+      {
+        name: 'Golden Test Set Validation',
+        status: 'pending',
+        assertions: [
+          { name: 'Identify golden documents', status: 'pending' },
+          { name: 'SOU 2023:63 - Entity count ≥4', status: 'pending' },
+          { name: 'SOU 2023:63 - Citation quality', status: 'pending' },
+          { name: 'SOU 2024:12 - Entity count ≥6', status: 'pending' },
+          { name: 'SOU 2024:12 - Citation quality', status: 'pending' },
+          { name: 'SOU 2023:08 - Entity count ≥2', status: 'pending' },
+          { name: 'SOU 2023:08 - Citation quality', status: 'pending' },
+        ],
+      },
     ];
 
     setTestSuites(suites);
@@ -567,6 +580,139 @@ export function IntegrationTest() {
       }
 
       updateSuite(5, { status: 'passed', duration: Date.now() - suite6Start });
+      setProgress(92);
+
+      // Suite 7: Golden Test Set Validation
+      const suite7Start = Date.now();
+      updateSuite(6, { status: 'running' });
+
+      // Define golden documents with expected criteria
+      const goldenDocs = [
+        { docNumber: 'SOU 2023:63', minEntities: 4, complexity: 'Standard' },
+        { docNumber: 'SOU 2024:12', minEntities: 6, complexity: 'High' },
+        { docNumber: 'SOU 2023:08', minEntities: 2, complexity: 'Minimal' },
+      ];
+
+      // Assertion 7.1: Identify golden documents
+      updateAssertion(6, 0, { status: 'running' });
+      const { data: goldenDocsData, error: goldenError } = await supabase
+        .from('documents')
+        .select('id, doc_number, title')
+        .eq('doc_type', 'SOU')
+        .in('doc_number', goldenDocs.map((d) => d.docNumber));
+
+      if (goldenError || !goldenDocsData || goldenDocsData.length === 0) {
+        updateAssertion(6, 0, {
+          status: 'failed',
+          message: `Golden documents not found: ${goldenError?.message || 'No data'}`,
+        });
+        updateSuite(6, { status: 'failed', duration: Date.now() - suite7Start });
+      } else {
+        updateAssertion(6, 0, {
+          status: 'passed',
+          message: `Found ${goldenDocsData.length}/3 golden documents`,
+          details: goldenDocsData.map((d) => d.doc_number),
+        });
+
+        // Validate each golden document
+        let assertionIdx = 1;
+        for (const goldenDoc of goldenDocs) {
+          const docData = goldenDocsData.find((d) => d.doc_number === goldenDoc.docNumber);
+          
+          if (!docData) {
+            // Entity count assertion
+            updateAssertion(6, assertionIdx, {
+              status: 'failed',
+              message: `Document ${goldenDoc.docNumber} not found`,
+            });
+            assertionIdx++;
+            
+            // Citation quality assertion
+            updateAssertion(6, assertionIdx, {
+              status: 'failed',
+              message: `Document ${goldenDoc.docNumber} not found`,
+            });
+            assertionIdx++;
+            continue;
+          }
+
+          // Check entity count
+          updateAssertion(6, assertionIdx, { status: 'running' });
+          const { data: goldenEntities, error: entitiesError } = await supabase
+            .from('entities')
+            .select('id, name, entity_type, source_excerpt, source_page')
+            .eq('source_document_id', docData.id);
+
+          const entityCount = goldenEntities?.length || 0;
+          if (entitiesError || entityCount < goldenDoc.minEntities) {
+            updateAssertion(6, assertionIdx, {
+              status: 'failed',
+              message: `Found ${entityCount}, expected ≥${goldenDoc.minEntities}`,
+              details: { expected: goldenDoc.minEntities, actual: entityCount },
+            });
+          } else {
+            updateAssertion(6, assertionIdx, {
+              status: 'passed',
+              message: `${entityCount} entities (expected ≥${goldenDoc.minEntities})`,
+            });
+          }
+          assertionIdx++;
+
+          // Check citation quality (excerpt length 50-300 chars, no placeholders)
+          updateAssertion(6, assertionIdx, { status: 'running' });
+          const excerptIssues = [];
+          
+          if (goldenEntities) {
+            // Check for missing citations
+            const missingCitations = goldenEntities.filter(
+              (e) => !e.source_excerpt || !e.source_page
+            );
+            if (missingCitations.length > 0) {
+              excerptIssues.push(`${missingCitations.length} missing citations`);
+            }
+
+            // Check excerpt length (should be 50-300 chars)
+            const shortExcerpts = goldenEntities.filter(
+              (e) => e.source_excerpt && e.source_excerpt.length < 50
+            );
+            const longExcerpts = goldenEntities.filter(
+              (e) => e.source_excerpt && e.source_excerpt.length > 300
+            );
+            if (shortExcerpts.length > 0) {
+              excerptIssues.push(`${shortExcerpts.length} excerpts too short (<50 chars)`);
+            }
+            if (longExcerpts.length > 0) {
+              excerptIssues.push(`${longExcerpts.length} excerpts too long (>300 chars)`);
+            }
+
+            // Check for placeholders
+            const placeholders = ['not specified', 'okänd', 'ej angiven', 'särskild utredare', 'unknown', 'n/a'];
+            const hasPlaceholder = goldenEntities.some((e) =>
+              placeholders.some((p) => e.name.toLowerCase().includes(p))
+            );
+            if (hasPlaceholder) {
+              excerptIssues.push('Placeholder values detected');
+            }
+          }
+
+          if (excerptIssues.length > 0) {
+            updateAssertion(6, assertionIdx, {
+              status: 'failed',
+              message: excerptIssues.join('; '),
+              details: excerptIssues,
+            });
+          } else {
+            updateAssertion(6, assertionIdx, {
+              status: 'passed',
+              message: 'All citations valid (50-300 chars, no placeholders)',
+            });
+          }
+          assertionIdx++;
+        }
+
+        updateSuite(6, { status: 'passed', duration: Date.now() - suite7Start });
+      }
+
       setProgress(100);
 
       toast({
@@ -621,8 +767,8 @@ export function IntegrationTest() {
           End-to-End Integration Tests
         </CardTitle>
         <CardDescription>
-          Comprehensive validation of Head Detective v2 orchestration, agent execution, and data
-          quality
+          Comprehensive validation of Head Detective v2 orchestration, agent execution, data
+          quality, and golden test set regression baselines
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
