@@ -27,9 +27,28 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // Extract and validate Authorization header
+    const authHeader = req.headers.get('Authorization');
+    console.log('[search-documents] auth header present:', Boolean(authHeader));
+
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'UNAUTHORIZED', message: 'Authentication required' }),
+        { 
+          status: 401, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+
+    // Create Supabase client with forwarded JWT
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      global: {
+        headers: { Authorization: authHeader },
+      },
+    });
 
     const {
       query,
@@ -47,7 +66,7 @@ Deno.serve(async (req) => {
     const offset = (page - 1) * perPage;
     const includeHighlights = options.include_highlights !== false;
 
-    console.log('Search request:', { query, filters, page, perPage });
+    console.log('[search-documents] Search request:', { query, filters, page, perPage });
 
     const searchTerm = query.trim();
     
@@ -78,17 +97,17 @@ Deno.serve(async (req) => {
     const searchPattern = `%${searchTerm}%`;
     baseQuery = baseQuery.or(`title.ilike.${searchPattern},doc_number.ilike.${searchPattern}`);
 
-    console.log('Executing query with search:', searchTerm);
+    console.log('[search-documents] Executing query with search:', searchTerm);
 
     // Execute query with pagination
     const { data: documents, error, count } = await baseQuery
       .order('publication_date', { ascending: false })
       .range(offset, offset + perPage - 1);
 
-    console.log('Query results:', { count, documentCount: documents?.length, hasError: !!error });
+    console.log('[search-documents] Query results:', { count, documentCount: documents?.length, hasError: !!error });
 
     if (error) {
-      console.error('Database error:', error);
+      console.error('[search-documents] Database error:', error);
       return createErrorResponse('DATABASE_ERROR', error.message, 500);
     }
 
@@ -169,7 +188,7 @@ Deno.serve(async (req) => {
       },
     });
   } catch (error) {
-    console.error('Search error:', error);
+    console.error('[search-documents] Search error:', error);
     return createErrorResponse(
       'SEARCH_ERROR',
       error instanceof Error ? error.message : 'Unknown error',
