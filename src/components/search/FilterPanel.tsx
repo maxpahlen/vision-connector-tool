@@ -7,7 +7,12 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
 
 interface FilterPanelProps {
   filters: SearchFilters;
@@ -96,118 +101,128 @@ export function FilterPanel({ filters, onFiltersChange }: FilterPanelProps) {
       <CardHeader>
         <CardTitle className="text-lg">Filter</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Document Type Filter */}
-        <div className="space-y-3">
-          <Label className="text-sm font-semibold">Dokumenttyp</Label>
-          <div className="space-y-2">
-            {docTypes.map(type => (
-              <div key={type} className="flex items-center space-x-2">
-                <Checkbox
-                  id={`doctype-${type}`}
-                  checked={localFilters.doc_types?.includes(type)}
-                  onCheckedChange={(checked) =>
-                    handleCheckboxChange('doc_types', type, checked as boolean)
-                  }
-                />
-                <Label
-                  htmlFor={`doctype-${type}`}
-                  className="text-sm font-normal cursor-pointer"
-                >
-                  {type.toUpperCase()}
-                </Label>
+      <CardContent className="space-y-4">
+        <Accordion type="multiple" defaultValue={["doc-types", "ministries"]} className="w-full">
+          {/* Document Type Filter */}
+          <AccordionItem value="doc-types">
+            <AccordionTrigger className="text-sm font-semibold hover:no-underline">
+              Dokumenttyp
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="space-y-2 pt-2">
+                {docTypes.map(type => (
+                  <div key={type} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`doctype-${type}`}
+                      checked={localFilters.doc_types?.includes(type)}
+                      onCheckedChange={(checked) =>
+                        handleCheckboxChange('doc_types', type, checked as boolean)
+                      }
+                    />
+                    <Label
+                      htmlFor={`doctype-${type}`}
+                      className="text-sm font-normal cursor-pointer"
+                    >
+                      {type.toUpperCase()}
+                    </Label>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
+            </AccordionContent>
+          </AccordionItem>
 
-        <Separator />
-
-        {/* Ministry Filter */}
-        <div className="space-y-3">
-          <Label className="text-sm font-semibold">Departement</Label>
-          <div className="space-y-2 max-h-48 overflow-y-auto">
-            {ministries.map(ministry => (
-              <div key={ministry} className="flex items-center space-x-2">
-                <Checkbox
-                  id={`ministry-${ministry}`}
-                  checked={localFilters.ministries?.includes(ministry)}
-                  onCheckedChange={(checked) =>
-                    handleCheckboxChange('ministries', ministry, checked as boolean)
-                  }
-                />
-                <Label
-                  htmlFor={`ministry-${ministry}`}
-                  className="text-sm font-normal cursor-pointer"
-                >
-                  {ministry}
-                </Label>
+          {/* Ministry Filter */}
+          <AccordionItem value="ministries">
+            <AccordionTrigger className="text-sm font-semibold hover:no-underline">
+              Departement
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="space-y-2 max-h-48 overflow-y-auto pt-2">
+                {ministries.map(ministry => (
+                  <div key={ministry} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`ministry-${ministry}`}
+                      checked={localFilters.ministries?.includes(ministry)}
+                      onCheckedChange={(checked) =>
+                        handleCheckboxChange('ministries', ministry, checked as boolean)
+                      }
+                    />
+                    <Label
+                      htmlFor={`ministry-${ministry}`}
+                      className="text-sm font-normal cursor-pointer"
+                    >
+                      {ministry}
+                    </Label>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
+            </AccordionContent>
+          </AccordionItem>
 
-        <Separator />
-
-        {/* Stage Filter */}
-        <div className="space-y-3">
-          <Label className="text-sm font-semibold">Status</Label>
-          <div className="space-y-2">
-            {stages.map(stage => (
-              <div key={stage} className="flex items-center space-x-2">
-                <Checkbox
-                  id={`stage-${stage}`}
-                  checked={localFilters.stages?.includes(stage)}
-                  onCheckedChange={(checked) =>
-                    handleCheckboxChange('stages', stage, checked as boolean)
-                  }
-                />
-                <Label
-                  htmlFor={`stage-${stage}`}
-                  className="text-sm font-normal cursor-pointer"
-                >
-                  {stage}
-                </Label>
+          {/* Stage Filter */}
+          <AccordionItem value="stages">
+            <AccordionTrigger className="text-sm font-semibold hover:no-underline">
+              Status
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="space-y-2 pt-2">
+                {stages.map(stage => (
+                  <div key={stage} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`stage-${stage}`}
+                      checked={localFilters.stages?.includes(stage)}
+                      onCheckedChange={(checked) =>
+                        handleCheckboxChange('stages', stage, checked as boolean)
+                      }
+                    />
+                    <Label
+                      htmlFor={`stage-${stage}`}
+                      className="text-sm font-normal cursor-pointer"
+                    >
+                      {stage}
+                    </Label>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
+            </AccordionContent>
+          </AccordionItem>
 
-        <Separator />
-
-        {/* Date Range Filter */}
-        <div className="space-y-3">
-          <Label className="text-sm font-semibold">Publiceringsdatum</Label>
-          <div className="space-y-2">
-            <div>
-              <Label htmlFor="date-from" className="text-xs text-muted-foreground">
-                Från
-              </Label>
-              <Input
-                id="date-from"
-                type="date"
-                value={localFilters.date_from || ''}
-                onChange={(e) => handleDateChange('date_from', e.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="date-to" className="text-xs text-muted-foreground">
-                Till
-              </Label>
-              <Input
-                id="date-to"
-                type="date"
-                value={localFilters.date_to || ''}
-                onChange={(e) => handleDateChange('date_to', e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-
-        <Separator />
+          {/* Date Range Filter */}
+          <AccordionItem value="dates">
+            <AccordionTrigger className="text-sm font-semibold hover:no-underline">
+              Publiceringsdatum
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="space-y-2 pt-2">
+                <div>
+                  <Label htmlFor="date-from" className="text-xs text-muted-foreground">
+                    Från
+                  </Label>
+                  <Input
+                    id="date-from"
+                    type="date"
+                    value={localFilters.date_from || ''}
+                    onChange={(e) => handleDateChange('date_from', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="date-to" className="text-xs text-muted-foreground">
+                    Till
+                  </Label>
+                  <Input
+                    id="date-to"
+                    type="date"
+                    value={localFilters.date_to || ''}
+                    onChange={(e) => handleDateChange('date_to', e.target.value)}
+                  />
+                </div>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
 
         {/* Action Buttons */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 pt-4">
           <Button onClick={applyFilters} className="flex-1">
             Tillämpa
           </Button>
