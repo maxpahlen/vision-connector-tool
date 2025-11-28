@@ -9,6 +9,7 @@ import NotFound from "./pages/NotFound";
 import PdfTest from "./pages/PdfTest";
 import AdminScraper from "./pages/AdminScraper";
 import DocumentDetail from "./pages/DocumentDetail";
+import Search from "./pages/Search";
 import ProtectedRoute from "./components/layout/ProtectedRoute";
 import AdminRoute from "./components/layout/AdminRoute";
 
@@ -30,6 +31,11 @@ const App = () => (
           <Route path="/admin/pdf-test" element={
             <ProtectedRoute>
               <PdfTest />
+            </ProtectedRoute>
+          } />
+          <Route path="/search" element={
+            <ProtectedRoute>
+              <Search />
             </ProtectedRoute>
           } />
         <Route path="/admin/scraper" element={
