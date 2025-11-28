@@ -82,10 +82,11 @@ export function SearchBar({ onSearch, initialQuery = '' }: SearchBarProps) {
     }
   };
 
-  const handleSelectEntity = (entityName: string) => {
+  const handleSelectEntity = (entityId: string, entityName: string) => {
     setQuery(entityName);
     setShowAutocomplete(false);
-    onSearch(entityName);
+    // Navigate to entity detail page
+    window.location.href = `/entity/${entityId}`;
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -135,7 +136,7 @@ export function SearchBar({ onSearch, initialQuery = '' }: SearchBarProps) {
                       return (
                         <CommandItem
                           key={entity.id}
-                          onSelect={() => handleSelectEntity(entity.name)}
+                          onSelect={() => handleSelectEntity(entity.id, entity.name)}
                           className="cursor-pointer"
                         >
                           <Icon className="mr-2 h-4 w-4 text-muted-foreground" />

@@ -53,12 +53,28 @@ const Header = () => {
     <header className="border-b bg-card">
       <div className="container mx-auto px-4 py-4">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3 cursor-pointer" onClick={() => navigate("/")}>
-            <Scale className="h-8 w-8 text-primary" />
-            <div>
-              <h1 className="text-xl font-bold">SOU Radar</h1>
-              <p className="text-xs text-muted-foreground">Legislative Intelligence Platform</p>
+          <div className="flex items-center space-x-8">
+            <div className="flex items-center space-x-3 cursor-pointer" onClick={() => navigate("/")}>
+              <Scale className="h-8 w-8 text-primary" />
+              <div>
+                <h1 className="text-xl font-bold">SOU Radar</h1>
+                <p className="text-xs text-muted-foreground">Legislative Intelligence Platform</p>
+              </div>
             </div>
+            
+            {/* Navigation */}
+            {user && (
+              <nav className="hidden md:flex items-center space-x-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigate("/search")}
+                  className="text-sm"
+                >
+                  Sök
+                </Button>
+              </nav>
+            )}
           </div>
 
           {user && (

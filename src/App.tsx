@@ -10,6 +10,7 @@ import PdfTest from "./pages/PdfTest";
 import AdminScraper from "./pages/AdminScraper";
 import DocumentDetail from "./pages/DocumentDetail";
 import Search from "./pages/Search";
+import EntityDetail from "./pages/EntityDetail";
 import ProtectedRoute from "./components/layout/ProtectedRoute";
 import AdminRoute from "./components/layout/AdminRoute";
 
@@ -38,7 +39,12 @@ const App = () => (
               <Search />
             </ProtectedRoute>
           } />
-        <Route path="/admin/scraper" element={
+          <Route path="/entity/:id" element={
+            <ProtectedRoute>
+              <EntityDetail />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/scraper" element={
           <AdminRoute>
             <AdminScraper />
           </AdminRoute>
