@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.test-stage-machine]
 verify_jwt = false
+
+[functions.search-documents]
+verify_jwt = true
