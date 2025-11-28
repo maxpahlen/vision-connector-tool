@@ -49,8 +49,11 @@ Deno.serve(async (req) => {
 
     console.log('Search request:', { query, filters, page, perPage });
 
+    // Build base query - use rpc or direct filter instead of textSearch
+    const searchTerm = query.trim();
+    
     // Build the query with filters
-    let dbQuery = supabase
+    let baseQuery = supabase
       .from('documents')
       .select(`
         id,
@@ -70,45 +73,35 @@ Deno.serve(async (req) => {
 
     // Apply doc_type filter
     if (filters.doc_types && filters.doc_types.length > 0) {
-      dbQuery = dbQuery.in('doc_type', filters.doc_types);
+      baseQuery = baseQuery.in('doc_type', filters.doc_types);
     }
 
     // Apply ministry filter
     if (filters.ministries && filters.ministries.length > 0) {
-      dbQuery = dbQuery.in('ministry', filters.ministries);
+      baseQuery = baseQuery.in('ministry', filters.ministries);
     }
 
     // Apply date range filters
     if (filters.date_from) {
-      dbQuery = dbQuery.gte('publication_date', filters.date_from);
+      baseQuery = baseQuery.gte('publication_date', filters.date_from);
     }
     if (filters.date_to) {
-      dbQuery = dbQuery.lte('publication_date', filters.date_to);
+      baseQuery = baseQuery.lte('publication_date', filters.date_to);
     }
 
-    // Full-text search using tsquery
-    const searchQuery = query
-      .trim()
-      .split(/\s+/)
-      .filter(word => word.length > 0)
-      .join(' & ');
+    // For full-text search, we need to use a custom RPC or filter
+    // Let's use a simple ILIKE search for now as a fallback
+    const searchPattern = `%${searchTerm}%`;
+    baseQuery = baseQuery.or(`title.ilike.${searchPattern},doc_number.ilike.${searchPattern},raw_content.ilike.${searchPattern}`);
 
-    dbQuery = dbQuery.textSearch('search_vector', searchQuery, {
-      type: 'websearch',
-      config: 'swedish',
-    });
-
-    // Apply stage filter if provided
-    if (filters.stages && filters.stages.length > 0) {
-      // This is a bit tricky since stage is on processes, not documents
-      // For now, we'll fetch all and filter in memory
-      console.log('Stage filter requested:', filters.stages);
-    }
+    console.log('Executing query with search pattern:', searchPattern);
 
     // Execute query with pagination
-    const { data: documents, error, count } = await dbQuery
+    const { data: documents, error, count } = await baseQuery
       .order('publication_date', { ascending: false })
       .range(offset, offset + perPage - 1);
+
+    console.log('Query results:', { count, documentCount: documents?.length, hasError: !!error });
 
     if (error) {
       console.error('Database error:', error);
