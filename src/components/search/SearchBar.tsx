@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, User, Building2, Users } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -27,6 +28,7 @@ const ENTITY_TYPE_LABELS = {
 } as const;
 
 export function SearchBar({ onSearch, initialQuery = '' }: SearchBarProps) {
+  const navigate = useNavigate();
   const [query, setQuery] = useState(initialQuery);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -85,8 +87,7 @@ export function SearchBar({ onSearch, initialQuery = '' }: SearchBarProps) {
   const handleSelectEntity = (entityId: string, entityName: string) => {
     setQuery(entityName);
     setShowAutocomplete(false);
-    // Navigate to entity detail page
-    window.location.href = `/entity/${entityId}`;
+    navigate(`/entity/${entityId}`);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
