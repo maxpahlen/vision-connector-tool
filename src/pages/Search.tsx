@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useSearch, SearchFilters } from '@/hooks/useSearch';
+import { useDocumentCount } from '@/hooks/useDocumentCount';
 import { SearchBar } from '@/components/search/SearchBar';
 import { FilterPanel } from '@/components/search/FilterPanel';
 import { SearchResults } from '@/components/search/SearchResults';
@@ -20,6 +21,7 @@ export default function Search() {
   const [page, setPage] = useState(1);
   const perPage = 20;
 
+  const { data: totalDocuments = 0 } = useDocumentCount();
   const { data, isLoading } = useSearch({
     query,
     filters,
@@ -54,7 +56,7 @@ export default function Search() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2">Sök dokument</h1>
           <p className="text-muted-foreground">
-            Sök bland {pagination?.total || 0} dokument i databasen
+            Sök bland {totalDocuments} dokument i databasen
           </p>
         </div>
 
