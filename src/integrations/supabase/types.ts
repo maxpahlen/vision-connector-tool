@@ -89,6 +89,7 @@ export type Database = {
           processed_at: string | null
           publication_date: string | null
           raw_content: string | null
+          search_vector: unknown
           title: string
           updated_at: string | null
           url: string | null
@@ -104,6 +105,7 @@ export type Database = {
           processed_at?: string | null
           publication_date?: string | null
           raw_content?: string | null
+          search_vector?: unknown
           title: string
           updated_at?: string | null
           url?: string | null
@@ -119,6 +121,7 @@ export type Database = {
           processed_at?: string | null
           publication_date?: string | null
           raw_content?: string | null
+          search_vector?: unknown
           title?: string
           updated_at?: string | null
           url?: string | null
