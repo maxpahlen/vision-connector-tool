@@ -49,27 +49,12 @@ Deno.serve(async (req) => {
 
     console.log('Search request:', { query, filters, page, perPage });
 
-    // Build base query - use rpc or direct filter instead of textSearch
     const searchTerm = query.trim();
     
-    // Build the query with filters
+    // Build the query - get documents without joins first
     let baseQuery = supabase
       .from('documents')
-      .select(`
-        id,
-        doc_type,
-        doc_number,
-        title,
-        ministry,
-        publication_date,
-        raw_content,
-        process_documents(
-          process_id,
-          processes(
-            current_stage
-          )
-        )
-      `, { count: 'exact' });
+      .select('id, doc_type, doc_number, title, ministry, publication_date, raw_content', { count: 'exact' });
 
     // Apply doc_type filter
     if (filters.doc_types && filters.doc_types.length > 0) {
@@ -89,12 +74,11 @@ Deno.serve(async (req) => {
       baseQuery = baseQuery.lte('publication_date', filters.date_to);
     }
 
-    // For full-text search, we need to use a custom RPC or filter
-    // Let's use a simple ILIKE search for now as a fallback
+    // Apply text search using ILIKE on title and doc_number
     const searchPattern = `%${searchTerm}%`;
-    baseQuery = baseQuery.or(`title.ilike.${searchPattern},doc_number.ilike.${searchPattern},raw_content.ilike.${searchPattern}`);
+    baseQuery = baseQuery.or(`title.ilike.${searchPattern},doc_number.ilike.${searchPattern}`);
 
-    console.log('Executing query with search pattern:', searchPattern);
+    console.log('Executing query with search:', searchTerm);
 
     // Execute query with pagination
     const { data: documents, error, count } = await baseQuery
@@ -108,55 +92,70 @@ Deno.serve(async (req) => {
       return createErrorResponse('DATABASE_ERROR', error.message, 500);
     }
 
-    // Filter by stage if needed (in-memory)
+    // Get process info for each document separately
+    const documentIds = documents?.map(d => d.id) || [];
+    let processData: any[] = [];
+    
+    if (documentIds.length > 0) {
+      const { data } = await supabase
+        .from('process_documents')
+        .select('document_id, processes(current_stage)')
+        .in('document_id', documentIds);
+      processData = data || [];
+    }
+
+    // Create a map of document_id -> stage
+    const stageMap = new Map<string, string>();
+    processData.forEach((pd: any) => {
+      if (!stageMap.has(pd.document_id) && pd.processes?.current_stage) {
+        stageMap.set(pd.document_id, pd.processes.current_stage);
+      }
+    });
+
+    // Filter by stage if needed
     let filteredDocuments = documents || [];
     if (filters.stages && filters.stages.length > 0) {
       filteredDocuments = filteredDocuments.filter(doc => {
-        const processStages = doc.process_documents?.map((pd: any) => pd.processes?.current_stage).filter(Boolean) || [];
-        return processStages.some(stage => filters.stages!.includes(stage));
+        const stage = stageMap.get(doc.id);
+        return stage && filters.stages!.includes(stage);
       });
     }
 
-    // Generate highlights using ts_headline
-    const results = await Promise.all(
-      filteredDocuments.map(async (doc: any) => {
-        let highlights: string[] = [];
+    // Generate results with highlights
+    const results = filteredDocuments.map((doc: any) => {
+      let highlights: string[] = [];
 
-        if (includeHighlights && doc.raw_content) {
-          // Simple excerpt highlighting (ts_headline RPC not available)
-          const content = doc.raw_content.substring(0, 5000);
-          const searchTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
-          
-          // Find first occurrence of any search term
-          let excerptStart = 0;
-          for (const term of searchTerms) {
-            const pos = content.toLowerCase().indexOf(term);
-            if (pos !== -1) {
-              excerptStart = Math.max(0, pos - 100);
-              break;
-            }
+      if (includeHighlights && doc.raw_content) {
+        const content = doc.raw_content.substring(0, 5000);
+        const searchTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+        
+        let excerptStart = 0;
+        for (const term of searchTerms) {
+          const pos = content.toLowerCase().indexOf(term);
+          if (pos !== -1) {
+            excerptStart = Math.max(0, pos - 100);
+            break;
           }
-          
-          const excerpt = content.substring(excerptStart, excerptStart + 300);
-          const displayExcerpt = (excerptStart > 0 ? '...' : '') + excerpt + '...';
-          highlights.push(displayExcerpt);
         }
+        
+        const excerpt = content.substring(excerptStart, excerptStart + 300);
+        const displayExcerpt = (excerptStart > 0 ? '...' : '') + excerpt + '...';
+        highlights.push(displayExcerpt);
+      }
 
-        // Get the stage from the first process (documents can be in multiple processes)
-        const stage = doc.process_documents?.[0]?.processes?.current_stage || null;
+      const stage = stageMap.get(doc.id) || null;
 
-        return {
-          id: doc.id,
-          doc_type: doc.doc_type,
-          doc_number: doc.doc_number,
-          title: doc.title,
-          ministry: doc.ministry,
-          publication_date: doc.publication_date,
-          stage,
-          highlights: highlights.length > 0 ? highlights : undefined,
-        };
-      })
-    );
+      return {
+        id: doc.id,
+        doc_type: doc.doc_type,
+        doc_number: doc.doc_number,
+        title: doc.title,
+        ministry: doc.ministry,
+        publication_date: doc.publication_date,
+        stage,
+        highlights: highlights.length > 0 ? highlights : undefined,
+      };
+    });
 
     const totalPages = Math.ceil((count || 0) / perPage);
 
