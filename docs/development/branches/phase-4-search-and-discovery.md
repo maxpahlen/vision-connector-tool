@@ -65,17 +65,45 @@ All Phase 4.1 success criteria met:
 
 ---
 
-## Phase 4.2 — Planned Next
+## Phase 4.2 — In Progress
 
-**Status:** Planning (awaiting user feedback from Phase 4.1)
+**Status:** Implementing entity autocomplete feature  
+**Started:** 2025-11-28
 
 **Tentative Scope:**
-- Entity autocomplete endpoint (`search-entities`)
-- Entity detail pages (`/entity/:id`)
-- Enhanced search ranking (PostgreSQL `ts_rank` with Swedish dictionary)
-- Performance optimizations based on real usage data
+- ✅ Entity autocomplete endpoint (`search-entities`) - IMPLEMENTED
+- ✅ Typeahead search on entities.name - IMPLEMENTED
+- ✅ Returns top 10 matching entities with document counts - IMPLEMENTED
+- ✅ Integrated into SearchBar component - IMPLEMENTED
+- [ ] Entity detail pages (`/entity/:id`) - PENDING
+- [ ] Enhanced search ranking (PostgreSQL `ts_rank` with Swedish dictionary) - PENDING
+- [ ] Performance optimizations based on usage data - PENDING
 
-**Decision Point:** Will be scoped based on user feedback from Phase 4.1
+### What Was Delivered (2025-11-28)
+
+#### Backend
+- ✅ Edge function `search-entities` with JWT authentication
+- ✅ ILIKE pattern matching on entity names
+- ✅ Document count calculation per entity (via relations join)
+- ✅ Relevance sorting: exact match > document count > alphabetical
+- ✅ Configurable entity type filtering
+- ✅ Max 20 results with configurable limit
+
+#### Frontend
+- ✅ `useEntityAutocomplete` hook with React Query
+- ✅ Updated SearchBar with autocomplete dropdown
+- ✅ Debounced input (300ms) to reduce API calls
+- ✅ Entity type icons and badges
+- ✅ Document count display per entity
+- ✅ Keyboard-friendly Command component
+- ✅ Click-outside to close autocomplete
+
+#### Performance
+- Minimum 2 characters before search triggers
+- 60s cache on autocomplete results
+- Entity results ranked by relevance
+
+**Decision Point:** Will continue with entity detail pages after testing autocomplete feature.
 
 ---
 

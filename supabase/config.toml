@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.search-documents]
 verify_jwt = true
+
+[functions.search-entities]
+verify_jwt = true
