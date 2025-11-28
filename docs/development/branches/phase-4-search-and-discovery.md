@@ -67,15 +67,17 @@ All Phase 4.1 success criteria met:
 
 ## Phase 4.2 — In Progress
 
-**Status:** Implementing entity autocomplete feature  
+**Status:** Implementing entity features  
 **Started:** 2025-11-28
 
-**Tentative Scope:**
+**Completed:**
 - ✅ Entity autocomplete endpoint (`search-entities`) - IMPLEMENTED
 - ✅ Typeahead search on entities.name - IMPLEMENTED
 - ✅ Returns top 10 matching entities with document counts - IMPLEMENTED
 - ✅ Integrated into SearchBar component - IMPLEMENTED
-- [ ] Entity detail pages (`/entity/:id`) - PENDING
+- ✅ Entity detail pages (`/entity/:id`) - IMPLEMENTED
+
+**In Progress:**
 - [ ] Enhanced search ranking (PostgreSQL `ts_rank` with Swedish dictionary) - PENDING
 - [ ] Performance optimizations based on usage data - PENDING
 
@@ -90,6 +92,8 @@ All Phase 4.1 success criteria met:
 - ✅ Max 20 results with configurable limit
 
 #### Frontend
+
+**Autocomplete:**
 - ✅ `useEntityAutocomplete` hook with React Query
 - ✅ Updated SearchBar with autocomplete dropdown
 - ✅ Debounced input (300ms) to reduce API calls
@@ -97,13 +101,31 @@ All Phase 4.1 success criteria met:
 - ✅ Document count display per entity
 - ✅ Keyboard-friendly Command component
 - ✅ Click-outside to close autocomplete
+- ✅ Clicking entity navigates to detail page
+
+**Entity Detail Pages:**
+- ✅ New route `/entity/:id`
+- ✅ Protected route (requires authentication)
+- ✅ Entity information display (name, type, role)
+- ✅ List of all documents involving the entity
+- ✅ Source excerpts showing context
+- ✅ Related entities (co-occurring in same documents)
+- ✅ Timeline events from related processes
+- ✅ Navigation links back to search
+- ✅ Responsive layout with sidebar
+
+**Navigation:**
+- ✅ Added "Sök" link to Header navigation
+- ✅ Entity autocomplete suggestions link to detail pages
 
 #### Performance
 - Minimum 2 characters before search triggers
 - 60s cache on autocomplete results
 - Entity results ranked by relevance
+- Related entities limited to top 10
+- Timeline events limited to 20 most recent
 
-**Decision Point:** Will continue with entity detail pages after testing autocomplete feature.
+**Decision Point:** Will continue with PostgreSQL full-text search enhancements after testing entity pages.
 
 ---
 
