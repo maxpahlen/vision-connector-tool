@@ -60,9 +60,9 @@ Deno.serve(async (req) => {
         ministry,
         publication_date,
         raw_content,
-        process_documents!inner(
+        process_documents(
           process_id,
-          processes!inner(
+          processes(
             current_stage
           )
         )
