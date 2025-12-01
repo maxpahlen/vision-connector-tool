@@ -77,9 +77,32 @@ All Phase 4.1 success criteria met:
 - ✅ Integrated into SearchBar component - IMPLEMENTED
 - ✅ Entity detail pages (`/entity/:id`) - IMPLEMENTED
 
+**Recent Fixes (2025-12-01):**
+- ✅ Fixed `relations` table foreign key constraints - COMPLETE
+  - Added `relations_source_id_fkey` → `entities(id)` with CASCADE delete
+  - Added `relations_target_id_fkey` → `documents(id)` with CASCADE delete
+  - Added indexes on `source_id`, `target_id`, and composite `(source_id, target_id)`
+  - Safety checks confirmed no dangling references before adding constraints
+- ✅ Fixed EntityDetail page queries to use proper foreign key hints - COMPLETE
+  - Documents query uses `documents!relations_target_id_fkey`
+  - Related entities query uses `entities!relations_source_id_fkey`
+  - Timeline events query verified with `processes!timeline_events_process_id_fkey`
+- ✅ Entity detail pages now fully functional - COMPLETE
+
 **In Progress:**
 - [ ] Enhanced search ranking (PostgreSQL `ts_rank` with Swedish dictionary) - PENDING
 - [ ] Performance optimizations based on usage data - PENDING
+
+**Data Model Note:**
+For Phase 4, the `relations` table is modeled as **entity → document** relationships only:
+- `source_id` (FK to `entities.id`): The entity mentioned in the document
+- `target_id` (FK to `documents.id`): The document containing the mention
+- Both have `ON DELETE CASCADE` to maintain referential integrity
+
+More complex polymorphic relations (entity→process, entity→entity, etc.) are intentionally deferred to a later phase. When needed, they can be implemented via:
+- Additional junction tables with proper foreign keys
+- Edge function-based APIs for flexible relationship queries
+- Materialized views for performance-critical relationship queries
 
 ### What Was Delivered (2025-11-28)
 
