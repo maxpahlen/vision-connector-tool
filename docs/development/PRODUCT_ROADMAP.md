@@ -1,7 +1,7 @@
 # Product Roadmap — Legislative Intelligence Platform
 
-**Last Updated:** 2025-11-28  
-**Current Phase:** Phase 4.1 ✅ Complete | Phase 4.2 Planning
+**Last Updated:** 2025-12-01  
+**Current Phase:** Phase 4.2 ✅ Complete | Phase 4.3 Planning
 
 ---
 
@@ -30,7 +30,7 @@
 | **Phase 2** | ✅ Complete | SOU Scraper & PDF | Automated SOU ingestion, PDF extraction |
 | **Phase 3** | ✅ Complete | Multi-Agent AI (Walking Skeleton) | Timeline Agent, Metadata Agent, Head Detective, State Machine |
 | **Phase 4.1** | ✅ Complete | Search Walking Skeleton | Full-text search, filters, pagination, highlights |
-| **Phase 4.2** | 📋 Planning | Search Enhancements | Entity autocomplete, enhanced ranking |
+| **Phase 4.2** | ✅ Complete | Entity Features | Entity autocomplete, entity detail pages, relations FK |
 | **Phase 4.3** | 📋 Future | Discovery Features | Timeline viz, related docs |
 | **Phase 5** | 📋 Planned | Legislative Graph Expansion | New doc types, Timeline Agent v2, Genvägar scraping |
 | **Phase 6** | 📋 Planned | Relationship Inference | Blackboard agent, case reconstruction |
@@ -160,60 +160,129 @@
 
 ---
 
-## Phase 4.2: Search Enhancements 📋 PLANNING
+## Phase 4.2: Entity Features ✅ COMPLETE
 
-**Status:** Awaiting user feedback from Phase 4.1
+**Completion Date:** 2025-12-01  
+**Goal:** Enable entity-centric discovery and navigation.
 
-**Goal:** Enhance search based on real usage patterns.
+### Delivered
 
-### Tentative Scope
-- **Entity autocomplete endpoint** (`search-entities`)
-  - Typeahead search on entities.name
-  - Returns top 10 matching entities
-  - Integrated into SearchBar component
+#### Backend
+- ✅ Edge function `search-entities` with JWT authentication
+- ✅ ILIKE pattern matching on entity names with trigram index
+- ✅ Document count calculation per entity (via relations join)
+- ✅ Relevance sorting: exact match > document count > alphabetical
+- ✅ Configurable entity type filtering
+- ✅ Max 20 results with configurable limit
+- ✅ Foreign key constraints on relations table
+  - `relations_source_id_fkey` → `entities(id)` ON DELETE CASCADE
+  - `relations_target_id_fkey` → `documents(id)` ON DELETE CASCADE
+  - Indexes on source_id, target_id, and composite (source_id, target_id)
 
-- **Entity detail pages** (`/entity/:id`)
-  - Show all documents involving entity
-  - Display relations to other entities
-  - Show timeline of entity's involvement
+#### Frontend
 
-- **Enhanced search ranking**
-  - Implement PostgreSQL full-text search with tsvector
-  - Use Swedish dictionary for stemming
-  - Rank by ts_rank with weighted fields (title > content)
+**Autocomplete:**
+- ✅ `useEntityAutocomplete` hook with React Query
+- ✅ Updated SearchBar with autocomplete dropdown
+- ✅ Debounced input (150ms) to reduce API calls
+- ✅ Entity type icons and badges
+- ✅ Document count display per entity
+- ✅ Keyboard-friendly Command component
+- ✅ Click-outside to close autocomplete
+- ✅ Clicking entity navigates to detail page
 
-- **Performance optimizations** (if needed based on usage data)
-  - Additional indexes on ministry, publication_date, current_stage
-  - Materialized view for facet counts (if on-the-fly queries too slow)
+**Entity Detail Pages:**
+- ✅ New route `/entity/:id` (protected)
+- ✅ Entity information display (name, type, role)
+- ✅ List of all documents involving the entity
+- ✅ Source excerpts showing context
+- ✅ Related entities (co-occurring in same documents)
+- ✅ Timeline events from related processes
+- ✅ Navigation links back to search
+- ✅ Responsive layout with sidebar
+- ✅ Working links to document detail pages
 
-### Decision Point
-Scope will be refined based on:
-- User feedback from Phase 4.1
-- Search query patterns (what users actually search for)
-- Performance bottlenecks (if any)
+**Document Detail Pages:**
+- ✅ Route `/document/:id` added (public access)
+- ✅ Updated navigation to return to search page
+- ✅ Displays extracted content, metadata, timeline
+
+**Navigation:**
+- ✅ "Sök" link in Header navigation
+- ✅ Entity autocomplete suggestions link to detail pages
+- ✅ Document cards link to document detail pages
+
+#### Performance
+- Minimum 2 characters before search triggers
+- 150ms debounce on autocomplete (reduced from 300ms)
+- 60s cache on autocomplete results
+- Entity results ranked by relevance
+- Related entities limited to top 10
+- Timeline events limited to 20 most recent
+- pg_trgm extension enabled for faster fuzzy matching
+- GIN index on entities.name for autocomplete performance
+
+#### Data Model
+Relations table now enforces referential integrity:
+- `source_id` → `entities.id` (entity mentioned in document)
+- `target_id` → `documents.id` (document containing the mention)
+- Both with CASCADE delete to maintain data consistency
+- Proper PostgREST joins now work via FK hints
+
+### Success Criteria Met
+- ✅ Users can search for entities by name
+- ✅ Entity detail pages show complete involvement
+- ✅ Related entities discovered through shared documents
+- ✅ Timeline events connected to entity's documents
+- ✅ All network requests return 200 (no PGRST relationship errors)
+- ✅ Navigation between search, entity, and document pages works seamlessly
+
+### Intentionally Deferred to Future Phases
+- [ ] PostgreSQL full-text search with ts_rank (Swedish dictionary)
+- [ ] Process detail pages
+- [ ] Timeline visualization component
+- [ ] Related documents recommendations
+- [ ] Entity filtering in main search
+- [ ] Materialized views for performance optimization
+
+**Documentation:** `docs/development/branches/phase-4-search-and-discovery.md`
 
 ---
 
 ## Phase 4.3: Discovery Features 📋 FUTURE
 
-**Status:** Deferred until Phase 4.2 complete
+**Status:** Deferred pending user feedback on entity features
 
-**Goal:** Add timeline visualization and document relationship discovery.
+**Goal:** Add timeline visualization, process pages, and document relationship discovery.
 
 ### Tentative Scope
-- **Timeline visualization** (`/process/:id/timeline`)
+- **Process detail pages** (`/process/:id`)
+  - Show all documents in the process
+  - Display process timeline with all events
+  - Show entities involved across all documents
+  - Visualize process stage transitions
+
+- **Timeline visualization** 
   - D3 or recharts-based timeline chart
   - Filter events by type
   - Jump to source citation on click
+  - Show concurrent events across processes
 
 - **Related documents sidebar**
   - "Find similar SOUs" based on shared entities
   - "Show other work by this utredare"
   - Uses relations table to find connected docs
+  - Ranked by relevance (shared entities, ministry, stage)
 
-- **Advanced filters**
+- **Advanced search filters**
   - Filter by entity involvement
   - Filter by event types in timeline
+  - Filter by process stage
+
+- **Enhanced document detail pages**
+  - Show all entities mentioned in document
+  - Link to related documents
+  - Display in-process context
 
 ---
 
@@ -471,9 +540,19 @@ CREATE TABLE case_predictions (
 **Tables:** documents, processes, entities, relations, timeline_events, agent_tasks  
 **Agents:** Timeline Agent v1, Metadata Agent v1, Head Detective v2
 
-### Phase 4 ✅ (Current)
-**New Tables:** None (uses existing tables)  
-**New Agents:** None (edge function for search, no AI agents)
+### Phase 4 ✅ Complete (Phases 4.1 & 4.2)
+**New Tables:** None (uses existing tables with enhanced indexes)  
+**New Agents:** None (edge functions for search and entity autocomplete)  
+**Database Changes:** 
+- Added pg_trgm extension for fuzzy text search
+- Added trigram GIN index on entities.name
+- Added foreign key constraints to relations table
+- Added indexes on relations(source_id, target_id)
+
+### Phase 4.3 📋 (Future - Discovery Features)
+**New Tables:** None (continues using existing tables)
+**New Components:** Process detail pages, timeline visualization
+**Enhancements:** Related documents, advanced filters
 
 ### Phase 5 📋 (Planned)
 **New Tables:** `document_references`, `external_links`  
