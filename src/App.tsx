@@ -44,6 +44,11 @@ const App = () => (
               <EntityDetail />
             </ProtectedRoute>
           } />
+          <Route path="/document/:id" element={
+            <ProtectedRoute>
+              <DocumentDetail />
+            </ProtectedRoute>
+          } />
           <Route path="/admin/scraper" element={
           <AdminRoute>
             <AdminScraper />
