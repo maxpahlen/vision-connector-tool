@@ -7,6 +7,7 @@ export interface Process {
   title: string;
   ministry: string | null;
   current_stage: string;
+  stage_explanation: string | null;
   directive_number: string | null;
   created_at: string;
   updated_at: string;

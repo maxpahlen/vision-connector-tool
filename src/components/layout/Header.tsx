@@ -68,6 +68,14 @@ const Header = () => {
                 <Button
                   variant="ghost"
                   size="sm"
+                  onClick={() => navigate("/")}
+                  className="text-sm"
+                >
+                  Hem
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => navigate("/search")}
                   className="text-sm"
                 >
