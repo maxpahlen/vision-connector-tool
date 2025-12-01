@@ -1,13 +1,14 @@
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { ArrowLeft, ExternalLink, FileText, Calendar, Building2, Link as LinkIcon } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ArrowLeft, ExternalLink, FileText, Calendar, Building2, Link as LinkIcon, Network, User, Users } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { useDocumentContext } from '@/hooks/useDocumentContext';
 
 export default function DocumentDetail() {
   const { id } = useParams<{ id: string }>();
@@ -25,6 +26,8 @@ export default function DocumentDetail() {
       return data;
     },
   });
+
+  const { data: context, isLoading: contextLoading } = useDocumentContext(id);
 
   if (isLoading) {
     return (
@@ -168,6 +171,155 @@ export default function DocumentDetail() {
                 {document.raw_content}
               </pre>
             </ScrollArea>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Process Context */}
+      {!contextLoading && context?.process && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Network className="h-5 w-5" />
+              Process Context
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <Link 
+                to={`/process/${context.process.id}`}
+                className="text-lg font-semibold hover:underline"
+              >
+                {context.process.title}
+              </Link>
+              <p className="text-sm text-muted-foreground">{context.process.process_key}</p>
+            </div>
+            <Separator />
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">Stage:</span>
+                <Badge>{context.process.current_stage}</Badge>
+              </div>
+              {context.process.stage_explanation && (
+                <p className="text-sm text-muted-foreground">{context.process.stage_explanation}</p>
+              )}
+              {context.process.ministry && (
+                <div className="flex items-center gap-2 text-sm">
+                  <Building2 className="h-4 w-4 text-muted-foreground" />
+                  <span>{context.process.ministry}</span>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Entities in Document */}
+      {!contextLoading && context?.entities && context.entities.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Entities in Document ({context.entities.length})
+            </CardTitle>
+            <CardDescription>
+              People, organizations, and committees mentioned in this document
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {context.entities.map((entity) => (
+                <Link
+                  key={entity.id}
+                  to={`/entity/${entity.id}`}
+                  className="group"
+                >
+                  <Badge 
+                    variant="secondary" 
+                    className="cursor-pointer hover:bg-secondary/80 transition-colors"
+                  >
+                    <User className="h-3 w-3 mr-1" />
+                    {entity.name}
+                    {entity.role && (
+                      <span className="ml-1 text-xs opacity-70">
+                        ({entity.role})
+                      </span>
+                    )}
+                  </Badge>
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Related Documents */}
+      {!contextLoading && context?.relatedDocuments && context.relatedDocuments.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Related Documents ({context.relatedDocuments.length})
+            </CardTitle>
+            <CardDescription>
+              Documents connected through shared entities and context
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {context.relatedDocuments.map((relDoc) => (
+                <Link
+                  key={relDoc.id}
+                  to={`/document/${relDoc.id}`}
+                  className="block p-4 rounded-lg border hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-4 mb-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant="outline" className="text-xs">
+                          {relDoc.doc_type.toUpperCase()}
+                        </Badge>
+                        <span className="text-sm font-medium">{relDoc.doc_number}</span>
+                        <Badge variant="secondary" className="text-xs">
+                          Score: {relDoc.score}
+                        </Badge>
+                      </div>
+                      <h3 className="font-medium mb-1 line-clamp-2">{relDoc.title}</h3>
+                      {relDoc.ministry && (
+                        <p className="text-sm text-muted-foreground">{relDoc.ministry}</p>
+                      )}
+                    </div>
+                    {relDoc.publication_date && (
+                      <div className="text-xs text-muted-foreground whitespace-nowrap">
+                        {new Date(relDoc.publication_date).toLocaleDateString()}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Explainable Reasons */}
+                  <div className="space-y-2 pl-4 border-l-2 border-muted">
+                    {relDoc.reasons.map((reason, idx) => (
+                      <div key={idx} className="text-sm">
+                        <span className="font-medium">
+                          {reason.type === 'lead' && '👤 Shared lead investigator: '}
+                          {reason.type === 'committee' && '👥 Shared committee member: '}
+                          {reason.type === 'ministry' && '🏛️ Same ministry: '}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {reason.entityName || reason.detail}
+                        </span>
+                        {reason.excerpt && (
+                          <p className="text-xs text-muted-foreground italic mt-1">
+                            "{reason.excerpt}"
+                            {reason.page && ` (page ${reason.page})`}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </Link>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}
