@@ -41,10 +41,10 @@ export default function DocumentDetail() {
         <Card>
           <CardContent className="py-8 text-center">
             <p className="text-muted-foreground">Document not found</p>
-            <Link to="/admin/scraper">
+            <Link to="/search">
               <Button variant="outline" className="mt-4">
                 <ArrowLeft className="mr-2 h-4 w-4" />
-                Back to Scraper
+                Tillbaka till sökning
               </Button>
             </Link>
           </CardContent>
@@ -84,10 +84,10 @@ export default function DocumentDetail() {
     <div className="container mx-auto py-8 space-y-6">
       {/* Header with navigation */}
       <div className="flex items-center justify-between">
-        <Link to="/admin/scraper">
+        <Link to="/search">
           <Button variant="ghost">
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Scraper
+            Tillbaka till sökning
           </Button>
         </Link>
         {document.url && (
