@@ -31,7 +31,7 @@
 | **Phase 3** | ✅ Complete | Multi-Agent AI (Walking Skeleton) | Timeline Agent, Metadata Agent, Head Detective, State Machine |
 | **Phase 4.1** | ✅ Complete | Search Walking Skeleton | Full-text search, filters, pagination, highlights |
 | **Phase 4.2** | ✅ Complete | Entity Features | Entity autocomplete, entity detail pages, relations FK |
-| **Phase 4.3** | 📋 Future | Discovery Features | Timeline viz, related docs |
+| **Phase 4.3** | 📋 Planning | Discovery MVP | Enhanced doc detail, process pages, related docs (deterministic) |
 | **Phase 5** | 📋 Planned | Legislative Graph Expansion | New doc types, Timeline Agent v2, Genvägar scraping |
 | **Phase 6** | 📋 Planned | Relationship Inference | Blackboard agent, case reconstruction |
 | **Phase 7** | 📋 Planned | Advanced Insights | Stakeholder mapping, predictions |
@@ -249,40 +249,92 @@ Relations table now enforces referential integrity:
 
 ---
 
-## Phase 4.3: Discovery Features 📋 FUTURE
+## Phase 4.3: Discovery MVP 📋 PLANNING
 
-**Status:** Deferred pending user feedback on entity features
+**Status:** Planning (thin slice approach)  
+**Strategy:** Walking skeleton → validate → expand iteratively
 
-**Goal:** Add timeline visualization, process pages, and document relationship discovery.
+**Goal:** Enable users to understand document context and explore connections.
 
-### Tentative Scope
-- **Process detail pages** (`/process/:id`)
-  - Show all documents in the process
-  - Display process timeline with all events
-  - Show entities involved across all documents
-  - Visualize process stage transitions
+### Core Outcome (MVP)
+A user can click a document → understand its context → discover related work.
 
-- **Timeline visualization** 
-  - D3 or recharts-based timeline chart
-  - Filter events by type
-  - Jump to source citation on click
-  - Show concurrent events across processes
+### In Scope for Phase 4.3 MVP
 
-- **Related documents sidebar**
-  - "Find similar SOUs" based on shared entities
-  - "Show other work by this utredare"
-  - Uses relations table to find connected docs
-  - Ranked by relevance (shared entities, ministry, stage)
+#### 1. Enhanced Document Detail Pages
+- **Process Context:**
+  - Display which process the document belongs to
+  - Show current stage + stage_explanation
+  - Link to process detail page
+  
+- **Entity Chips:**
+  - Display all entities mentioned in this document
+  - Each chip links to entity detail page
+  - Show entity type and role
+  
+- **Related Documents Sidebar (MVP):**
+  - Deterministic, explainable ranking:
+    - +3 points: Shared lead investigator (utredare)
+    - +2 points: Shared committee (kommitté)
+    - +1 point: Same ministry (departement)
+  - Each item shows **why it's related** (no black-box similarity)
+  - Max 10 related documents
+  - Clickable links to document detail pages
 
-- **Advanced search filters**
-  - Filter by entity involvement
-  - Filter by event types in timeline
-  - Filter by process stage
+#### 2. Process Detail Pages (`/process/:id`)
+- **Process Information:**
+  - Title, process_key, directive_number
+  - Current stage with stage_explanation
+  - Ministry
+  
+- **Documents in Process:**
+  - List all documents (directive + SOU)
+  - Show document role (directive, main_document)
+  - Link to document detail pages
+  
+- **Entities Involved:**
+  - All entities from related documents
+  - Reuse existing relations table
+  - Link to entity detail pages
+  
+- **Timeline Events (Simple List):**
+  - Display existing timeline_events
+  - No visualization yet (just chronological list)
+  - Show event_type, date, description
+  - Include source citations
 
-- **Enhanced document detail pages**
-  - Show all entities mentioned in document
-  - Link to related documents
-  - Display in-process context
+### Explicitly Deferred to Future Iterations
+These will **NOT** be implemented until MVP is validated:
+
+#### ❌ Not Now — Timeline Visualization
+- D3/Recharts visual timeline
+- Multi-process overlay
+- Event type filtering UI
+- Interactive timeline controls
+
+**Rationale:** Users must first navigate processes and related docs well before investing in visualization complexity.
+
+#### ❌ Not Now — Advanced Search Filters
+- Filter by entity involvement
+- Filter by event types
+- Advanced stage filtering
+- Saved searches
+
+**Rationale:** Adds UX and performance complexity. Better to understand usage patterns first.
+
+### Success Criteria
+- [ ] Users can see document's process context
+- [ ] Users can discover related documents with clear explanations
+- [ ] Users can navigate to process pages
+- [ ] Process pages show complete document list and entities
+- [ ] All connections are explainable (no black-box recommendations)
+- [ ] Performance remains under 500ms per page load
+
+### Key Principles
+- **Forensic accuracy:** Every connection must be verifiable
+- **Explainable connections:** Always show WHY documents are related
+- **One thin slice:** Ship, validate, then expand
+- **Citation-first:** Users can click through to evidence
 
 ---
 

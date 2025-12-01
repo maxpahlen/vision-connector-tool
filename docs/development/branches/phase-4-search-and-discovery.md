@@ -153,17 +153,93 @@ More complex polymorphic relations (entity→process, entity→entity, etc.) are
 
 ---
 
-## Phase 4.3 — Future
+## Phase 4.3 — Discovery MVP
 
-**Status:** Planning (deferred pending user feedback on Phase 4.2)
+**Status:** Planning (thin slice approach)  
+**Strategy:** Walking skeleton → validate → expand iteratively  
+**Target:** One coherent, shippable slice of discovery functionality
 
-**Tentative Scope:**
-- Process detail pages (`/process/:id`)
-- Timeline visualization with D3/recharts
-- Related documents sidebar
-- Advanced filters (entity involvement, event types)
-- Enhanced document detail pages
-- Saved searches
+### Core Outcome
+A user can click a document → understand its context → discover related work.
+
+### In Scope for MVP
+
+#### 1. Enhanced Document Detail Pages
+**Process Context:**
+- Display which process the document belongs to
+- Show current stage + stage_explanation  
+- Link to process detail page
+
+**Entity Chips:**
+- Display all entities mentioned in this document
+- Each chip links to entity detail page
+- Show entity type and role
+
+**Related Documents Sidebar (MVP):**
+- Deterministic, explainable ranking algorithm:
+  - +3 points: Shared lead investigator (utredare)
+  - +2 points: Shared committee (kommitté)
+  - +1 point: Same ministry (departement)
+- Each related item shows **WHY it's related** (transparent, no black-box)
+- Max 10 related documents
+- Clickable links to document detail pages
+
+#### 2. Process Detail Pages (`/process/:id`)
+**Process Information:**
+- Title, process_key, directive_number
+- Current stage with stage_explanation
+- Ministry
+
+**Documents in Process:**
+- List all documents (directive + SOU + any future docs)
+- Show document role (directive, main_document)
+- Link to document detail pages
+
+**Entities Involved:**
+- All entities from related documents (via existing relations table)
+- Entity type, name, role
+- Link to entity detail pages
+
+**Timeline Events (Simple List):**
+- Display existing timeline_events in chronological order
+- No visualization yet — just a clean list
+- Show event_type, date, description
+- Include source citations (page + excerpt)
+
+### Future Iterations (Not Included in MVP)
+
+These features are **explicitly deferred** until after MVP validation:
+
+#### ❌ Timeline Visualization
+- D3 or recharts-based visual timeline
+- Multi-process overlay and comparison
+- Event type filtering UI
+- Interactive timeline controls
+
+**Rationale:** Users must first navigate processes and related docs successfully. Only invest in visualization after we understand usage patterns.
+
+#### ❌ Advanced Search Filters
+- Filter by entity involvement
+- Filter by event types in timeline
+- Advanced stage filtering
+- Saved searches and alerts
+
+**Rationale:** Adds UX and performance complexity. Better to observe real usage before optimizing filters further.
+
+### Success Criteria
+- [ ] Users can see which process a document belongs to
+- [ ] Users can discover related documents with clear explanations
+- [ ] Users can navigate to process detail pages
+- [ ] Process pages show complete document list + entities
+- [ ] All connections are explainable (no black-box similarity)
+- [ ] Performance remains < 500ms per page load
+- [ ] Every connection is citation-backed
+
+### Key Principles
+- **Forensic accuracy:** Every data point traceable to source
+- **Explainable connections:** Always show WHY items are related
+- **One thin slice:** Ship → validate → expand
+- **User feedback drives iteration:** Don't build next slice until current one validates
 
 ---
 
@@ -283,12 +359,18 @@ CREATE INDEX documents_search_idx ON documents USING GIN(search_vector);
 - [x] Navigation between search, entity, and document pages works
 - [x] Performance optimized with indexes and debouncing
 
-### Phase 4.3+ (Future)
-- [ ] Process detail pages show full process context
-- [ ] Timeline visualization with interactive events
-- [ ] "Related documents" feature surfaces useful connections
-- [ ] Full-text search ranking with Swedish language support
-- [ ] Advanced filtering by entity involvement
+### Phase 4.3 MVP (Planning)
+- [ ] Enhanced document detail with process context and entity chips
+- [ ] Related documents sidebar with deterministic ranking (+3/+2/+1 algorithm)
+- [ ] Process detail pages at /process/:id
+- [ ] Timeline events as simple chronological list (no visualization yet)
+- [ ] All connections explainable and citation-backed
+
+### Phase 4.3 Future Iterations (Deferred Until After MVP Validation)
+- [ ] Timeline visualization with D3/recharts (interactive, multi-process)
+- [ ] Advanced search filters (entity involvement, event types, stage)
+- [ ] Full-text search ranking with Swedish language support (ts_rank)
+- [ ] Saved searches and user alerts
 
 ---
 
