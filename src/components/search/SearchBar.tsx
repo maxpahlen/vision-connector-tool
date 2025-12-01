@@ -39,7 +39,7 @@ export function SearchBar({ onSearch, initialQuery = '' }: SearchBarProps) {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQuery(query);
-    }, 300);
+    }, 150);
 
     return () => clearTimeout(timer);
   }, [query]);

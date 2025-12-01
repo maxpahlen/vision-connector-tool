@@ -56,7 +56,7 @@ export default function EntityDetail() {
           relation_type,
           source_page,
           source_excerpt,
-          documents!relations_source_document_id_fkey (
+          documents!relations_target_id_fkey (
             id,
             doc_type,
             doc_number,
@@ -65,8 +65,8 @@ export default function EntityDetail() {
             publication_date
           )
         `)
-        .eq('target_id', id)
-        .eq('target_type', 'entity')
+        .eq('source_id', id)
+        .eq('source_type', 'entity')
         .order('created_at', { ascending: false });
 
       if (error) throw error;

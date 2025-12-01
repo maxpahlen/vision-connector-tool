@@ -114,7 +114,7 @@ export function FilterPanel({ filters, onFiltersChange }: FilterPanelProps) {
                   <div key={type} className="flex items-center space-x-2">
                     <Checkbox
                       id={`doctype-${type}`}
-                      checked={localFilters.doc_types?.includes(type)}
+                      checked={localFilters.doc_types?.includes(type) ?? false}
                       onCheckedChange={(checked) =>
                         handleCheckboxChange('doc_types', type, checked as boolean)
                       }
@@ -142,7 +142,7 @@ export function FilterPanel({ filters, onFiltersChange }: FilterPanelProps) {
                   <div key={ministry} className="flex items-center space-x-2">
                     <Checkbox
                       id={`ministry-${ministry}`}
-                      checked={localFilters.ministries?.includes(ministry)}
+                      checked={localFilters.ministries?.includes(ministry) ?? false}
                       onCheckedChange={(checked) =>
                         handleCheckboxChange('ministries', ministry, checked as boolean)
                       }
@@ -170,7 +170,7 @@ export function FilterPanel({ filters, onFiltersChange }: FilterPanelProps) {
                   <div key={stage} className="flex items-center space-x-2">
                     <Checkbox
                       id={`stage-${stage}`}
-                      checked={localFilters.stages?.includes(stage)}
+                      checked={localFilters.stages?.includes(stage) ?? false}
                       onCheckedChange={(checked) =>
                         handleCheckboxChange('stages', stage, checked as boolean)
                       }
