@@ -10,7 +10,7 @@ interface SearchResultCardProps {
 
 export function SearchResultCard({ result }: SearchResultCardProps) {
   return (
-    <Link to={`/admin/scraper/document/${result.id}`}>
+    <Link to={`/document/${result.id}`}>
       <Card className="hover:shadow-md transition-shadow cursor-pointer">
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-2">
