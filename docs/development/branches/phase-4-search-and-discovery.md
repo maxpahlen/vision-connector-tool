@@ -1,6 +1,6 @@
 # Phase 4: Search & Discovery
 
-**Status:** Phase 4.1 ✅ COMPLETE | Phase 4.2 Planning  
+**Status:** Phase 4.1 ✅ COMPLETE | Phase 4.2 ✅ COMPLETE | Phase 4.3 Planning  
 **Branch:** `phase-4-search-and-discovery`  
 **Dependencies:** Phase 3 (Multi-Agent AI System)
 
@@ -65,17 +65,20 @@ All Phase 4.1 success criteria met:
 
 ---
 
-## Phase 4.2 — In Progress
+## Phase 4.2 — Entity Features ✅ COMPLETE
 
-**Status:** Implementing entity features  
-**Started:** 2025-11-28
+**Status:** Complete  
+**Completion Date:** 2025-12-01
 
-**Completed:**
+**Completed Features:**
 - ✅ Entity autocomplete endpoint (`search-entities`) - IMPLEMENTED
 - ✅ Typeahead search on entities.name - IMPLEMENTED
 - ✅ Returns top 10 matching entities with document counts - IMPLEMENTED
 - ✅ Integrated into SearchBar component - IMPLEMENTED
 - ✅ Entity detail pages (`/entity/:id`) - IMPLEMENTED
+- ✅ Document detail pages accessible from entity pages - IMPLEMENTED
+- ✅ Foreign key constraints on relations table - IMPLEMENTED
+- ✅ Performance optimization with pg_trgm and GIN indexes - IMPLEMENTED
 
 **Recent Fixes (2025-12-01):**
 - ✅ Fixed `relations` table foreign key constraints - COMPLETE
@@ -88,10 +91,8 @@ All Phase 4.1 success criteria met:
   - Related entities query uses `entities!relations_source_id_fkey`
   - Timeline events query verified with `processes!timeline_events_process_id_fkey`
 - ✅ Entity detail pages now fully functional - COMPLETE
-
-**In Progress:**
-- [ ] Enhanced search ranking (PostgreSQL `ts_rank` with Swedish dictionary) - PENDING
-- [ ] Performance optimizations based on usage data - PENDING
+- ✅ Added `/document/:id` route for public document access - COMPLETE
+- ✅ Fixed navigation between search, entity, and document pages - COMPLETE
 
 **Data Model Note:**
 For Phase 4, the `relations` table is modeled as **entity → document** relationships only:
@@ -154,12 +155,14 @@ More complex polymorphic relations (entity→process, entity→entity, etc.) are
 
 ## Phase 4.3 — Future
 
-**Status:** Planning (deferred until Phase 4.2 complete)
+**Status:** Planning (deferred pending user feedback on Phase 4.2)
 
 **Tentative Scope:**
+- Process detail pages (`/process/:id`)
 - Timeline visualization with D3/recharts
 - Related documents sidebar
 - Advanced filters (entity involvement, event types)
+- Enhanced document detail pages
 - Saved searches
 
 ---
@@ -272,11 +275,20 @@ CREATE INDEX documents_search_idx ON documents USING GIN(search_vector);
 - [x] Pagination works smoothly
 - [x] Users can start using the product immediately
 
-### Phase 4.2+ (Future)
-- [ ] Entity pages show complete involvement timeline
+### Phase 4.2 (Complete)
+- [x] Entity autocomplete searches entities by name
+- [x] Entity pages show complete involvement timeline
+- [x] Related entities discovered through shared documents
+- [x] All foreign key relationships properly constrained
+- [x] Navigation between search, entity, and document pages works
+- [x] Performance optimized with indexes and debouncing
+
+### Phase 4.3+ (Future)
+- [ ] Process detail pages show full process context
+- [ ] Timeline visualization with interactive events
 - [ ] "Related documents" feature surfaces useful connections
 - [ ] Full-text search ranking with Swedish language support
-- [ ] Autocomplete for entity names
+- [ ] Advanced filtering by entity involvement
 
 ---
 
