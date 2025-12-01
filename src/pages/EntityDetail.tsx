@@ -79,24 +79,28 @@ export default function EntityDetail() {
   const { data: relatedEntities, isLoading: relatedEntitiesLoading } = useQuery({
     queryKey: ['entity-related', id],
     queryFn: async () => {
-      // Find entities that appear in the same documents
+      // Get document IDs this entity is related to
+      const documentIds = documents?.map(d => (d.documents as any)?.id).filter(Boolean) || [];
+      
+      if (documentIds.length === 0) return [];
+
+      // Find other entities that appear in the same documents
       const { data: sameDocRelations, error } = await supabase
         .from('relations')
         .select(`
-          source_document_id,
+          source_id,
           target_id,
-          entities!relations_target_id_fkey (
+          entities!relations_source_id_fkey (
             id,
             name,
             entity_type,
             role
           )
         `)
-        .eq('target_type', 'entity')
-        .neq('target_id', id)
-        .in('source_document_id', 
-          documents?.map(d => (d.documents as any).id).filter(Boolean) || []
-        );
+        .eq('source_type', 'entity')
+        .eq('target_type', 'document')
+        .neq('source_id', id)
+        .in('target_id', documentIds);
 
       if (error) throw error;
 
