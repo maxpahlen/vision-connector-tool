@@ -11,6 +11,7 @@ import AdminScraper from "./pages/AdminScraper";
 import DocumentDetail from "./pages/DocumentDetail";
 import Search from "./pages/Search";
 import EntityDetail from "./pages/EntityDetail";
+import ProcessDetail from "./pages/ProcessDetail";
 import ProtectedRoute from "./components/layout/ProtectedRoute";
 import AdminRoute from "./components/layout/AdminRoute";
 
@@ -47,6 +48,11 @@ const App = () => (
           <Route path="/document/:id" element={
             <ProtectedRoute>
               <DocumentDetail />
+            </ProtectedRoute>
+          } />
+          <Route path="/process/:id" element={
+            <ProtectedRoute>
+              <ProcessDetail />
             </ProtectedRoute>
           } />
           <Route path="/admin/scraper" element={
