@@ -1,6 +1,7 @@
 import { ScraperControls } from '@/components/admin/ScraperControls';
 import { StateMachineTest } from '@/components/admin/StateMachineTest';
 import { TimelineAgentTest } from '@/components/admin/TimelineAgentTest';
+import { TimelineAgentV2Test } from '@/components/admin/TimelineAgentV2Test';
 import { HeadDetectiveTest } from '@/components/admin/HeadDetectiveTest';
 import { MetadataAgentTest } from '@/components/admin/MetadataAgentTest';
 import { IntegrationTest } from '@/components/admin/IntegrationTest';
@@ -24,6 +25,7 @@ export default function AdminScraper() {
           <StateMachineTest />
         </div>
         <IntegrationTest />
+        <TimelineAgentV2Test />
         <TimelineAgentTest />
         <HeadDetectiveTest />
         <MetadataAgentTest />
