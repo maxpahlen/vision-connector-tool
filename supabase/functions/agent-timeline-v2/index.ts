@@ -103,8 +103,11 @@ serve(async (req) => {
 
     // Extract focus content based on document type
     // For SOUs: front matter (first 5000 chars)
-    // For other types: first 10000 chars (may have relevant dates deeper in)
-    const contentLength = document.doc_type === 'SOU' ? 5000 : 10000;
+    // For directives: full content (important dates throughout)
+    // For other types: first 10000 chars
+    const docTypeLower = document.doc_type.toLowerCase();
+    const contentLength = docTypeLower === 'sou' ? 5000 : 
+                          docTypeLower === 'directive' ? 15000 : 10000;
     const focusContent = document.raw_content.substring(0, contentLength);
 
     console.log('[Timeline Agent v2] Extracted focus content', { 
@@ -459,14 +462,17 @@ Remember: confidence is based on date precision (high=day, medium=month, low=yea
  * Get relevant event types for a document type
  */
 function getEventTypesForDocument(docType: string): string[] {
+  // Normalize to lowercase for consistent matching
+  const normalizedType = docType.toLowerCase();
+  
   const mapping: Record<string, string[]> = {
-    'SOU': ['sou_published', 'committee_formed', 'directive_issued'],
-    'Dir': ['directive_issued', 'committee_formed'],
+    'sou': ['sou_published', 'committee_formed', 'directive_issued'],
+    'directive': ['directive_issued', 'committee_formed', 'remiss_period_end'],
     'proposition': ['proposition_submitted', 'committee_formed'],
     'remiss': ['remiss_period_start', 'remiss_period_end'],
     'committee_report': ['proposition_submitted'],
     'law': ['law_enacted']
   };
   
-  return mapping[docType] || EVENT_TYPES.slice();
+  return mapping[normalizedType] || EVENT_TYPES.slice();
 }
