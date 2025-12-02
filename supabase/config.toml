@@ -3,6 +3,9 @@ project_id = "oxwizikytcdevwkjaegq"
 [functions.agent-timeline]
 verify_jwt = false
 
+[functions.agent-timeline-v2]
+verify_jwt = false
+
 [functions.agent-head-detective]
 verify_jwt = false
 
@@ -13,6 +16,9 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.scrape-regeringen-document]
+verify_jwt = false
+
+[functions.scrape-proposition-index]
 verify_jwt = false
 
 [functions.process-task-queue]

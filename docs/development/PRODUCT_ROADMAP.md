@@ -382,82 +382,57 @@ These were **NOT** implemented until MVP is validated:
 
 ---
 
-## Phase 5: Legislative Graph Expansion 📋 PLANNED
+## Phase 5: Legislative Graph Expansion 🚀 IN PROGRESS
 
 **Goal:** Expand beyond SOUs to build comprehensive legislative process graph.
 
-### New Document Types
-- **Propositions** (regeringens propositioner)
-- **Remisser** (consultation documents)
-- **Remissvar** (consultation responses)
-- **Motioner** (parliamentary motions)
-- **Committee Reports** (utskottsbetänkanden)
-- **Laws** (lagar och förordningar)
+### Core Strategy
+> One new document type at a time → fully end-to-end → tested → then move to the next.
+
+### Implementation Order (following Swedish legislative lifecycle)
+1. **Propositions** — FIRST
+2. **Remisser + Remissvar** — SECOND
+3. **Committee Reports** — THIRD
+4. **Laws** — FOURTH
+
+### Database Schema Changes
+- `lifecycle_stage` column on documents (directive, interim_analysis, remiss, proposition, parliament, law)
+- `document_references` table for document-to-document citations with confidence scoring
+- `external_urls` JSONB column for press releases and external links
 
 ### Timeline Agent v2 Enhancements
-- **Future date extraction:**
-  - "Beslut vid regeringssammanträde den 30 november 2025"
-  - "Planerat överlämningsdatum i juni 2026"
-- **Additional event types:**
-  - directive_issued
-  - committee_formed
+- **Confidence scoring:** high (exact day), medium (month+year), low (year only)
+- **Future date extraction:** Planned events with citations
+- **New event types:**
+  - directive_issued, committee_formed
   - remiss_period_start / remiss_period_end
-  - proposition_submitted
-  - law_enacted
-
-### External Reference Scraping
-- **"Genvägar" links from regeringen.se:**
-  - Press releases
-  - Related directives
-  - Related reports
-  - Amendments
-  - Document bundles
-- **Purpose:** Enrich cross-document linking and similarity suggestions
+  - proposition_submitted, law_enacted
 
 ### Metadata Agent v2 Enhancements
-- **Additional entity types:**
-  - External stakeholders (who submitted remissvar)
-  - Referenced legislation
-  - Impact sectors
-  - Budget information
+- **ADD:** External stakeholders (organizations submitting remissvar)
+- **KEEP:** Lead investigators, committee names
+- **REMOVE:** Ministry extraction (use documents.ministry instead)
 
-### New Database Tables (Tentative)
-```sql
--- New document types share existing documents table (doc_type column)
--- New event types use existing timeline_events table (event_type column)
-
--- Potential new tables:
-CREATE TABLE document_references (
-  id UUID PRIMARY KEY,
-  source_document_id UUID REFERENCES documents(id),
-  target_document_id UUID REFERENCES documents(id),
-  reference_type TEXT, -- 'cites', 'amends', 'responds_to', 'related'
-  source_page INTEGER,
-  source_excerpt TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE external_links (
-  id UUID PRIMARY KEY,
-  document_id UUID REFERENCES documents(id),
-  link_url TEXT,
-  link_type TEXT, -- 'press_release', 'genvag', 'related'
-  link_title TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
+### Genvägar Link Classification
+- Model as document-to-document references (not generic URLs)
+- Classify reference types: cites, amends, responds_to, based_on, related
+- Store unresolved references with target_doc_number for future linking
 
 ### Success Criteria
-- [ ] All new document types ingestible via scrapers
-- [ ] Timeline Agent v2 extracts future dates with citations
-- [ ] External references scraped and stored
-- [ ] Document-to-document references captured
-- [ ] No degradation of Phase 3 data quality
+- [ ] Propositions end-to-end ingestion and searchable
+- [ ] Timeline Agent v2 extracts events with confidence scores
+- [ ] Metadata Agent v2 extracts stakeholders without hallucinations
+- [ ] Genvägar links produce document-to-document references
+- [ ] lifecycle_stage populated and consistent
+- [ ] No regressions to Phase 3 or Phase 4 functionality
 
-### Out of Scope
-- Document-to-document relationship **inference** (Phase 6)
-- Case-level reconstruction (Phase 6)
-- Entity influence mapping (Phase 7)
+### Out of Scope (Phase 6+)
+- Document-to-document relationship **inference**
+- Case-level reconstruction
+- Timeline visualization (UI)
+- UX improvements
+
+**Documentation:** `docs/development/branches/phase-5-legislative-graph-expansion.md`, `docs/development/PHASE_5_IMPLEMENTATION_PLAN.md`
 
 ---
 
