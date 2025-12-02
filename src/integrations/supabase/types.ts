@@ -77,12 +77,65 @@ export type Database = {
           },
         ]
       }
+      document_references: {
+        Row: {
+          confidence: string | null
+          created_at: string | null
+          id: string
+          reference_type: string
+          source_document_id: string
+          source_excerpt: string | null
+          source_page: number | null
+          target_doc_number: string | null
+          target_document_id: string | null
+        }
+        Insert: {
+          confidence?: string | null
+          created_at?: string | null
+          id?: string
+          reference_type: string
+          source_document_id: string
+          source_excerpt?: string | null
+          source_page?: number | null
+          target_doc_number?: string | null
+          target_document_id?: string | null
+        }
+        Update: {
+          confidence?: string | null
+          created_at?: string | null
+          id?: string
+          reference_type?: string
+          source_document_id?: string
+          source_excerpt?: string | null
+          source_page?: number | null
+          target_doc_number?: string | null
+          target_document_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_references_source_document_id_fkey"
+            columns: ["source_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_references_target_document_id_fkey"
+            columns: ["target_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       documents: {
         Row: {
           created_at: string | null
           doc_number: string
           doc_type: string
+          external_urls: Json | null
           id: string
+          lifecycle_stage: string | null
           metadata: Json | null
           ministry: string | null
           pdf_url: string | null
@@ -98,7 +151,9 @@ export type Database = {
           created_at?: string | null
           doc_number: string
           doc_type: string
+          external_urls?: Json | null
           id?: string
+          lifecycle_stage?: string | null
           metadata?: Json | null
           ministry?: string | null
           pdf_url?: string | null
@@ -114,7 +169,9 @@ export type Database = {
           created_at?: string | null
           doc_number?: string
           doc_type?: string
+          external_urls?: Json | null
           id?: string
+          lifecycle_stage?: string | null
           metadata?: Json | null
           ministry?: string | null
           pdf_url?: string | null
