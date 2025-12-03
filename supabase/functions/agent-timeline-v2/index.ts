@@ -33,10 +33,12 @@ interface TimelineAgentRequest {
 interface TimelineEventMetadata {
   // For committee_formed events
   committee_event_kind?: 'lead_investigator_appointed' | 'expert_appointed' | 'secretary_appointed' | 'other_member_appointed';
+  committee_type?: 'main_committee' | 'subcommittee' | 'expert_group' | 'secretariat';
   role?: string;
   person_name?: string;
   
   // For deadline events (remiss_period_end, etc.)
+  deadline_type?: 'remiss_deadline' | 'interim_report' | 'final_report' | 'partial_report' | 'milestone' | 'unspecified_deadline';
   deadline_kind?: 'interim_report' | 'final_report' | 'other_deadline';
   deadline_index?: number;
   deadline_label?: string;
@@ -193,6 +195,11 @@ serve(async (req) => {
                   enum: ["lead_investigator_appointed", "expert_appointed", "secretary_appointed", "other_member_appointed"],
                   description: "For committee_formed: type of appointment"
                 },
+                committee_type: {
+                  type: "string",
+                  enum: ["main_committee", "subcommittee", "expert_group", "secretariat"],
+                  description: "For committee_formed: type of committee being formed (main_committee, subcommittee, expert_group, secretariat)"
+                },
                 role: {
                   type: "string",
                   description: "For committee_formed: Swedish role title exactly as written (e.g., 'särskild utredare', 'sakkunnig')"
@@ -202,10 +209,15 @@ serve(async (req) => {
                   description: "For committee_formed: person's name exactly as it appears in citation"
                 },
                 // Deadline event metadata
+                deadline_type: {
+                  type: "string",
+                  enum: ["remiss_deadline", "interim_report", "final_report", "partial_report", "milestone", "unspecified_deadline"],
+                  description: "For deadline events: specific type of deadline"
+                },
                 deadline_kind: {
                   type: "string",
                   enum: ["interim_report", "final_report", "other_deadline"],
-                  description: "For deadline events: type of deadline"
+                  description: "For deadline events: general category of deadline (for backwards compatibility)"
                 },
                 deadline_index: {
                   type: "number",
@@ -264,14 +276,25 @@ When you create a committee_formed event based on evidence like:
 - "förordnades som sakkunnig"
 - "förordnades som sekreterare"
 
-you MUST:
-- Set metadata.committee_event_kind to one of:
+you MUST populate these metadata fields:
+
+**a) committee_event_kind** (required):
   - "lead_investigator_appointed" – when a person is appointed as *särskild utredare* or equivalent lead investigator.
   - "expert_appointed" – when a person is appointed as *sakkunnig*, *ämnessakkunnig*, or similar expert role.
   - "secretary_appointed" – when a person is appointed as *sekreterare* or *huvudsekreterare*.
   - "other_member_appointed" – for any other committee membership that does not clearly fit the above.
-- Set metadata.role to the Swedish role title exactly as written in the document (e.g., "särskild utredare", "sakkunnig", "ämnessakkunnig").
-- Set metadata.person_name to the person's name exactly as it appears in the citation text.
+
+**b) committee_type** (required) – Identify the EXACT committee type being formed or modified:
+  - "main_committee" – Kommitté, kommittédirektivets huvudkommitté
+  - "subcommittee" – Arbetsgrupp, delutredning
+  - "expert_group" – Sakkunniggrupp, referensgrupp
+  - "secretariat" – Sekretariatet, huvudsekreterare/sekreterare-gruppen
+
+Use the smallest specific type available. If the document does not specify a type explicitly but the context is clear (e.g., "arbetsgruppen består av…" → subcommittee), choose the implied type. Default to "main_committee" if unclear.
+
+**c) role** (required): Swedish role title exactly as written in the document (e.g., "särskild utredare", "sakkunnig", "ämnessakkunnig").
+
+**d) person_name** (required): Person's name exactly as it appears in the citation text.
 
 If you are not confident which committee_event_kind applies, you may still create the event if the evidence is strong, but use "other_member_appointed" as the committee_event_kind.
 
@@ -281,16 +304,27 @@ When directives or SOUs contain explicit future deadlines such as:
 - "Delredovisningar ska lämnas senast den 31 mars 2027 respektive den 31 mars 2028."
 - "Uppdraget ska slutredovisas senast den 31 mars 2029."
 
-and you create an event for those dates, you MUST:
-- Set metadata.deadline_kind to one of:
+you MUST populate these metadata fields:
+
+**a) deadline_type** (required) – Use one of:
+  - "remiss_deadline" – Consultation response deadline
+  - "interim_report" – Partial report deadline / delredovisning
+  - "final_report" – Final report / slutredovisning
+  - "partial_report" – Other partial deliverable
+  - "milestone" – Non-report milestone
+  - "unspecified_deadline" – Only if no label is provided in the document
+
+**b) deadline_kind** (required for backwards compatibility):
   - "interim_report" – for partial reports / delredovisningar.
   - "final_report" – for final reports / slutredovisning.
-  - "other_deadline" – for other explicit "senast den …" style deadlines that are not clearly interim or final reports.
-- For each directive with multiple deadlines, assign:
-  - metadata.deadline_index starting at 1 in strict chronological order (1, 2, 3, …).
-- Set metadata.deadline_label to a short Swedish label taken from the document when possible, e.g., "Delredovisning" or "Slutredovisning".
+  - "other_deadline" – for other explicit "senast den …" style deadlines.
 
-If you cannot confidently decide whether a deadline is an interim report or a final report, use:
+**c) deadline_index** (required): Starting at 1 in strict chronological order (1, 2, 3, …) for each directive with multiple deadlines.
+
+**d) deadline_label** (required): Short Swedish label taken from the document when possible, e.g., "Delredovisning" or "Slutredovisning". Always preserve the Swedish label found in the document.
+
+If you cannot confidently decide the deadline type, use:
+- "deadline_type": "unspecified_deadline"
 - "deadline_kind": "other_deadline"
 - and a neutral deadline_label such as "Tidsfrist".
 
