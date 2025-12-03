@@ -172,7 +172,7 @@ ADD COLUMN external_urls JSONB DEFAULT '[]'::jsonb;
 
 ---
 
-## Timeline Agent v2 Requirements
+## Timeline Agent v2.1 Requirements
 
 ### New Event Types
 
@@ -180,9 +180,9 @@ ADD COLUMN external_urls JSONB DEFAULT '[]'::jsonb;
 |------------|-------------|----------------|
 | `sou_published` | SOU handed over to government | SOU |
 | `directive_issued` | Directive issued by government | Directive |
-| `committee_formed` | Committee established | SOU, Directive |
+| `committee_formed` | Person appointed to committee/investigation | SOU, Directive |
 | `remiss_period_start` | Consultation period begins | Remiss |
-| `remiss_period_end` | Consultation deadline | Remiss |
+| `remiss_period_end` | Consultation deadline | Remiss, Directive |
 | `proposition_submitted` | Proposition submitted to parliament | Proposition |
 | `law_enacted` | Law comes into force | Law |
 
@@ -194,7 +194,46 @@ Confidence based **only** on linguistic evidence:
 - **medium**: Month + year specified (e.g., "i juni 2026")
 - **low**: Year only or vague timing (e.g., "under 2027", "våren 2028")
 
-### Tool Schema v2
+### Metadata Schema (v2.1)
+
+Timeline events now support structured metadata in `timeline_events.metadata` JSONB column:
+
+#### For `committee_formed` events:
+
+```json
+{
+  "committee_event_kind": "lead_investigator_appointed" | "expert_appointed" | "secretary_appointed" | "other_member_appointed",
+  "role": "<Swedish role title as written, e.g. 'särskild utredare', 'sakkunnig'>",
+  "person_name": "<name exactly as written in the document>"
+}
+```
+
+| `committee_event_kind` value | Description |
+|------------------------------|-------------|
+| `lead_investigator_appointed` | Appointed as *särskild utredare* or equivalent lead |
+| `expert_appointed` | Appointed as *sakkunnig*, *ämnessakkunnig* |
+| `secretary_appointed` | Appointed as *sekreterare*, *huvudsekreterare* |
+| `other_member_appointed` | Fallback for other committee roles |
+
+#### For deadline events (`remiss_period_end`, etc.):
+
+```json
+{
+  "deadline_kind": "interim_report" | "final_report" | "other_deadline",
+  "deadline_index": 1,
+  "deadline_label": "<short Swedish label, e.g. 'Delredovisning', 'Slutredovisning'>"
+}
+```
+
+| `deadline_kind` value | Description |
+|-----------------------|-------------|
+| `interim_report` | Partial reports / delredovisningar |
+| `final_report` | Final report / slutredovisning |
+| `other_deadline` | Other explicit deadlines |
+
+**Indexing rule:** For directives with multiple deadlines, `deadline_index` starts at 1 in chronological order.
+
+### Tool Schema v2.1
 
 ```typescript
 {
@@ -227,10 +266,29 @@ Confidence based **only** on linguistic evidence:
     actors: {
       type: "array",
       items: { name: string, role: string }
+    },
+    metadata: {
+      type: "object",
+      description: "Structured metadata for committee/deadline events",
+      properties: {
+        committee_event_kind: { type: "string", enum: [...] },
+        role: { type: "string" },
+        person_name: { type: "string" },
+        deadline_kind: { type: "string", enum: [...] },
+        deadline_index: { type: "number" },
+        deadline_label: { type: "string" }
+      }
     }
   }
 }
 ```
+
+### Deduplication Rules
+
+- Duplicate detection is based on `(process_id, event_type, event_date)` only
+- `metadata` is NOT part of the uniqueness key
+- Re-running on same document will not create duplicates
+- Metadata can be updated/refined without duplicate explosion
 
 ---
 

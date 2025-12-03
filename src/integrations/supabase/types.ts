@@ -411,6 +411,7 @@ export type Database = {
           event_date: string
           event_type: string
           id: string
+          metadata: Json | null
           process_id: string
           source_excerpt: string | null
           source_page: number | null
@@ -423,6 +424,7 @@ export type Database = {
           event_date: string
           event_type: string
           id?: string
+          metadata?: Json | null
           process_id: string
           source_excerpt?: string | null
           source_page?: number | null
@@ -435,6 +437,7 @@ export type Database = {
           event_date?: string
           event_type?: string
           id?: string
+          metadata?: Json | null
           process_id?: string
           source_excerpt?: string | null
           source_page?: number | null
