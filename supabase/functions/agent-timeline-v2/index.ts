@@ -403,7 +403,14 @@ Remember:
     });
 
     // Process and insert each event
-    const insertedEvents = [];
+    const insertedEvents: Array<{
+      id: string;
+      event_type: string;
+      event_date: string;
+      confidence: string;
+      metadata: TimelineEventMetadata;
+      action: 'inserted' | 'updated';
+    }> = [];
     
     for (const event of extractedEvents) {
       // Validate event data
@@ -445,31 +452,107 @@ Remember:
         normalizedDate = `${normalizedDate}-01`;
       }
 
-      // Check for duplicate (same process, event_type, and date)
-      // NOTE: metadata is NOT part of uniqueness key
-      const { data: existingEvent } = await supabase
-        .from('timeline_events')
-        .select('id')
-        .eq('process_id', process_id)
-        .eq('event_type', event.event_type)
-        .eq('event_date', normalizedDate)
-        .maybeSingle();
-
-      if (existingEvent) {
-        console.log('[Timeline Agent v2.1] Duplicate event, skipping', { 
-          document_id, 
-          event_type: event.event_type,
-          event_date: normalizedDate
-        });
-        continue;
-      }
-
       // Prepare metadata - ensure it's a valid object or empty
-      const eventMetadata = event.metadata && typeof event.metadata === 'object' 
+      const eventMetadata: TimelineEventMetadata = event.metadata && typeof event.metadata === 'object' 
         ? event.metadata 
         : {};
 
-      // Insert timeline event with metadata
+      // SPECIAL HANDLING: committee_formed events are unique per person per date
+      if (event.event_type === 'committee_formed' && eventMetadata?.person_name) {
+        const { data: existingCommittee } = await supabase
+          .from('timeline_events')
+          .select('id, metadata')
+          .eq('process_id', process_id)
+          .eq('event_type', 'committee_formed')
+          .eq('event_date', normalizedDate)
+          .contains('metadata', { person_name: eventMetadata.person_name })
+          .maybeSingle();
+
+        if (existingCommittee) {
+          // This specific person already has an event on this date
+          // Update metadata if we have new/richer metadata
+          if (Object.keys(eventMetadata).length > 0) {
+            const { error: updateError } = await supabase
+              .from('timeline_events')
+              .update({ metadata: eventMetadata })
+              .eq('id', existingCommittee.id);
+
+            if (!updateError) {
+              console.log('[Timeline Agent v2.1] ✅ Updated metadata for existing committee event', { 
+                document_id,
+                event_id: existingCommittee.id,
+                event_type: 'committee_formed',
+                event_date: normalizedDate,
+                person_name: eventMetadata.person_name,
+                metadata: eventMetadata
+              });
+              insertedEvents.push({
+                id: existingCommittee.id,
+                event_type: 'committee_formed',
+                event_date: normalizedDate,
+                confidence: event.confidence,
+                metadata: eventMetadata,
+                action: 'updated'
+              });
+            }
+          } else {
+            console.log('[Timeline Agent v2.1] Duplicate committee event, no new metadata', { 
+              document_id, 
+              event_type: 'committee_formed',
+              event_date: normalizedDate,
+              person_name: eventMetadata.person_name
+            });
+          }
+          continue; // Don't insert a second identical person-event
+        }
+        // No existing committee event for this person - fall through to insert
+      } else {
+        // NON-COMMITTEE EVENTS: Check for duplicate by core fields (process_id, event_type, event_date)
+        const { data: existingEvent } = await supabase
+          .from('timeline_events')
+          .select('id, metadata')
+          .eq('process_id', process_id)
+          .eq('event_type', event.event_type)
+          .eq('event_date', normalizedDate)
+          .maybeSingle();
+
+        if (existingEvent) {
+          // Duplicate found - update metadata if we have new metadata
+          if (Object.keys(eventMetadata).length > 0) {
+            const { error: updateError } = await supabase
+              .from('timeline_events')
+              .update({ metadata: eventMetadata })
+              .eq('id', existingEvent.id);
+
+            if (!updateError) {
+              console.log('[Timeline Agent v2.1] ✅ Updated metadata for existing event', { 
+                document_id,
+                event_id: existingEvent.id,
+                event_type: event.event_type,
+                event_date: normalizedDate,
+                metadata: eventMetadata
+              });
+              insertedEvents.push({
+                id: existingEvent.id,
+                event_type: event.event_type,
+                event_date: normalizedDate,
+                confidence: event.confidence,
+                metadata: eventMetadata,
+                action: 'updated'
+              });
+            }
+          } else {
+            console.log('[Timeline Agent v2.1] Duplicate event, no new metadata', { 
+              document_id, 
+              event_type: event.event_type,
+              event_date: normalizedDate
+            });
+          }
+          continue;
+        }
+      }
+
+      // INSERT NEW EVENT (no duplicate found)
       const { data: insertedEvent, error: insertError } = await supabase
         .from('timeline_events')
         .insert({
@@ -500,7 +583,8 @@ Remember:
         event_type: event.event_type,
         event_date: normalizedDate,
         confidence: event.confidence,
-        metadata: eventMetadata
+        metadata: eventMetadata,
+        action: 'inserted'
       });
 
       console.log('[Timeline Agent v2.1] ✅ Event inserted', { 
@@ -514,6 +598,10 @@ Remember:
     }
 
     const processingTime = Date.now() - startTime;
+    
+    // Calculate inserted vs updated counts
+    const eventsInserted = insertedEvents.filter(e => e.action === 'inserted').length;
+    const eventsUpdated = insertedEvents.filter(e => e.action === 'updated').length;
 
     // Update task status
     if (task_id) {
@@ -525,7 +613,8 @@ Remember:
           output_data: {
             success: true,
             events_extracted: extractedEvents.length,
-            events_inserted: insertedEvents.length,
+            events_inserted: eventsInserted,
+            events_updated: eventsUpdated,
             events: insertedEvents,
             processing_time_ms: processingTime
           }
@@ -537,7 +626,8 @@ Remember:
       JSON.stringify({ 
         success: true,
         events_extracted: extractedEvents.length,
-        events_inserted: insertedEvents.length,
+        events_inserted: eventsInserted,
+        events_updated: eventsUpdated,
         events: insertedEvents,
         processing_time_ms: processingTime
       }),

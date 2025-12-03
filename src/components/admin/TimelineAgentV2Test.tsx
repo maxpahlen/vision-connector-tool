@@ -41,11 +41,13 @@ interface TestResult {
   status: 'pending' | 'running' | 'success' | 'skipped' | 'error';
   events_extracted?: number;
   events_inserted?: number;
+  events_updated?: number;
   events?: Array<{
     event_type: string;
     event_date: string;
     confidence: string;
     metadata?: EventMetadata;
+    action?: 'inserted' | 'updated';
   }>;
   error?: string;
   reason?: string;
@@ -57,7 +59,8 @@ interface TestSummary {
   success: number;
   skipped: number;
   errors: number;
-  total_events: number;
+  total_inserted: number;
+  total_updated: number;
   confidence_breakdown: {
     high: number;
     medium: number;
@@ -89,7 +92,8 @@ export function TimelineAgentV2Test() {
       success: 0,
       skipped: 0,
       errors: 0,
-      total_events: 0,
+      total_inserted: 0,
+      total_updated: 0,
       confidence_breakdown: { high: 0, medium: 0, low: 0 },
       event_types: {},
     };
@@ -144,9 +148,11 @@ export function TimelineAgentV2Test() {
           result.status = 'success';
           result.events_extracted = data.events_extracted;
           result.events_inserted = data.events_inserted;
+          result.events_updated = data.events_updated;
           result.events = data.events;
           summaryData.success++;
-          summaryData.total_events += data.events_inserted || 0;
+          summaryData.total_inserted += data.events_inserted || 0;
+          summaryData.total_updated += data.events_updated || 0;
 
           // Count confidence levels and event types
           for (const event of data.events || []) {
@@ -311,7 +317,7 @@ export function TimelineAgentV2Test() {
         {summary && (
           <div className="rounded-lg border bg-muted/50 p-4 space-y-3">
             <h3 className="font-semibold">Test Summary</h3>
-            <div className="grid grid-cols-4 gap-4 text-sm">
+            <div className="grid grid-cols-5 gap-4 text-sm">
               <div>
                 <div className="text-2xl font-bold text-green-600">{summary.success}</div>
                 <div className="text-muted-foreground">Success</div>
@@ -325,12 +331,16 @@ export function TimelineAgentV2Test() {
                 <div className="text-muted-foreground">Errors</div>
               </div>
               <div>
-                <div className="text-2xl font-bold">{summary.total_events}</div>
-                <div className="text-muted-foreground">Events</div>
+                <div className="text-2xl font-bold text-blue-600">{summary.total_inserted}</div>
+                <div className="text-muted-foreground">Inserted</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-purple-600">{summary.total_updated}</div>
+                <div className="text-muted-foreground">Updated</div>
               </div>
             </div>
 
-            {summary.total_events > 0 && (
+            {(summary.total_inserted > 0 || summary.total_updated > 0) && (
               <>
                 <div className="border-t pt-3">
                   <h4 className="text-sm font-medium mb-2">Confidence Distribution</h4>
@@ -389,6 +399,11 @@ export function TimelineAgentV2Test() {
                             <Badge variant="secondary">{event.event_type}</Badge>
                             <span>{event.event_date}</span>
                             {getConfidenceBadge(event.confidence)}
+                            {event.action && (
+                              <Badge variant={event.action === 'inserted' ? 'default' : 'outline'} className="text-[10px]">
+                                {event.action}
+                              </Badge>
+                            )}
                           </div>
                           {event.metadata && Object.keys(event.metadata).length > 0 && (
                             <div className="text-xs text-muted-foreground pl-2 border-l-2 border-muted">
@@ -455,6 +470,11 @@ export function TimelineAgentV2Test() {
                             <Badge variant="secondary">{event.event_type}</Badge>
                             <span>{event.event_date}</span>
                             {getConfidenceBadge(event.confidence)}
+                            {event.action && (
+                              <Badge variant={event.action === 'inserted' ? 'default' : 'outline'} className="text-[10px]">
+                                {event.action}
+                              </Badge>
+                            )}
                           </div>
                           {event.metadata && Object.keys(event.metadata).length > 0 && (
                             <div className="text-xs text-muted-foreground pl-2 border-l-2 border-muted">
