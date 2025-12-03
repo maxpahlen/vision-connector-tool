@@ -15,14 +15,17 @@
 
 /**
  * Valid process lifecycle stages (evidence-based only)
+ * 
+ * Phase 5.2 additions: 'proposition' and 'enacted' stages
  */
 export type ProcessStage = 
   | 'directive'          // Process exists, no directive document yet
   | 'directive_issued'   // Directive document linked (evidence: directive doc exists)
   | 'published'          // SOU published (evidence: SOU doc + sou_published event)
-  | 'remiss'             // In remiss consultation period (future: Phase 4)
-  | 'proposition'        // Government proposition submitted to Riksdag (future: Phase 4-5)
-  | 'law'                // Law enacted and in force (future: Phase 5-6)
+  | 'remiss'             // In remiss consultation period
+  | 'proposition'        // Government proposition submitted to Riksdag
+  | 'enacted'            // Law enacted and in force (Phase 5.2)
+  | 'law'                // Legacy alias for 'enacted' (deprecated, kept for compatibility)
 
 /**
  * Evidence collected from database about a process
@@ -75,12 +78,12 @@ export function computeProcessStage(evidence: ProcessEvidence): StageResult {
   // Stage 6: Law enacted (highest priority)
   if (evidence.hasLaw || evidence.hasLawEnactedEvent) {
     return {
-      stage: 'law',
+      stage: 'enacted',
       explanation: 'Lag har antagits och trätt i kraft. Processen är fullbordad.',
     };
   }
   
-  // Stage 5: Proposition submitted
+  // Stage 5: Proposition submitted (Phase 5.2)
   if (evidence.hasProposition || evidence.hasPropositionEvent) {
     return {
       stage: 'proposition',
@@ -153,17 +156,22 @@ export function isValidTransition(
     'published',
     'remiss',
     'proposition',
-    'law'
+    'enacted',
+    'law' // Legacy alias - maps to same position as enacted
   ];
   
   const fromIndex = stageOrder.indexOf(fromStage);
   const toIndex = stageOrder.indexOf(toStage);
   
+  // Handle 'law' as alias for 'enacted'
+  const normalizedFromIndex = fromStage === 'law' ? stageOrder.indexOf('enacted') : fromIndex;
+  const normalizedToIndex = toStage === 'law' ? stageOrder.indexOf('enacted') : toIndex;
+  
   // Allow same stage (no-op)
-  if (fromIndex === toIndex) {
+  if (normalizedFromIndex === normalizedToIndex) {
     return true;
   }
   
   // Only allow forward transitions
-  return toIndex > fromIndex;
+  return normalizedToIndex > normalizedFromIndex;
 }

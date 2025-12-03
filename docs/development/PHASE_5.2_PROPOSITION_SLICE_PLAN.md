@@ -1,8 +1,32 @@
 # Phase 5.2: Proposition Slice — Detailed Plan
 
 **Created:** 2025-12-03  
-**Status:** Ready for Implementation  
+**Updated:** 2025-12-03  
+**Status:** Implementation In Progress  
 **Depends on:** Phase 5.1 (Timeline Agent v2.1 ✅)
+
+---
+
+## Implementation Status
+
+### Completed Components
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| `scrape-proposition-index` v5.2 | ✅ Done | Updated with correct URL, pagination, Lagstiftningskedja extraction |
+| `genvag-classifier.ts` | ✅ Done | Link classification for document references |
+| Timeline Agent v2.2 event types | ✅ Done | Added proposition-specific event types |
+| `process-stage-machine.ts` | ✅ Done | Added 'enacted' stage |
+| `PropositionScraperTest.tsx` | ✅ Done | Admin UI test component |
+| Admin page integration | ✅ Done | Added to AdminScraper.tsx |
+
+### Pending Validation
+
+- [ ] Run scraper on 10 propositions
+- [ ] Validate Lagstiftningskedja link extraction
+- [ ] Verify document_references creation
+- [ ] Test Timeline Agent v2.2 on propositions
+- [ ] Complete PHASE_5.2_COMPLETION_SUMMARY.md
 
 ---
 

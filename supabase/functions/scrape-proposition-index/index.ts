@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.81.1";
+import { classifyGenvagLink, extractDocNumber, type GenvagLink, type ClassifiedReference } from "../_shared/genvag-classifier.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,10 +8,17 @@ const corsHeaders = {
 };
 
 /**
- * Proposition Index Scraper
+ * Proposition Index Scraper v5.2
  * 
- * Scrapes propositions (regeringens propositioner) from regeringen.se
- * Part of Phase 5: Legislative Graph Expansion
+ * Scrapes propositions (propositioner) from:
+ * https://www.regeringen.se/rattsliga-dokument/proposition/
+ * 
+ * Part of Phase 5.2: Proposition Slice
+ * 
+ * Features:
+ * - Pagination support (?p=N)
+ * - Detail page extraction (PDF, Lagstiftningskedja)
+ * - Document reference classification
  */
 
 interface PropositionMetadata {
@@ -22,28 +30,39 @@ interface PropositionMetadata {
   publicationDate?: string;
 }
 
+interface LagstiftningskedjaLink {
+  url: string;
+  anchorText: string;
+  docType?: string;
+}
+
 interface ScrapeResult {
   propositions: PropositionMetadata[];
   page: number;
   hasMore: boolean;
+  inserted: number;
+  skipped: number;
+  references_created: number;
   errors: string[];
 }
 
 /**
- * Parse a proposition listing page
+ * Parse proposition listing from the index page
+ * URL: https://www.regeringen.se/rattsliga-dokument/proposition/
  */
 function parsePropositionList(html: string, baseUrl: string): PropositionMetadata[] {
   const propositions: PropositionMetadata[] = [];
   
-  // Pattern for proposition items on regeringen.se
-  // Structure varies, so we use multiple patterns
+  // Multiple patterns for different page layouts
   const itemPatterns = [
-    // Standard list item pattern
+    // Primary pattern: article with content-item class
     /<article[^>]*class="[^"]*content-item[^"]*"[^>]*>([\s\S]*?)<\/article>/gi,
-    // Alternative card pattern
-    /<div[^>]*class="[^"]*document-card[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
-    // List item pattern
-    /<li[^>]*class="[^"]*search-result[^"]*"[^>]*>([\s\S]*?)<\/li>/gi
+    // List results pattern
+    /<li[^>]*class="[^"]*list-item[^"]*"[^>]*>([\s\S]*?)<\/li>/gi,
+    // Search results pattern
+    /<div[^>]*class="[^"]*result-item[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    // Generic content block
+    /<div[^>]*class="[^"]*document-item[^"]*"[^>]*>([\s\S]*?)<\/div>/gi
   ];
   
   for (const pattern of itemPatterns) {
@@ -51,30 +70,66 @@ function parsePropositionList(html: string, baseUrl: string): PropositionMetadat
     while ((match = pattern.exec(html)) !== null) {
       const itemHtml = match[1];
       
-      // Extract title and URL
-      const titleMatch = itemHtml.match(/<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/i);
-      if (!titleMatch) continue;
+      // Extract title and URL - look for main link
+      const linkMatch = itemHtml.match(/<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/i);
+      if (!linkMatch) continue;
       
-      const url = titleMatch[1].startsWith('http') 
-        ? titleMatch[1] 
-        : `${baseUrl}${titleMatch[1]}`;
-      const title = titleMatch[2].trim();
+      let url = linkMatch[1];
+      const title = linkMatch[2].trim();
+      
+      // Normalize URL
+      if (!url.startsWith('http')) {
+        url = `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+      }
+      
+      // Skip if not a proposition URL
+      if (!url.includes('/proposition/') && !url.includes('prop-') && !url.includes('prop.')) {
+        continue;
+      }
       
       // Extract document number (Prop. YYYY/YY:NNN)
       const docNumMatch = itemHtml.match(/Prop\.?\s*(\d{4}\/\d{2}:\d+)/i) 
-        || title.match(/Prop\.?\s*(\d{4}\/\d{2}:\d+)/i);
+        || title.match(/Prop\.?\s*(\d{4}\/\d{2}:\d+)/i)
+        || url.match(/prop[.-]?(\d{4})(\d{2})(\d+)/i);
       
-      if (!docNumMatch) continue; // Skip if no valid prop number
+      if (!docNumMatch) continue;
       
-      const docNumber = `Prop. ${docNumMatch[1]}`;
+      let docNumber: string;
+      if (docNumMatch[3]) {
+        // URL format: prop-202425123
+        docNumber = `Prop. ${docNumMatch[1]}/${docNumMatch[2]}:${docNumMatch[3]}`;
+      } else {
+        docNumber = `Prop. ${docNumMatch[1]}`;
+      }
       
-      // Extract ministry if available
-      const ministryMatch = itemHtml.match(/(?:Från|Ministry|Departement):\s*([^<]+)/i);
-      const ministry = ministryMatch ? ministryMatch[1].trim() : undefined;
+      // Extract ministry
+      const ministryPatterns = [
+        /(?:Från|Ansvarigt departement|Ministry|Departement)[:\s]*([^<]+)/i,
+        /<span[^>]*class="[^"]*department[^"]*"[^>]*>([^<]+)<\/span>/i
+      ];
+      let ministry: string | undefined;
+      for (const mp of ministryPatterns) {
+        const ministryMatch = itemHtml.match(mp);
+        if (ministryMatch) {
+          ministry = ministryMatch[1].trim();
+          break;
+        }
+      }
       
-      // Extract date if available
-      const dateMatch = itemHtml.match(/(\d{4}-\d{2}-\d{2})/);
-      const publicationDate = dateMatch ? dateMatch[1] : undefined;
+      // Extract publication date
+      const datePatterns = [
+        /(\d{4}-\d{2}-\d{2})/,
+        /Publicerad[:\s]*(\d{1,2}\s+\w+\s+\d{4})/i,
+        /(\d{1,2}\s+(?:januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december)\s+\d{4})/i
+      ];
+      let publicationDate: string | undefined;
+      for (const dp of datePatterns) {
+        const dateMatch = itemHtml.match(dp);
+        if (dateMatch) {
+          publicationDate = parseSwedishDate(dateMatch[1]);
+          break;
+        }
+      }
       
       propositions.push({
         title,
@@ -85,7 +140,7 @@ function parsePropositionList(html: string, baseUrl: string): PropositionMetadat
       });
     }
     
-    // If we found items with one pattern, don't try others
+    // If we found items with this pattern, don't try others
     if (propositions.length > 0) break;
   }
   
@@ -93,26 +148,213 @@ function parsePropositionList(html: string, baseUrl: string): PropositionMetadat
 }
 
 /**
- * Extract PDF URL from proposition detail page
+ * Parse Swedish date to ISO format
  */
-function extractPdfUrl(html: string): string | undefined {
-  // Look for PDF links
+function parseSwedishDate(dateStr: string): string | undefined {
+  // Already ISO format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return dateStr;
+  }
+  
+  const months: Record<string, string> = {
+    'januari': '01', 'februari': '02', 'mars': '03', 'april': '04',
+    'maj': '05', 'juni': '06', 'juli': '07', 'augusti': '08',
+    'september': '09', 'oktober': '10', 'november': '11', 'december': '12'
+  };
+  
+  const match = dateStr.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/i);
+  if (match) {
+    const day = match[1].padStart(2, '0');
+    const month = months[match[2].toLowerCase()];
+    const year = match[3];
+    if (month) {
+      return `${year}-${month}-${day}`;
+    }
+  }
+  
+  return undefined;
+}
+
+/**
+ * Extract PDF URL from detail page
+ */
+function extractPdfUrl(html: string, baseUrl: string): string | undefined {
   const pdfPatterns = [
     /href="([^"]+\.pdf)"/i,
     /href="([^"]+\/pdf\/[^"]+)"/i,
-    /data-pdf-url="([^"]+)"/i
+    /data-pdf-url="([^"]+)"/i,
+    /<a[^>]*class="[^"]*download[^"]*"[^>]*href="([^"]+)"/i
   ];
   
   for (const pattern of pdfPatterns) {
     const match = html.match(pattern);
     if (match) {
-      return match[1].startsWith('http') 
-        ? match[1] 
-        : `https://www.regeringen.se${match[1]}`;
+      let url = match[1];
+      if (!url.startsWith('http')) {
+        url = `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+      }
+      return url;
     }
   }
   
   return undefined;
+}
+
+/**
+ * Extract Lagstiftningskedja (legislative chain) links from detail page
+ * These are high-quality document-to-document references
+ */
+function extractLagstiftningskedjaLinks(html: string, baseUrl: string): LagstiftningskedjaLink[] {
+  const links: LagstiftningskedjaLink[] = [];
+  
+  // Find lagstiftningskedja section
+  const sectionPatterns = [
+    /<div[^>]*class="[^"]*lagstiftningskedja[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    /<section[^>]*id="[^"]*lagstiftningskedja[^"]*"[^>]*>([\s\S]*?)<\/section>/gi,
+    /<div[^>]*id="[^"]*legislative[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    // Fallback: look for h2/h3 with "Lagstiftningskedja" and capture following content
+    /Lagstiftningskedja[\s\S]*?<ul[^>]*>([\s\S]*?)<\/ul>/gi
+  ];
+  
+  let sectionHtml = '';
+  for (const pattern of sectionPatterns) {
+    const match = html.match(pattern);
+    if (match) {
+      sectionHtml = match[0];
+      break;
+    }
+  }
+  
+  if (!sectionHtml) {
+    // Try to find "Relaterat" section as fallback
+    const relatertMatch = html.match(/<div[^>]*class="[^"]*related[^"]*"[^>]*>([\s\S]*?)<\/div>/gi);
+    if (relatertMatch) {
+      sectionHtml = relatertMatch[0];
+    }
+  }
+  
+  if (!sectionHtml) {
+    return links;
+  }
+  
+  // Extract all links from the section
+  const linkPattern = /<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/gi;
+  let match;
+  
+  while ((match = linkPattern.exec(sectionHtml)) !== null) {
+    let url = match[1];
+    const anchorText = match[2].trim();
+    
+    // Skip empty or anchor-only links
+    if (!url || url === '#' || !anchorText) {
+      continue;
+    }
+    
+    // Normalize URL
+    if (!url.startsWith('http')) {
+      url = `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+    }
+    
+    // Determine document type from URL
+    let docType: string | undefined;
+    if (url.includes('/statens-offentliga-utredningar/') || url.includes('/sou-')) {
+      docType = 'sou';
+    } else if (url.includes('/kommittedirektiv/') || url.includes('/dir-')) {
+      docType = 'directive';
+    } else if (url.includes('/proposition/') || url.includes('/prop-')) {
+      docType = 'proposition';
+    } else if (url.includes('/remisser/')) {
+      docType = 'remiss';
+    }
+    
+    links.push({
+      url,
+      anchorText,
+      docType
+    });
+  }
+  
+  return links;
+}
+
+/**
+ * Process and store document references from lagstiftningskedja links
+ */
+async function storeDocumentReferences(
+  supabase: any,
+  sourceDocId: string,
+  links: LagstiftningskedjaLink[]
+): Promise<number> {
+  let created = 0;
+  
+  for (const link of links) {
+    // Classify the link
+    const genvagLink: GenvagLink = {
+      url: link.url,
+      anchorText: link.anchorText
+    };
+    const classification = classifyGenvagLink(genvagLink);
+    
+    // Skip external URLs for now
+    if (classification.isExternalUrl) {
+      console.log('[Proposition Scraper] Skipping external URL', { url: link.url });
+      continue;
+    }
+    
+    // Extract target doc number
+    const targetDocNumber = classification.targetDocNumber || extractDocNumber(link.url);
+    
+    // Try to find existing target document
+    let targetDocId: string | null = null;
+    if (targetDocNumber) {
+      const { data: targetDoc } = await supabase
+        .from('documents')
+        .select('id')
+        .eq('doc_number', targetDocNumber)
+        .maybeSingle();
+      
+      if (targetDoc) {
+        targetDocId = targetDoc.id;
+      }
+    }
+    
+    // Check for existing reference
+    const { data: existingRef } = await supabase
+      .from('document_references')
+      .select('id')
+      .eq('source_document_id', sourceDocId)
+      .eq('target_doc_number', targetDocNumber || link.anchorText)
+      .maybeSingle();
+    
+    if (existingRef) {
+      console.log('[Proposition Scraper] Reference already exists', { sourceDocId, target: targetDocNumber });
+      continue;
+    }
+    
+    // Insert reference
+    const { error: refError } = await supabase
+      .from('document_references')
+      .insert({
+        source_document_id: sourceDocId,
+        target_document_id: targetDocId,
+        target_doc_number: targetDocNumber || link.anchorText,
+        reference_type: classification.referenceType,
+        confidence: classification.confidence,
+        source_excerpt: `Lagstiftningskedja: ${link.anchorText}`
+      });
+    
+    if (refError) {
+      console.error('[Proposition Scraper] Failed to create reference', { error: refError.message });
+    } else {
+      created++;
+      console.log('[Proposition Scraper] Created reference', { 
+        type: classification.referenceType, 
+        target: targetDocNumber || link.anchorText 
+      });
+    }
+  }
+  
+  return created;
 }
 
 serve(async (req) => {
@@ -126,27 +368,25 @@ serve(async (req) => {
   );
 
   try {
-    const { page = 1, limit = 20, year } = await req.json().catch(() => ({}));
+    const { page = 1, limit = 10, skipExisting = true } = await req.json().catch(() => ({}));
     
-    console.log('[Proposition Scraper] Starting', { page, limit, year });
+    console.log('[Proposition Scraper v5.2] Starting', { page, limit, skipExisting });
     
     // Build URL for proposition listing
+    // Correct URL: https://www.regeringen.se/rattsliga-dokument/proposition/
     const baseUrl = 'https://www.regeringen.se';
-    let listUrl = `${baseUrl}/propositioner/`;
+    let listUrl = `${baseUrl}/rattsliga-dokument/proposition/`;
     
-    if (year) {
-      listUrl += `?year=${year}`;
-    }
     if (page > 1) {
-      listUrl += `${year ? '&' : '?'}page=${page}`;
+      listUrl += `?p=${page}`;
     }
     
-    console.log('[Proposition Scraper] Fetching', { url: listUrl });
+    console.log('[Proposition Scraper v5.2] Fetching index', { url: listUrl });
     
     // Fetch proposition listing page
     const listResponse = await fetch(listUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; LegislativeBot/1.0; +https://example.com/bot)',
+        'User-Agent': 'Mozilla/5.0 (compatible; LegislativeBot/5.2; +https://lovable.dev)',
         'Accept': 'text/html,application/xhtml+xml',
         'Accept-Language': 'sv-SE,sv;q=0.9,en;q=0.8'
       }
@@ -159,15 +399,21 @@ serve(async (req) => {
     const listHtml = await listResponse.text();
     const propositions = parsePropositionList(listHtml, baseUrl);
     
-    console.log('[Proposition Scraper] Found propositions', { count: propositions.length });
+    console.log('[Proposition Scraper v5.2] Parsed index', { count: propositions.length });
     
-    // Check for pagination ("next" link)
-    const hasMore = listHtml.includes('rel="next"') || listHtml.includes('class="next"');
+    // Check for next page
+    const hasMore = listHtml.includes(`?p=${page + 1}`) || 
+                    listHtml.includes('rel="next"') || 
+                    listHtml.includes('class="next"') ||
+                    listHtml.includes('aria-label="Nästa sida"');
     
     const result: ScrapeResult = {
       propositions: [],
       page,
       hasMore,
+      inserted: 0,
+      skipped: 0,
+      references_created: 0,
       errors: []
     };
     
@@ -177,30 +423,46 @@ serve(async (req) => {
     for (const prop of toProcess) {
       try {
         // Check if already exists
-        const { data: existing } = await supabase
-          .from('documents')
-          .select('id')
-          .eq('doc_number', prop.docNumber)
-          .maybeSingle();
-        
-        if (existing) {
-          console.log('[Proposition Scraper] Skipping existing', { docNumber: prop.docNumber });
-          continue;
+        if (skipExisting) {
+          const { data: existing } = await supabase
+            .from('documents')
+            .select('id')
+            .eq('doc_number', prop.docNumber)
+            .maybeSingle();
+          
+          if (existing) {
+            console.log('[Proposition Scraper v5.2] Skipping existing', { docNumber: prop.docNumber });
+            result.skipped++;
+            continue;
+          }
         }
         
-        // Fetch detail page for PDF URL
-        console.log('[Proposition Scraper] Fetching detail page', { url: prop.url });
+        // Fetch detail page
+        console.log('[Proposition Scraper v5.2] Fetching detail', { url: prop.url });
         
         const detailResponse = await fetch(prop.url, {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; LegislativeBot/1.0)',
+            'User-Agent': 'Mozilla/5.0 (compatible; LegislativeBot/5.2)',
             'Accept': 'text/html'
           }
         });
         
+        let lagstiftningskedjaLinks: LagstiftningskedjaLink[] = [];
+        
         if (detailResponse.ok) {
           const detailHtml = await detailResponse.text();
-          prop.pdfUrl = extractPdfUrl(detailHtml);
+          
+          // Extract PDF URL
+          prop.pdfUrl = extractPdfUrl(detailHtml, baseUrl);
+          
+          // Extract Lagstiftningskedja links
+          lagstiftningskedjaLinks = extractLagstiftningskedjaLinks(detailHtml, baseUrl);
+          
+          console.log('[Proposition Scraper v5.2] Detail extracted', { 
+            docNumber: prop.docNumber,
+            hasPdf: !!prop.pdfUrl,
+            lagstiftningskedjaCount: lagstiftningskedjaLinks.length
+          });
         }
         
         // Insert document
@@ -217,14 +479,15 @@ serve(async (req) => {
             lifecycle_stage: 'proposition',
             metadata: {
               scraped_at: new Date().toISOString(),
-              scraper_version: '5.0.0'
+              scraper_version: '5.2.0',
+              lagstiftningskedja_count: lagstiftningskedjaLinks.length
             }
           })
           .select()
           .single();
         
         if (insertError) {
-          console.error('[Proposition Scraper] Insert error', { 
+          console.error('[Proposition Scraper v5.2] Insert error', { 
             docNumber: prop.docNumber, 
             error: insertError.message 
           });
@@ -233,18 +496,29 @@ serve(async (req) => {
         }
         
         result.propositions.push(prop);
+        result.inserted++;
         
-        console.log('[Proposition Scraper] ✅ Inserted', { 
+        console.log('[Proposition Scraper v5.2] ✅ Inserted', { 
           id: insertedDoc.id,
           docNumber: prop.docNumber 
         });
+        
+        // Store document references from lagstiftningskedja
+        if (lagstiftningskedjaLinks.length > 0) {
+          const refsCreated = await storeDocumentReferences(
+            supabase,
+            insertedDoc.id,
+            lagstiftningskedjaLinks
+          );
+          result.references_created += refsCreated;
+        }
         
         // Rate limiting - be nice to the server
         await new Promise(resolve => setTimeout(resolve, 500));
         
       } catch (propError) {
         const errorMsg = propError instanceof Error ? propError.message : 'Unknown error';
-        console.error('[Proposition Scraper] Error processing', { 
+        console.error('[Proposition Scraper v5.2] Error processing', { 
           docNumber: prop.docNumber, 
           error: errorMsg 
         });
@@ -252,8 +526,10 @@ serve(async (req) => {
       }
     }
     
-    console.log('[Proposition Scraper] Complete', { 
-      inserted: result.propositions.length,
+    console.log('[Proposition Scraper v5.2] Complete', { 
+      inserted: result.inserted,
+      skipped: result.skipped,
+      references: result.references_created,
       errors: result.errors.length,
       hasMore 
     });
@@ -264,7 +540,7 @@ serve(async (req) => {
     );
     
   } catch (error) {
-    console.error('[Proposition Scraper] ❌ Error:', error);
+    console.error('[Proposition Scraper v5.2] ❌ Error:', error);
     
     return new Response(
       JSON.stringify({ 
