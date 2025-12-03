@@ -49,100 +49,91 @@ interface ScrapeResult {
 /**
  * Parse proposition listing from the index page
  * URL: https://www.regeringen.se/rattsliga-dokument/proposition/
+ * 
+ * Actual HTML structure (2025):
+ * <ul class="list--block">
+ *   <li>
+ *     <div class="sortcompact">
+ *       <a href="/rattsliga-dokument/proposition/2025/12/prop.-20252664">Title, Prop. 2025/26:64</a>
+ *       <div class="block--timeLinks">
+ *         <p>Publicerad <time datetime="2025-12-02">02 december 2025</time> 
+ *            · <a href="...">Proposition</a>, ... från <a href="...">Justitiedepartementet</a></p>
+ *       </div>
+ *     </div>
+ *   </li>
+ * </ul>
  */
 function parsePropositionList(html: string, baseUrl: string): PropositionMetadata[] {
   const propositions: PropositionMetadata[] = [];
   
-  // Multiple patterns for different page layouts
-  const itemPatterns = [
-    // Primary pattern: article with content-item class
-    /<article[^>]*class="[^"]*content-item[^"]*"[^>]*>([\s\S]*?)<\/article>/gi,
-    // List results pattern
-    /<li[^>]*class="[^"]*list-item[^"]*"[^>]*>([\s\S]*?)<\/li>/gi,
-    // Search results pattern
-    /<div[^>]*class="[^"]*result-item[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
-    // Generic content block
-    /<div[^>]*class="[^"]*document-item[^"]*"[^>]*>([\s\S]*?)<\/div>/gi
-  ];
+  // Find all list items with sortcompact div
+  const itemPattern = /<li>\s*<div class="sortcompact">([\s\S]*?)<\/div>\s*<\/li>/gi;
   
-  for (const pattern of itemPatterns) {
-    let match;
-    while ((match = pattern.exec(html)) !== null) {
-      const itemHtml = match[1];
-      
-      // Extract title and URL - look for main link
-      const linkMatch = itemHtml.match(/<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/i);
-      if (!linkMatch) continue;
-      
-      let url = linkMatch[1];
-      const title = linkMatch[2].trim();
-      
-      // Normalize URL
-      if (!url.startsWith('http')) {
-        url = `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
-      }
-      
-      // Skip if not a proposition URL
-      if (!url.includes('/proposition/') && !url.includes('prop-') && !url.includes('prop.')) {
-        continue;
-      }
-      
-      // Extract document number (Prop. YYYY/YY:NNN)
-      const docNumMatch = itemHtml.match(/Prop\.?\s*(\d{4}\/\d{2}:\d+)/i) 
-        || title.match(/Prop\.?\s*(\d{4}\/\d{2}:\d+)/i)
-        || url.match(/prop[.-]?(\d{4})(\d{2})(\d+)/i);
-      
-      if (!docNumMatch) continue;
-      
-      let docNumber: string;
-      if (docNumMatch[3]) {
-        // URL format: prop-202425123
-        docNumber = `Prop. ${docNumMatch[1]}/${docNumMatch[2]}:${docNumMatch[3]}`;
-      } else {
-        docNumber = `Prop. ${docNumMatch[1]}`;
-      }
-      
-      // Extract ministry
-      const ministryPatterns = [
-        /(?:Från|Ansvarigt departement|Ministry|Departement)[:\s]*([^<]+)/i,
-        /<span[^>]*class="[^"]*department[^"]*"[^>]*>([^<]+)<\/span>/i
-      ];
-      let ministry: string | undefined;
-      for (const mp of ministryPatterns) {
-        const ministryMatch = itemHtml.match(mp);
-        if (ministryMatch) {
-          ministry = ministryMatch[1].trim();
-          break;
-        }
-      }
-      
-      // Extract publication date
-      const datePatterns = [
-        /(\d{4}-\d{2}-\d{2})/,
-        /Publicerad[:\s]*(\d{1,2}\s+\w+\s+\d{4})/i,
-        /(\d{1,2}\s+(?:januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december)\s+\d{4})/i
-      ];
-      let publicationDate: string | undefined;
-      for (const dp of datePatterns) {
-        const dateMatch = itemHtml.match(dp);
-        if (dateMatch) {
-          publicationDate = parseSwedishDate(dateMatch[1]);
-          break;
-        }
-      }
-      
-      propositions.push({
-        title,
-        docNumber,
-        url,
-        ministry,
-        publicationDate
-      });
+  let match;
+  while ((match = itemPattern.exec(html)) !== null) {
+    const itemHtml = match[1];
+    
+    // Extract main link (title + URL)
+    const linkMatch = itemHtml.match(/<a\s+href="([^"]+)"[^>]*>([^<]+)<\/a>/i);
+    if (!linkMatch) continue;
+    
+    let url = linkMatch[1];
+    const linkText = linkMatch[2].trim();
+    
+    // Normalize URL
+    if (!url.startsWith('http')) {
+      url = `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
     }
     
-    // If we found items with this pattern, don't try others
-    if (propositions.length > 0) break;
+    // Skip if not a proposition URL
+    if (!url.includes('/proposition/')) {
+      continue;
+    }
+    
+    // Extract doc number from link text (e.g., "Some title, Prop. 2025/26:64")
+    const docNumMatch = linkText.match(/Prop\.\s*(\d{4}\/\d{2}:\d+)/i);
+    if (!docNumMatch) {
+      console.log('[Proposition Scraper] No doc number found in:', linkText.substring(0, 80));
+      continue;
+    }
+    
+    const docNumber = `Prop. ${docNumMatch[1]}`;
+    
+    // Extract title (everything before "Prop.")
+    const titleMatch = linkText.match(/^(.+?),?\s*Prop\./i);
+    const title = titleMatch ? titleMatch[1].trim() : linkText;
+    
+    // Extract publication date from <time datetime="YYYY-MM-DD">
+    const dateMatch = itemHtml.match(/<time\s+datetime="(\d{4}-\d{2}-\d{2})">/i);
+    const publicationDate = dateMatch ? dateMatch[1] : undefined;
+    
+    // Extract ministry from "från <a href="...">Departement</a>"
+    // Pattern: från <a href="/tx/XXXX">Ministry</a>
+    const ministryMatch = itemHtml.match(/från\s+<a[^>]+>([^<]+)<\/a>/i);
+    let ministry = ministryMatch ? ministryMatch[1].trim() : undefined;
+    
+    // Clean up ministry name (remove "Regeringen" if that's what was matched)
+    if (ministry === 'Regeringen') {
+      // Try to find actual department before "Regeringen"
+      const deptMatches = itemHtml.matchAll(/från\s+<a[^>]+>([^<]+)<\/a>/gi);
+      for (const dm of deptMatches) {
+        if (dm[1] && dm[1].trim() !== 'Regeringen') {
+          ministry = dm[1].trim();
+          break;
+        }
+      }
+    }
+    
+    propositions.push({
+      title,
+      docNumber,
+      url,
+      ministry,
+      publicationDate
+    });
   }
+  
+  console.log('[Proposition Scraper] Parsed', propositions.length, 'propositions from index');
   
   return propositions;
 }
