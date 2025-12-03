@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.81.1";
+import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.43/deno-dom-wasm.ts";
 import { classifyGenvagLink, extractDocNumber, type GenvagLink, type ClassifiedReference } from "../_shared/genvag-classifier.ts";
+import { extractAndScorePdfs } from "../_shared/pdf-scorer.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,7 +10,7 @@ const corsHeaders = {
 };
 
 /**
- * Proposition Index Scraper v5.2
+ * Proposition Index Scraper v5.2.1
  * 
  * Scrapes propositions (propositioner) from:
  * https://www.regeringen.se/rattsliga-dokument/proposition/
@@ -16,8 +18,8 @@ const corsHeaders = {
  * Part of Phase 5.2: Proposition Slice
  * 
  * Features:
- * - Pagination support (?p=N)
- * - Detail page extraction (PDF, Lagstiftningskedja)
+ * - Pagination support (?page=N) - FIXED from ?p=N
+ * - Detail page extraction using pdf-scorer (DOM-based)
  * - Document reference classification
  */
 
@@ -167,28 +169,38 @@ function parseSwedishDate(dateStr: string): string | undefined {
 }
 
 /**
- * Extract PDF URL from detail page
+ * Extract PDF URL from detail page using DOM-based pdf-scorer
+ * This reuses the same logic as scrape-regeringen-document for consistency
  */
-function extractPdfUrl(html: string, baseUrl: string): string | undefined {
-  const pdfPatterns = [
-    /href="([^"]+\.pdf)"/i,
-    /href="([^"]+\/pdf\/[^"]+)"/i,
-    /data-pdf-url="([^"]+)"/i,
-    /<a[^>]*class="[^"]*download[^"]*"[^>]*href="([^"]+)"/i
-  ];
-  
-  for (const pattern of pdfPatterns) {
-    const match = html.match(pattern);
-    if (match) {
-      let url = match[1];
-      if (!url.startsWith('http')) {
-        url = `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
-      }
-      return url;
+function extractPdfUrlFromDom(html: string, docNumber: string): { url: string | null; confidence: number; reasoning: string[] } {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    
+    if (!doc) {
+      console.log('[Proposition Scraper] Failed to parse HTML for PDF extraction');
+      return { url: null, confidence: 0, reasoning: ['Failed to parse HTML'] };
     }
+    
+    const result = extractAndScorePdfs(doc, 'proposition', docNumber);
+    
+    console.log('[Proposition Scraper] PDF extraction result', {
+      docNumber,
+      foundPdf: !!result.bestPdf,
+      confidence: result.confidence,
+      reasoning: result.reasoning
+    });
+    
+    return {
+      url: result.bestPdf,
+      confidence: result.confidence,
+      reasoning: result.reasoning
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error('[Proposition Scraper] PDF extraction error', { error: errorMsg });
+    return { url: null, confidence: 0, reasoning: [`Error: ${errorMsg}`] };
   }
-  
-  return undefined;
 }
 
 /**
@@ -365,14 +377,15 @@ serve(async (req) => {
     
     // Build URL for proposition listing
     // Correct URL: https://www.regeringen.se/rattsliga-dokument/proposition/
+    // FIXED: Pagination uses ?page=N (not ?p=N)
     const baseUrl = 'https://www.regeringen.se';
     let listUrl = `${baseUrl}/rattsliga-dokument/proposition/`;
     
     if (page > 1) {
-      listUrl += `?p=${page}`;
+      listUrl += `?page=${page}`;
     }
     
-    console.log('[Proposition Scraper v5.2] Fetching index', { url: listUrl });
+    console.log('[Proposition Scraper v5.2.1] Fetching page', { page, listUrl });
     
     // Fetch proposition listing page
     const listResponse = await fetch(listUrl, {
@@ -390,10 +403,16 @@ serve(async (req) => {
     const listHtml = await listResponse.text();
     const propositions = parsePropositionList(listHtml, baseUrl);
     
-    console.log('[Proposition Scraper v5.2] Parsed index', { count: propositions.length });
+    // Debug: log first 3 doc numbers to verify different pages have different content
+    const first3DocNumbers = propositions.slice(0, 3).map(p => p.docNumber);
+    console.log('[Proposition Scraper v5.2.1] Parsed index', { 
+      page,
+      count: propositions.length,
+      first3DocNumbers 
+    });
     
-    // Check for next page
-    const hasMore = listHtml.includes(`?p=${page + 1}`) || 
+    // Check for next page - FIXED to use ?page= instead of ?p=
+    const hasMore = listHtml.includes(`?page=${page + 1}`) || 
                     listHtml.includes('rel="next"') || 
                     listHtml.includes('class="next"') ||
                     listHtml.includes('aria-label="Nästa sida"');
@@ -443,15 +462,17 @@ serve(async (req) => {
         if (detailResponse.ok) {
           const detailHtml = await detailResponse.text();
           
-          // Extract PDF URL
-          prop.pdfUrl = extractPdfUrl(detailHtml, baseUrl);
+          // Extract PDF URL using DOM-based pdf-scorer (same as SOU scraper)
+          const pdfResult = extractPdfUrlFromDom(detailHtml, prop.docNumber);
+          prop.pdfUrl = pdfResult.url || undefined;
           
           // Extract Lagstiftningskedja links
           lagstiftningskedjaLinks = extractLagstiftningskedjaLinks(detailHtml, baseUrl);
           
-          console.log('[Proposition Scraper v5.2] Detail extracted', { 
+          console.log('[Proposition Scraper v5.2.1] Detail extracted', { 
             docNumber: prop.docNumber,
             hasPdf: !!prop.pdfUrl,
+            pdfConfidence: pdfResult.confidence,
             lagstiftningskedjaCount: lagstiftningskedjaLinks.length
           });
         }
