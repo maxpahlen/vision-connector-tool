@@ -55,14 +55,20 @@ interface TimelineEvent {
   metadata?: TimelineEventMetadata;
 }
 
-// Event types supported in v2
+// Event types supported in v2.2
 const EVENT_TYPES = [
+  // Original event types
   'sou_published',
   'directive_issued',
   'committee_formed',
   'remiss_period_start',
   'remiss_period_end',
+  // Proposition event types (v2.2)
   'proposition_submitted',
+  'proposition_referred_to_riksdagen',
+  'proposition_published',
+  'government_decision_date',
+  'impact_analysis_date',
   'law_enacted'
 ] as const;
 
