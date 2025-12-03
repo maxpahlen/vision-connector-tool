@@ -285,10 +285,24 @@ Timeline events now support structured metadata in `timeline_events.metadata` JS
 
 ### Deduplication Rules
 
+**For non-committee events (`directive_issued`, `remiss_period_end`, `sou_published`, etc.):**
 - Duplicate detection is based on `(process_id, event_type, event_date)` only
 - `metadata` is NOT part of the uniqueness key
-- Re-running on same document will not create duplicates
-- Metadata can be updated/refined without duplicate explosion
+- If duplicate found: **update metadata** instead of skipping entirely
+- Re-running on same document will not create duplicates but WILL enrich metadata
+
+**For `committee_formed` events:**
+- Duplicate detection is based on `(process_id, event_type, event_date, metadata.person_name)`
+- This allows multiple people appointed on the same date to have separate events
+- If duplicate found for same person: **update metadata** instead of skipping
+- Re-running will not create duplicate committee events per person
+
+**Key behaviors:**
+- ✅ Existing events get metadata enriched on re-runs
+- ✅ Multiple committee members on same date are handled correctly (one event per person)
+- ✅ Idempotency preserved (no duplicate explosion)
+- ✅ Response includes `events_inserted` and `events_updated` counts
+- ✅ Each event has `action: 'inserted' | 'updated'` in response
 
 ---
 
