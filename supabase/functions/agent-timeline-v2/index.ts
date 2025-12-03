@@ -9,21 +9,37 @@ const corsHeaders = {
 };
 
 /**
- * Timeline Agent v2 - Extract Timeline Events with Confidence Scoring
+ * Timeline Agent v2.1 - Extract Timeline Events with Metadata
  * 
- * Scope: Extract timeline events with forensic citations and confidence levels
+ * Scope: Extract timeline events with forensic citations, confidence levels, and structured metadata
  * Philosophy: Skip rather than guess. Zero hallucinations. Evidence-first.
  * 
- * New in v2:
+ * v2 features:
  * - Multiple event types (not just sou_published)
  * - Future date extraction
  * - Confidence scoring (high/medium/low)
+ * 
+ * v2.1 features:
+ * - Structured metadata for committee events (committee_event_kind, role, person_name)
+ * - Structured metadata for deadline events (deadline_kind, deadline_index, deadline_label)
  */
 
 interface TimelineAgentRequest {
   document_id: string;
   process_id: string;
   task_id?: string;
+}
+
+interface TimelineEventMetadata {
+  // For committee_formed events
+  committee_event_kind?: 'lead_investigator_appointed' | 'expert_appointed' | 'secretary_appointed' | 'other_member_appointed';
+  role?: string;
+  person_name?: string;
+  
+  // For deadline events (remiss_period_end, etc.)
+  deadline_kind?: 'interim_report' | 'final_report' | 'other_deadline';
+  deadline_index?: number;
+  deadline_label?: string;
 }
 
 interface TimelineEvent {
@@ -34,6 +50,7 @@ interface TimelineEvent {
   source_page: number;
   confidence: 'high' | 'medium' | 'low';
   actors?: Array<{ name: string; role: string }>;
+  metadata?: TimelineEventMetadata;
 }
 
 // Event types supported in v2
@@ -62,7 +79,7 @@ serve(async (req) => {
   try {
     const { document_id, process_id, task_id }: TimelineAgentRequest = await req.json();
 
-    console.log('[Timeline Agent v2] Starting extraction', { document_id, process_id, task_id });
+    console.log('[Timeline Agent v2.1] Starting extraction', { document_id, process_id, task_id });
 
     // Update task status to started if task_id provided
     if (task_id) {
@@ -84,7 +101,7 @@ serve(async (req) => {
     }
 
     if (!document.raw_content) {
-      console.log('[Timeline Agent v2] Skip: No raw_content', { document_id });
+      console.log('[Timeline Agent v2.1] Skip: No raw_content', { document_id });
       if (task_id) {
         await supabase
           .from('agent_tasks')
@@ -110,7 +127,7 @@ serve(async (req) => {
                           docTypeLower === 'directive' ? 15000 : 10000;
     const focusContent = document.raw_content.substring(0, contentLength);
 
-    console.log('[Timeline Agent v2] Extracted focus content', { 
+    console.log('[Timeline Agent v2.1] Extracted focus content', { 
       document_id, 
       doc_type: document.doc_type,
       focusContentLength: focusContent.length 
@@ -119,12 +136,12 @@ serve(async (req) => {
     // Determine which event types to look for based on document type
     const eventTypesForDoc = getEventTypesForDocument(document.doc_type);
 
-    // OpenAI Tool Schema for timeline event extraction
+    // OpenAI Tool Schema for timeline event extraction with metadata
     const tool = {
       type: "function" as const,
       function: {
         name: "report_timeline_event",
-        description: "Report a timeline event found in the document with forensic citation and confidence level. Call once per event found.",
+        description: "Report a timeline event found in the document with forensic citation, confidence level, and structured metadata. Call once per event found.",
         parameters: {
           type: "object",
           properties: {
@@ -165,6 +182,41 @@ serve(async (req) => {
                 required: ["name", "role"]
               },
               description: "People mentioned in connection with the event (optional)"
+            },
+            metadata: {
+              type: "object",
+              description: "Structured metadata for committee_formed or deadline events. See prompt for required fields.",
+              properties: {
+                // Committee event metadata
+                committee_event_kind: {
+                  type: "string",
+                  enum: ["lead_investigator_appointed", "expert_appointed", "secretary_appointed", "other_member_appointed"],
+                  description: "For committee_formed: type of appointment"
+                },
+                role: {
+                  type: "string",
+                  description: "For committee_formed: Swedish role title exactly as written (e.g., 'särskild utredare', 'sakkunnig')"
+                },
+                person_name: {
+                  type: "string",
+                  description: "For committee_formed: person's name exactly as it appears in citation"
+                },
+                // Deadline event metadata
+                deadline_kind: {
+                  type: "string",
+                  enum: ["interim_report", "final_report", "other_deadline"],
+                  description: "For deadline events: type of deadline"
+                },
+                deadline_index: {
+                  type: "number",
+                  description: "For deadline events: chronological order within this directive (1, 2, 3...)"
+                },
+                deadline_label: {
+                  type: "string",
+                  description: "For deadline events: short Swedish label from document (e.g., 'Delredovisning', 'Slutredovisning')"
+                }
+              },
+              additionalProperties: false
             }
           },
           required: ["event_type", "event_date", "description", "source_excerpt", "source_page", "confidence"],
@@ -173,10 +225,10 @@ serve(async (req) => {
       }
     };
 
-    // System prompt for v2 with confidence scoring
-    const systemPrompt = `You are a forensic Timeline Agent (v2) analyzing Swedish government documents.
+    // System prompt for v2.1 with metadata rules
+    const systemPrompt = `You are a forensic Timeline Agent (v2.1) analyzing Swedish government documents.
 
-Your task is to extract timeline events with forensic citations and confidence levels.
+Your task is to extract timeline events with forensic citations, confidence levels, AND structured metadata.
 
 DOCUMENT TYPE: ${document.doc_type}
 RELEVANT EVENT TYPES: ${eventTypesForDoc.join(', ')}
@@ -184,9 +236,9 @@ RELEVANT EVENT TYPES: ${eventTypesForDoc.join(', ')}
 EVENT TYPE DEFINITIONS:
 - sou_published: SOU report officially published/handed over (look for "Härmed överlämnas...")
 - directive_issued: Government directive issued (look for "Beslut vid regeringssammanträde...")
-- committee_formed: Committee/investigation formally established
+- committee_formed: Person appointed to committee/investigation
 - remiss_period_start: Consultation period begins
-- remiss_period_end: Consultation deadline (look for "Remissvar ska ha kommit in...")
+- remiss_period_end: Consultation deadline (look for "Remissvar ska ha kommit in...", "ska lämnas senast...")
 - proposition_submitted: Government proposition submitted to parliament
 - law_enacted: Law comes into force (look for "träder i kraft...")
 
@@ -199,14 +251,68 @@ FUTURE DATES:
 - You MAY extract future/planned dates
 - These MUST still have citations
 - Use appropriate confidence based on linguistic precision
-- Common patterns: "Beslut vid regeringssammanträde den...", "Planerat överlämnande..."
+- Common patterns: "Beslut vid regeringssammanträde den...", "Planerat överlämnande...", "ska lämnas senast den..."
+
+### METADATA RULES (IMPORTANT)
+
+In addition to the core fields (event_type, event_date, description, source_page, source_excerpt), you MUST populate the metadata object for certain event types:
+
+#### 1. For committee_formed events:
+
+When you create a committee_formed event based on evidence like:
+- "förordnades som särskild utredare"
+- "förordnades som sakkunnig"
+- "förordnades som sekreterare"
+
+you MUST:
+- Set metadata.committee_event_kind to one of:
+  - "lead_investigator_appointed" – when a person is appointed as *särskild utredare* or equivalent lead investigator.
+  - "expert_appointed" – when a person is appointed as *sakkunnig*, *ämnessakkunnig*, or similar expert role.
+  - "secretary_appointed" – when a person is appointed as *sekreterare* or *huvudsekreterare*.
+  - "other_member_appointed" – for any other committee membership that does not clearly fit the above.
+- Set metadata.role to the Swedish role title exactly as written in the document (e.g., "särskild utredare", "sakkunnig", "ämnessakkunnig").
+- Set metadata.person_name to the person's name exactly as it appears in the citation text.
+
+If you are not confident which committee_event_kind applies, you may still create the event if the evidence is strong, but use "other_member_appointed" as the committee_event_kind.
+
+#### 2. For deadline/future date events (e.g., remiss_period_end):
+
+When directives or SOUs contain explicit future deadlines such as:
+- "Delredovisningar ska lämnas senast den 31 mars 2027 respektive den 31 mars 2028."
+- "Uppdraget ska slutredovisas senast den 31 mars 2029."
+
+and you create an event for those dates, you MUST:
+- Set metadata.deadline_kind to one of:
+  - "interim_report" – for partial reports / delredovisningar.
+  - "final_report" – for final reports / slutredovisning.
+  - "other_deadline" – for other explicit "senast den …" style deadlines that are not clearly interim or final reports.
+- For each directive with multiple deadlines, assign:
+  - metadata.deadline_index starting at 1 in strict chronological order (1, 2, 3, …).
+- Set metadata.deadline_label to a short Swedish label taken from the document when possible, e.g., "Delredovisning" or "Slutredovisning".
+
+If you cannot confidently decide whether a deadline is an interim report or a final report, use:
+- "deadline_kind": "other_deadline"
+- and a neutral deadline_label such as "Tidsfrist".
+
+#### 3. Do NOT invent metadata
+
+- Only populate metadata values that you can directly support with the citation text you provide in source_excerpt.
+- If the role or deadline type is unclear, prefer a safe fallback category ("other_member_appointed", "other_deadline") instead of guessing.
+- Do NOT invent names, roles, or labels that are not present in the document.
+
+#### 4. Deduplication and re-runs
+
+The system detects duplicate events based on the core fields (process_id, event_type, event_date), NOT on metadata. You may safely re-run on the same document:
+- Existing events will be matched as duplicates by their core fields.
+- metadata can be updated or refined in subsequent runs without creating duplicate events.
 
 CRITICAL RULES:
 1. The source_excerpt MUST contain the date evidence
 2. If date is elsewhere but not in excerpt → DO NOT extract
 3. Skip rather than guess. If uncertain → DO NOT call the tool
 4. One tool call per event found
-5. Maximum 5 events per document
+5. Maximum 8 events per document (allow for multiple committee appointments and deadlines)
+6. For committee_formed, create ONE EVENT PER PERSON APPOINTED
 
 PHILOSOPHY: No event is better than an uncertain event. Forensic accuracy over completeness.`;
 
@@ -216,11 +322,16 @@ PHILOSOPHY: No event is better than an uncertain event. Forensic accuracy over c
 ${focusContent}
 --- CONTENT END ---
 
-Task: Extract timeline events with citations and confidence levels. Look for ${eventTypesForDoc.join(', ')} events.
-Remember: confidence is based on date precision (high=day, medium=month, low=year).`;
+Task: Extract timeline events with citations, confidence levels, and structured metadata. Look for ${eventTypesForDoc.join(', ')} events.
+
+Remember:
+- Confidence is based on date precision (high=day, medium=month, low=year)
+- For committee_formed: include metadata.committee_event_kind, metadata.role, metadata.person_name
+- For deadline events: include metadata.deadline_kind, metadata.deadline_index, metadata.deadline_label
+- If multiple deadlines exist, number them chronologically (deadline_index: 1, 2, 3...)`;
 
     // Call OpenAI
-    console.log('[Timeline Agent v2] Calling OpenAI', { document_id, doc_type: document.doc_type });
+    console.log('[Timeline Agent v2.1] Calling OpenAI', { document_id, doc_type: document.doc_type });
     
     const completion = await callOpenAI(
       [
@@ -238,7 +349,7 @@ Remember: confidence is based on date precision (high=day, medium=month, low=yea
     
     // Check if any tools were called
     if (!message.tool_calls || message.tool_calls.length === 0) {
-      console.log('[Timeline Agent v2] Skip: No tool calls (no valid evidence)', { document_id });
+      console.log('[Timeline Agent v2.1] Skip: No tool calls (no valid evidence)', { document_id });
       
       const processingTime = Date.now() - startTime;
       
@@ -277,7 +388,7 @@ Remember: confidence is based on date precision (high=day, medium=month, low=yea
           const event: TimelineEvent = JSON.parse(toolCall.function.arguments);
           extractedEvents.push(event);
         } catch (parseError) {
-          console.warn('[Timeline Agent v2] Failed to parse tool call', { 
+          console.warn('[Timeline Agent v2.1] Failed to parse tool call', { 
             document_id, 
             error: parseError instanceof Error ? parseError.message : 'Unknown' 
           });
@@ -285,7 +396,7 @@ Remember: confidence is based on date precision (high=day, medium=month, low=yea
       }
     }
 
-    console.log('[Timeline Agent v2] Extracted events', { 
+    console.log('[Timeline Agent v2.1] Extracted events', { 
       document_id, 
       count: extractedEvents.length,
       types: extractedEvents.map(e => e.event_type)
@@ -297,7 +408,7 @@ Remember: confidence is based on date precision (high=day, medium=month, low=yea
     for (const event of extractedEvents) {
       // Validate event data
       if (!event.event_date || !event.source_excerpt) {
-        console.warn('[Timeline Agent v2] Invalid event, skipping', { 
+        console.warn('[Timeline Agent v2.1] Invalid event, skipping', { 
           document_id, 
           event_type: event.event_type 
         });
@@ -306,7 +417,7 @@ Remember: confidence is based on date precision (high=day, medium=month, low=yea
 
       // Validate confidence
       if (!['high', 'medium', 'low'].includes(event.confidence)) {
-        console.warn('[Timeline Agent v2] Invalid confidence, defaulting to medium', { 
+        console.warn('[Timeline Agent v2.1] Invalid confidence, defaulting to medium', { 
           document_id,
           confidence: event.confidence
         });
@@ -335,6 +446,7 @@ Remember: confidence is based on date precision (high=day, medium=month, low=yea
       }
 
       // Check for duplicate (same process, event_type, and date)
+      // NOTE: metadata is NOT part of uniqueness key
       const { data: existingEvent } = await supabase
         .from('timeline_events')
         .select('id')
@@ -344,7 +456,7 @@ Remember: confidence is based on date precision (high=day, medium=month, low=yea
         .maybeSingle();
 
       if (existingEvent) {
-        console.log('[Timeline Agent v2] Duplicate event, skipping', { 
+        console.log('[Timeline Agent v2.1] Duplicate event, skipping', { 
           document_id, 
           event_type: event.event_type,
           event_date: normalizedDate
@@ -352,7 +464,12 @@ Remember: confidence is based on date precision (high=day, medium=month, low=yea
         continue;
       }
 
-      // Insert timeline event
+      // Prepare metadata - ensure it's a valid object or empty
+      const eventMetadata = event.metadata && typeof event.metadata === 'object' 
+        ? event.metadata 
+        : {};
+
+      // Insert timeline event with metadata
       const { data: insertedEvent, error: insertError } = await supabase
         .from('timeline_events')
         .insert({
@@ -363,13 +480,14 @@ Remember: confidence is based on date precision (high=day, medium=month, low=yea
           source_page: sourcePage,
           source_excerpt: sourceExcerpt,
           source_url: document.pdf_url,
-          actors: event.actors || []
+          actors: event.actors || [],
+          metadata: eventMetadata
         })
         .select()
         .single();
 
       if (insertError) {
-        console.error('[Timeline Agent v2] Failed to insert event', { 
+        console.error('[Timeline Agent v2.1] Failed to insert event', { 
           document_id,
           event_type: event.event_type,
           error: insertError.message 
@@ -381,15 +499,17 @@ Remember: confidence is based on date precision (high=day, medium=month, low=yea
         id: insertedEvent.id,
         event_type: event.event_type,
         event_date: normalizedDate,
-        confidence: event.confidence
+        confidence: event.confidence,
+        metadata: eventMetadata
       });
 
-      console.log('[Timeline Agent v2] ✅ Event inserted', { 
+      console.log('[Timeline Agent v2.1] ✅ Event inserted', { 
         document_id,
         event_id: insertedEvent.id,
         event_type: event.event_type,
         event_date: normalizedDate,
-        confidence: event.confidence
+        confidence: event.confidence,
+        metadata: eventMetadata
       });
     }
 
@@ -425,7 +545,7 @@ Remember: confidence is based on date precision (high=day, medium=month, low=yea
     );
 
   } catch (error) {
-    console.error('[Timeline Agent v2] ❌ Error:', error);
+    console.error('[Timeline Agent v2.1] ❌ Error:', error);
 
     const { task_id } = await req.json().catch(() => ({}));
     

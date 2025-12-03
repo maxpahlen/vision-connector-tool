@@ -25,6 +25,15 @@ const TEST_SAMPLES = {
   ],
 };
 
+interface EventMetadata {
+  committee_event_kind?: string;
+  role?: string;
+  person_name?: string;
+  deadline_kind?: string;
+  deadline_index?: number;
+  deadline_label?: string;
+}
+
 interface TestResult {
   document_id: string;
   doc_number: string;
@@ -36,6 +45,7 @@ interface TestResult {
     event_type: string;
     event_date: string;
     confidence: string;
+    metadata?: EventMetadata;
   }>;
   error?: string;
   reason?: string;
@@ -263,10 +273,10 @@ export function TimelineAgentV2Test() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Play className="h-5 w-5" />
-          Timeline Agent v2 Test Suite
+          Timeline Agent v2.1 Test Suite
         </CardTitle>
         <CardDescription>
-          Testing v2 with confidence scoring on {TEST_SAMPLES.directives.length} directives + {TEST_SAMPLES.sous.length} SOUs
+          Testing v2.1 with metadata on {TEST_SAMPLES.directives.length} directives + {TEST_SAMPLES.sous.length} SOUs
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -372,12 +382,33 @@ export function TimelineAgentV2Test() {
                   <div className="text-xs text-muted-foreground italic">{sample.reason}</div>
                   
                   {result?.events && result.events.length > 0 && (
-                    <div className="mt-2 space-y-1">
+                    <div className="mt-2 space-y-2">
                       {result.events.map((event, i) => (
-                        <div key={i} className="flex items-center gap-2 text-xs">
-                          <Badge variant="secondary">{event.event_type}</Badge>
-                          <span>{event.event_date}</span>
-                          {getConfidenceBadge(event.confidence)}
+                        <div key={i} className="rounded bg-muted/50 p-2 space-y-1">
+                          <div className="flex items-center gap-2 text-xs">
+                            <Badge variant="secondary">{event.event_type}</Badge>
+                            <span>{event.event_date}</span>
+                            {getConfidenceBadge(event.confidence)}
+                          </div>
+                          {event.metadata && Object.keys(event.metadata).length > 0 && (
+                            <div className="text-xs text-muted-foreground pl-2 border-l-2 border-muted">
+                              {event.metadata.committee_event_kind && (
+                                <div><span className="font-medium">Kind:</span> {event.metadata.committee_event_kind}</div>
+                              )}
+                              {event.metadata.person_name && (
+                                <div><span className="font-medium">Person:</span> {event.metadata.person_name}</div>
+                              )}
+                              {event.metadata.role && (
+                                <div><span className="font-medium">Role:</span> {event.metadata.role}</div>
+                              )}
+                              {event.metadata.deadline_kind && (
+                                <div><span className="font-medium">Deadline:</span> {event.metadata.deadline_kind} #{event.metadata.deadline_index}</div>
+                              )}
+                              {event.metadata.deadline_label && (
+                                <div><span className="font-medium">Label:</span> {event.metadata.deadline_label}</div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -417,12 +448,33 @@ export function TimelineAgentV2Test() {
                   <div className="text-xs text-muted-foreground italic">{sample.reason}</div>
                   
                   {result?.events && result.events.length > 0 && (
-                    <div className="mt-2 space-y-1">
+                    <div className="mt-2 space-y-2">
                       {result.events.map((event, i) => (
-                        <div key={i} className="flex items-center gap-2 text-xs">
-                          <Badge variant="secondary">{event.event_type}</Badge>
-                          <span>{event.event_date}</span>
-                          {getConfidenceBadge(event.confidence)}
+                        <div key={i} className="rounded bg-muted/50 p-2 space-y-1">
+                          <div className="flex items-center gap-2 text-xs">
+                            <Badge variant="secondary">{event.event_type}</Badge>
+                            <span>{event.event_date}</span>
+                            {getConfidenceBadge(event.confidence)}
+                          </div>
+                          {event.metadata && Object.keys(event.metadata).length > 0 && (
+                            <div className="text-xs text-muted-foreground pl-2 border-l-2 border-muted">
+                              {event.metadata.committee_event_kind && (
+                                <div><span className="font-medium">Kind:</span> {event.metadata.committee_event_kind}</div>
+                              )}
+                              {event.metadata.person_name && (
+                                <div><span className="font-medium">Person:</span> {event.metadata.person_name}</div>
+                              )}
+                              {event.metadata.role && (
+                                <div><span className="font-medium">Role:</span> {event.metadata.role}</div>
+                              )}
+                              {event.metadata.deadline_kind && (
+                                <div><span className="font-medium">Deadline:</span> {event.metadata.deadline_kind} #{event.metadata.deadline_index}</div>
+                              )}
+                              {event.metadata.deadline_label && (
+                                <div><span className="font-medium">Label:</span> {event.metadata.deadline_label}</div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
