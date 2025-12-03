@@ -1,8 +1,34 @@
 # Phase 5: Legislative Graph Expansion
 
-**Status:** 🚀 In Progress  
+**Status:** 🚀 In Progress (Phase 5.1 ✅ Complete)  
 **Branch:** `phase-5-legislative-graph`  
 **Dependencies:** Phase 3 (Multi-Agent AI), Phase 4 (Search & Discovery)
+
+---
+
+## Milestone: Timeline Agent v2.1 — COMPLETE ✅
+
+**Validated:** 2025-12-03
+
+### Summary
+- ✅ v2.1 successfully enriches metadata on existing events (upsert instead of skip)
+- ✅ Person-based dedup works correctly for `committee_formed` events
+- ✅ No false positives or duplicate explosions
+- ✅ Idempotency preserved across re-runs
+- ✅ Metadata quality is high and aligns with forensic-citation standard
+
+### Test Results
+| Metric | Value |
+|--------|-------|
+| Documents tested | 10 (5 directives + 5 SOUs) |
+| Success rate | 100% |
+| Events extracted | 69 |
+| Events inserted | 17 |
+| Events updated | 39 |
+
+### Known Behavior (Accepted for Now)
+- `deadline_index` restarts for different deadline kinds (interim/final)
+- This is acceptable and will be revisited in Phase 6 when full sequencing logic is introduced
 
 ---
 
@@ -416,16 +442,23 @@ For each new document type:
 
 ## Implementation Phases
 
-### Phase 5.1: Database Schema + Timeline Agent v2
-- [ ] Run database migrations
-- [ ] Deploy Timeline Agent v2 with confidence scoring
-- [ ] Test on existing SOUs (regression test)
+### Phase 5.1: Database Schema + Timeline Agent v2.1 ✅ COMPLETE
+- [x] Run database migrations (lifecycle_stage, document_references, external_urls)
+- [x] Deploy Timeline Agent v2.1 with confidence scoring
+- [x] Add metadata layer (committee_event_kind, deadline_kind, etc.)
+- [x] Person-based deduplication for committee_formed
+- [x] Metadata upsert on re-runs (instead of skip)
+- [x] Test on existing SOUs (regression test passed)
 
-### Phase 5.2: Propositions End-to-End
-- [ ] Proposition scraper
-- [ ] Genvägar link classifier
+### Phase 5.2: Propositions End-to-End (Ready to Start)
+- [ ] Proposition scraper (`scrape-proposition-index`)
+- [ ] Genvägar link classifier (`_shared/genvag-classifier.ts`)
+- [ ] Timeline Agent v2.2 enhancements (proposition events + committee_type + deadline_type)
+- [ ] Metadata Agent v2.2 for proposition entities
 - [ ] Head Detective v3 updates
 - [ ] Validation on 10 sample propositions
+
+See: [Phase 5.2 Proposition Slice Plan](../PHASE_5.2_PROPOSITION_SLICE_PLAN.md)
 
 ### Phase 5.3: Remisser + Remissvar
 - [ ] Remiss scraper
