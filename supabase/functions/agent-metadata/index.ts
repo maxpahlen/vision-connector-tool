@@ -8,9 +8,12 @@ const corsHeaders = {
 };
 
 /**
- * Metadata Agent v1 - Extract People, Ministries, and Committee Names
+ * Metadata Agent v2.2 - Document Type Aware Entity Extraction
  * 
- * Scope: Extract ONLY lead investigators, ministries, and committee names with forensic citations
+ * Now supports:
+ * - SOUs/Directives: Extract lead investigators (utredare)
+ * - Propositions: Extract ministers and political office holders
+ * 
  * Philosophy: Skip rather than guess. Zero hallucinations. Evidence-first.
  */
 
@@ -20,17 +23,30 @@ interface MetadataAgentRequest {
   task_id?: string;
 }
 
+// Extended role types for propositions
+type EntityRole = 
+  | 'utredare' 
+  | 'särskild_utredare' 
+  | 'committee'
+  // Proposition-specific roles (Swedish titles)
+  | 'minister'
+  | 'statsråd'
+  | 'departementschef'
+  | 'statssekreterare';
+
 interface EntityReport {
   entity_type: 'person' | 'committee';
   name: string;
-  role: 'utredare' | 'särskild_utredare' | 'committee';
+  role: string; // Swedish title from document
+  role_normalized?: string; // Optional normalized category
   source_page: number;
   source_excerpt: string;
 }
 
 interface MetadataAgentOutput {
-  agent_version: '1.0.0';
+  agent_version: '2.2.0';
   model_used: string;
+  document_type: string;
   completed_at: string;
   processing_time_ms: number;
   entities_reported: number;
@@ -49,7 +65,16 @@ interface MetadataAgentOutput {
 /**
  * Map entity role to relation type
  */
-function mapRoleToRelationType(role: string): string {
+function mapRoleToRelationType(role: string, docType: string): string {
+  // For propositions: ministers are "signed_by"
+  if (docType === 'proposition') {
+    const lowerRole = role.toLowerCase();
+    if (lowerRole.includes('minister') || lowerRole === 'statsråd' || lowerRole === 'departementschef') {
+      return 'signed_by';
+    }
+  }
+  
+  // For SOUs/directives: investigators "led_by"
   const mapping: Record<string, string> = {
     'utredare': 'led_by',
     'särskild_utredare': 'led_by',
@@ -64,6 +89,266 @@ function mapRoleToRelationType(role: string): string {
 function estimatePageFromCharPosition(charPosition: number): number {
   // Rough estimate: ~2000 chars per page (conservative)
   return Math.max(1, Math.floor(charPosition / 2000) + 1);
+}
+
+/**
+ * Get system prompt based on document type
+ */
+function getSystemPrompt(docType: string): string {
+  if (docType === 'proposition') {
+    return `You are a Metadata Extraction Agent analyzing Swedish Government Propositions (propositioner).
+
+MISSION:
+Extract ministers and political office holders mentioned in the document with forensic-grade citations.
+
+CITATION POLICY (NON-NEGOTIABLE):
+- Only extract entities if you can cite BOTH:
+  1. Specific page number in the PDF (estimate from text position if needed)
+  2. Direct quote (50-200 chars) proving the entity's role
+- If you cannot find a clear citation → do not report the entity
+- Never invent or infer names or roles
+
+SCOPE (PROPOSITIONS ONLY):
+Extract ministers and political office holders:
+
+1. **Ministers / Statsråd** (REQUIRED for propositions)
+   - Look for: signature blocks, "Förord", "Undertecknat av", ministerial introductions
+   - Look for titles like: "justitieminister", "försvarsminister", "finansminister", 
+     "utbildningsminister", "skolminister", "socialminister", "kulturminister",
+     "klimatminister", "näringsminister", "energi- och näringsminister", "statsråd",
+     "civilminister", "arbetsmarknadsminister", "utrikesminister", etc.
+   - CRITICAL: Extract the ACTUAL NAME of the person (first + surname)
+   - The role field should contain the EXACT Swedish title from the document
+   
+2. **Other government officials** (optional)
+   - Statssekreterare, departementschef
+   - Only if clearly stated with name
+
+CRITICAL - DO NOT EXTRACT THESE ROLES:
+- "utredare" or "särskild utredare" (these are for SOUs, NOT propositions)
+- "expert" or "sakkunnig" (committee roles)
+- Generic committee references
+
+PERSON NAME VALIDATION:
+- MUST be actual first name + surname (e.g., "Carl-Oskar Bohlin", "Niklas Wykman")
+- MUST NOT be just a title (e.g., "justitieministern", "försvarsministern")
+- If only title appears without a name → skip it
+
+ROLE FIELD:
+- Copy the EXACT Swedish title from the document (e.g., "justitieminister", "statsråd")
+- Do NOT use "utredare" or committee-style roles for propositions
+
+EXTRACTION RULES:
+1. Extract names EXACTLY as written (no normalization)
+2. One entity = one tool call with citation
+3. If uncertain about a name or role → skip it
+4. Look especially in signature blocks at the end of the document
+
+OUTPUT TRANSPARENCY:
+After your tool calls, briefly note:
+- Which sections you analyzed
+- Any uncertainties`;
+  }
+  
+  // Default: SOU/Directive prompt
+  return `You are a Metadata Extraction Agent analyzing Swedish government reports (SOUs and directives).
+
+MISSION:
+Extract lead investigators and committee names mentioned in the document with forensic-grade citations.
+
+CITATION POLICY (NON-NEGOTIABLE):
+- Only extract entities if you can cite BOTH:
+  1. Specific page number in the PDF (estimate from text position if needed)
+  2. Direct quote (50-200 chars) proving the entity's role
+- If you cannot find a clear citation → do not report the entity
+- Never invent or infer names or roles
+
+SCOPE (SOUs and DIRECTIVES):
+Extract ONLY these entity types:
+
+1. **Lead investigator** (utredare / särskild utredare)
+   - Look for phrases like: "Som särskild utredare förordnades...", "Utredare:", "Särskild utredare:"
+   - CRITICAL: Extract ONLY actual NAMES containing first name + surname (e.g., "Peter Norman", "Anna Lindh")
+   - DO NOT extract role titles alone (e.g., "Särskild utredare", "Samordnaren", "Ordföranden")
+   - If only a role title appears WITHOUT an actual name → skip it
+   - Role: Use 'särskild_utredare' if title mentions "särskild", otherwise 'utredare'
+
+2. **Committee name** (optional but include if clearly stated)
+   - Look for: "Utredningen om...", "Kommittén för...", committee identifiers like "(Fi 2024:03)"
+   - Role: 'committee'
+   - Include full name as stated
+
+DO NOT EXTRACT (explicitly out of scope):
+- Ministry (already available in documents.ministry from scraper)
+- Ministers (these are for propositions, not SOUs)
+- Secretariat members
+- Experts or expert groups
+- Reference groups (remissinstanser)
+- Deadlines or mandatperiod
+
+PERSON NAME VALIDATION RULES:
+- MUST contain at least first name + surname (requires at least one space)
+- MUST NOT be just a role title
+- Valid examples: "Peter Norman", "Anna Svensson", "Lars-Erik Andersson"
+- Invalid examples: "Särskild utredare", "Utredaren", "Samordnaren"
+
+EXTRACTION RULES:
+1. Extract names EXACTLY as written (no normalization)
+2. If multiple name variants exist, extract each with separate citations
+3. One entity = one tool call with citation
+4. If uncertain about a name or role → skip it
+
+OUTPUT TRANSPARENCY:
+After your tool calls, briefly note:
+- Which sections you analyzed
+- Any uncertainties`;
+}
+
+/**
+ * Get tool schema based on document type
+ */
+function getToolSchema(docType: string) {
+  const roleEnum = docType === 'proposition'
+    ? ["minister", "statsråd", "departementschef", "statssekreterare", "committee"]
+    : ["utredare", "särskild_utredare", "committee"];
+    
+  const roleDescription = docType === 'proposition'
+    ? "Swedish title exactly as written in document (e.g., 'justitieminister', 'försvarsminister', 'statsråd')"
+    : "Specific role: 'utredare' or 'särskild_utredare' for lead investigators, 'committee' for committee name";
+
+  return {
+    type: "function" as const,
+    function: {
+      name: "report_metadata_entity",
+      description: `Report a single entity found in the document with forensic citation. Call this once for each entity you find with clear evidence.`,
+      parameters: {
+        type: "object",
+        properties: {
+          entity_type: {
+            type: "string",
+            enum: ["person", "committee"],
+            description: "Type of entity being reported"
+          },
+          name: {
+            type: "string",
+            description: "Entity name exactly as written in document. For persons: MUST be actual first + surname (e.g., 'Carl-Oskar Bohlin'), NOT role titles."
+          },
+          role: {
+            type: "string",
+            description: roleDescription
+          },
+          source_page: {
+            type: "number",
+            description: "Page number where entity is mentioned. Estimate from position in text if page markers not present."
+          },
+          source_excerpt: {
+            type: "string",
+            description: "Direct quote from document (50-500 chars) proving the entity's role. Must be exact, verifiable text."
+          }
+        },
+        required: ["entity_type", "name", "role", "source_page", "source_excerpt"],
+        additionalProperties: false
+      }
+    }
+  };
+}
+
+/**
+ * Validate person entity based on document type
+ */
+function validatePersonEntity(name: string, role: string, docType: string): { valid: boolean; reason?: string } {
+  const trimmedName = name.trim();
+  
+  // Basic validations (apply to all doc types)
+  if (!trimmedName) {
+    return { valid: false, reason: 'empty name' };
+  }
+  
+  if (trimmedName.includes('(') || trimmedName.includes(')')) {
+    return { valid: false, reason: 'contains parentheses/placeholder' };
+  }
+  
+  if (!trimmedName.includes(' ')) {
+    return { valid: false, reason: 'no space in name (missing surname)' };
+  }
+  
+  if (!/[a-zA-ZåäöÅÄÖ]/.test(trimmedName)) {
+    return { valid: false, reason: 'no alphabetical characters' };
+  }
+  
+  const lowerName = trimmedName.toLowerCase();
+  
+  // Reject ministry/department names
+  if (lowerName.endsWith('departementet')) {
+    return { valid: false, reason: 'ministry name detected' };
+  }
+  
+  // Common placeholder stoplist (all doc types)
+  const commonStoplist = [
+    'not specified',
+    '(not specified)',
+    'okänd',
+    'ej angiven',
+  ];
+  
+  if (commonStoplist.includes(lowerName)) {
+    return { valid: false, reason: 'placeholder/stoplist match' };
+  }
+  
+  // Document type specific validation
+  if (docType === 'proposition') {
+    // For propositions: reject minister title-only entries (when used as name)
+    const ministerTitleOnlyPatterns = [
+      /^(justitie|försvars|finans|utbildnings|skol|social|kultur|klimat|närings|civil|arbetsmarknads|utrikes)ministern?$/i,
+      /^statsrådet$/i,
+      /^departementschefen$/i,
+    ];
+    
+    if (ministerTitleOnlyPatterns.some(p => p.test(lowerName))) {
+      return { valid: false, reason: 'minister title without actual name' };
+    }
+    
+    // Reject SOU-style roles being used in propositions
+    const souRoles = ['utredare', 'särskild utredare', 'samordnaren', 'ordföranden', 'utredaren'];
+    if (souRoles.includes(lowerName) || souRoles.some(r => lowerName.startsWith(r + ' '))) {
+      return { valid: false, reason: 'SOU-style role used in proposition' };
+    }
+  } else {
+    // For SOUs/directives: existing validation
+    const roleStoplist = [
+      'särskild utredare',
+      'samordnaren',
+      'ordföranden',
+      'utredaren',
+      'särskilde utredaren',
+      'vice ordföranden',
+      'sekreteraren',
+      'kommittén'
+    ];
+    
+    if (roleStoplist.some(r => lowerName === r || lowerName.startsWith(r + ' ') || lowerName.endsWith(' ' + r))) {
+      return { valid: false, reason: 'role title detected' };
+    }
+    
+    // Minister titles in SOU context (shouldn't extract these for SOUs)
+    if (lowerName.endsWith('minister') || lowerName.endsWith('ministern')) {
+      return { valid: false, reason: 'minister title in SOU context' };
+    }
+    
+    const souPlaceholders = [
+      'socialtjänstministern',
+      'klimatministern',
+      'näringsministern',
+      'utbildningsministern',
+      'justitieministern'
+    ];
+    
+    if (souPlaceholders.includes(lowerName)) {
+      return { valid: false, reason: 'minister placeholder in SOU' };
+    }
+  }
+  
+  return { valid: true };
 }
 
 serve(async (req) => {
@@ -81,7 +366,7 @@ serve(async (req) => {
   try {
     const { document_id, process_id, task_id }: MetadataAgentRequest = await req.json();
 
-    console.log('[Metadata Agent v1] Starting extraction', { document_id, process_id, task_id });
+    console.log('[Metadata Agent v2.2] Starting extraction', { document_id, process_id, task_id });
 
     // Update task status to started if task_id provided
     if (task_id) {
@@ -91,10 +376,10 @@ serve(async (req) => {
         .eq('id', task_id);
     }
 
-    // Fetch document content and metadata
+    // Fetch document content and metadata INCLUDING doc_type
     const { data: document, error: docError } = await supabase
       .from('documents')
-      .select('id, raw_content, pdf_url, title, doc_number')
+      .select('id, raw_content, pdf_url, title, doc_number, doc_type')
       .eq('id', document_id)
       .single();
 
@@ -102,8 +387,12 @@ serve(async (req) => {
       throw new Error(`Failed to fetch document: ${docError?.message || 'Not found'}`);
     }
 
+    const docType = document.doc_type || 'sou'; // Default to SOU for backwards compatibility
+    
+    console.log('[Metadata Agent v2.2] Document type detected', { document_id, doc_type: docType });
+
     if (!document.raw_content) {
-      console.log('[Metadata Agent v1] Skip: No raw_content', { document_id });
+      console.log('[Metadata Agent v2.2] Skip: No raw_content', { document_id });
       if (task_id) {
         await supabase
           .from('agent_tasks')
@@ -120,123 +409,36 @@ serve(async (req) => {
       );
     }
 
-    // Extract focus sections (first 15000 characters - covers front matter + Uppdraget + Kommittén)
-    const focusContent = document.raw_content.substring(0, 15000);
+    // For propositions, look at both start and end (signature blocks are often at end)
+    const focusContentStart = document.raw_content.substring(0, 15000);
+    const focusContentEnd = docType === 'proposition' 
+      ? document.raw_content.substring(Math.max(0, document.raw_content.length - 10000))
+      : '';
+    
+    const focusContent = docType === 'proposition'
+      ? `--- BEGINNING OF DOCUMENT ---\n${focusContentStart}\n\n--- END OF DOCUMENT (last 10000 chars) ---\n${focusContentEnd}`
+      : focusContentStart;
 
-    console.log('[Metadata Agent v1] Extracted focus content', { 
+    console.log('[Metadata Agent v2.2] Extracted focus content', { 
       document_id, 
-      focusContentLength: focusContent.length 
+      focusContentLength: focusContent.length,
+      doc_type: docType
     });
 
-    // OpenAI Tool Schema for metadata extraction
-    const tool = {
-      type: "function" as const,
-      function: {
-        name: "report_metadata_entity",
-        description: "Report a single entity (person or committee) found in the document with forensic citation. Call this once for each entity you find with clear evidence.",
-        parameters: {
-          type: "object",
-          properties: {
-            entity_type: {
-              type: "string",
-              enum: ["person", "committee"],
-              description: "Type of entity being reported"
-            },
-            name: {
-              type: "string",
-              description: "Entity name exactly as written in document. For persons: MUST be actual first + surname (e.g., 'Peter Norman'), NOT role titles. Do NOT normalize or standardize."
-            },
-            role: {
-              type: "string",
-              enum: ["utredare", "särskild_utredare", "committee"],
-              description: "Specific role: 'utredare' or 'särskild_utredare' for lead investigators, 'committee' for committee name"
-            },
-            source_page: {
-              type: "number",
-              description: "Page number where entity is mentioned. Estimate from position in text if page markers not present."
-            },
-            source_excerpt: {
-              type: "string",
-              description: "Direct quote from document (50-200 chars) proving the entity's role. Must be exact, verifiable text."
-            }
-          },
-          required: ["entity_type", "name", "role", "source_page", "source_excerpt"],
-          additionalProperties: false
-        }
-      }
-    };
+    // Get document-type-specific prompt and tool schema
+    const systemPrompt = getSystemPrompt(docType);
+    const tool = getToolSchema(docType);
 
-    // System prompt emphasizing v1 scope and citation-first principle
-    const systemPrompt = `You are a Metadata Extraction Agent analyzing Swedish government reports (SOUs and directives).
-
-MISSION:
-Extract lead investigators and committee names mentioned in the document with forensic-grade citations.
-
-CITATION POLICY (NON-NEGOTIABLE):
-- Only extract entities if you can cite BOTH:
-  1. Specific page number in the PDF (estimate from text position if needed)
-  2. Direct quote (50-200 chars) proving the entity's role
-- If you cannot find a clear citation → do not report the entity
-- Never invent or infer names or roles
-
-SCOPE (v1 - STRICTLY LIMITED):
-Extract ONLY these entity types:
-
-1. **Lead investigator** (utredare / särskild utredare)
-   - Look for phrases like: "Som särskild utredare förordnades...", "Utredare:", "Särskild utredare:"
-   - CRITICAL: Extract ONLY actual NAMES containing first name + surname (e.g., "Peter Norman", "Anna Lindh")
-   - DO NOT extract role titles alone (e.g., "Särskild utredare", "Samordnaren", "Ordföranden")
-   - If only a role title appears WITHOUT an actual name → skip it
-   - Role: Use 'särskild_utredare' if title mentions "särskild", otherwise 'utredare'
-
-2. **Committee name** (optional but include if clearly stated)
-   - Look for: "Utredningen om...", "Kommittén för...", committee identifiers like "(Fi 2024:03)"
-   - Role: 'committee'
-   - Include full name as stated
-
-DO NOT EXTRACT (explicitly out of scope):
-- Ministry (already available in documents.ministry from scraper - more accurate than AI extraction)
-- Secretariat members
-- Experts or expert groups
-- Reference groups (remissinstanser)
-- Deadlines or mandatperiod
-- Tilläggsdirektiv
-- Anyone except the lead investigator
-
-PERSON NAME VALIDATION RULES:
-- MUST contain at least first name + surname (requires at least one space)
-- MUST NOT be just a role title like:
-  * "Särskild utredare"
-  * "Samordnaren"
-  * "Ordföranden"
-  * "Utredaren"
-  * Any other generic role without an actual name
-- Valid examples: "Peter Norman", "Anna Svensson", "Lars-Erik Andersson"
-- Invalid examples: "Särskild utredare", "Utredaren", "Samordnaren"
-
-EXTRACTION RULES:
-1. Extract names EXACTLY as written (no normalization)
-2. If multiple name variants exist, extract each with separate citations
-3. One entity = one tool call with citation
-4. If uncertain about a name or role → skip it
-5. Call the tool multiple times (once per entity found)
-
-OUTPUT TRANSPARENCY:
-After your tool calls, briefly note:
-- Which sections you analyzed (e.g., "Analyzed: Uppdraget, Kommittén, pages 1-8")
-- Which sections you skipped (e.g., "Skipped: Bilagor, pages 100+")
-- Any uncertainties (e.g., "Name unclear on page 5")`;
-
-    const userPrompt = `Analyze this content from document "${document.title}" (${document.doc_number}):
+    const userPrompt = `Analyze this content from ${docType === 'proposition' ? 'proposition' : 'report'} "${document.title}" (${document.doc_number}):
 
 --- CONTENT START ---
 ${focusContent}
 --- CONTENT END ---
 
-Task: Extract lead investigator (actual name only, not role title) and committee name (if clearly stated) using the report_metadata_entity tool. Call the tool once for each entity you find with valid citation. Remember: citation-first principle - no citation = no extraction. Person names MUST be actual names (first + surname), NOT role titles.`;
+Task: Extract ${docType === 'proposition' ? 'ministers and political office holders' : 'lead investigators and committee names'} using the report_metadata_entity tool. Call the tool once for each entity you find with valid citation. Remember: citation-first principle - no citation = no extraction.`;
 
     // Call OpenAI with tool schema
-    console.log('[Metadata Agent v1] Calling OpenAI', { document_id });
+    console.log('[Metadata Agent v2.2] Calling OpenAI', { document_id, doc_type: docType });
     
     const completion = await callOpenAI(
       [
@@ -246,7 +448,7 @@ Task: Extract lead investigator (actual name only, not role title) and committee
       [tool],
       {
         model: "gpt-4o-mini",
-        temperature: 0.1, // Low temperature for consistency
+        temperature: 0.1,
       }
     );
 
@@ -254,12 +456,13 @@ Task: Extract lead investigator (actual name only, not role title) and committee
     
     // Check if any tools were called
     if (!message.tool_calls || message.tool_calls.length === 0) {
-      console.log('[Metadata Agent v1] Skip: No tool calls (no valid evidence)', { document_id });
+      console.log('[Metadata Agent v2.2] Skip: No tool calls (no valid evidence)', { document_id, doc_type: docType });
       
       const processingTime = Date.now() - startTime;
       const outputData: MetadataAgentOutput = {
-        agent_version: '1.0.0',
+        agent_version: '2.2.0',
         model_used: "gpt-4o-mini",
+        document_type: docType,
         completed_at: new Date().toISOString(),
         processing_time_ms: processingTime,
         entities_reported: 0,
@@ -267,8 +470,10 @@ Task: Extract lead investigator (actual name only, not role title) and committee
         entities_reused: 0,
         relations_created: 0,
         entity_breakdown: { person: 0, committee: 0 },
-        analyzed_sections: ["Front matter", "First 15000 characters"],
-        skipped_sections: ["Annexes", "Remaining document"],
+        analyzed_sections: docType === 'proposition' 
+          ? ["Front matter", "Signature blocks", "First 15000 + last 10000 characters"]
+          : ["Front matter", "First 15000 characters"],
+        skipped_sections: ["Middle sections", "Detailed appendices"],
         uncertainties: message.content ? [message.content] : []
       };
       
@@ -302,7 +507,7 @@ Task: Extract lead investigator (actual name only, not role title) and committee
           const entity: EntityReport = JSON.parse(toolCall.function.arguments);
           extractedEntities.push(entity);
         } catch (parseError) {
-          console.warn('[Metadata Agent v1] Failed to parse tool call', { 
+          console.warn('[Metadata Agent v2.2] Failed to parse tool call', { 
             document_id, 
             error: parseError instanceof Error ? parseError.message : 'Unknown' 
           });
@@ -310,10 +515,11 @@ Task: Extract lead investigator (actual name only, not role title) and committee
       }
     }
 
-    console.log('[Metadata Agent v1] Extracted entities', { 
+    console.log('[Metadata Agent v2.2] Extracted entities', { 
       document_id, 
+      doc_type: docType,
       count: extractedEntities.length,
-      types: extractedEntities.map(e => e.entity_type)
+      entities: extractedEntities.map(e => ({ name: e.name, role: e.role, type: e.entity_type }))
     });
 
     // Process each entity: create or reuse + create relation
@@ -325,113 +531,21 @@ Task: Extract lead investigator (actual name only, not role title) and committee
     for (const entity of extractedEntities) {
       // Validate entity data
       if (!entity.name || !entity.source_excerpt || !entity.source_page) {
-        console.warn('[Metadata Agent v1] Invalid entity, skipping', { 
+        console.warn('[Metadata Agent v2.2] Invalid entity, skipping', { 
           document_id, 
           entity: entity.name 
         });
         continue;
       }
 
-      // Additional validation for person entities: reject role titles and placeholders
+      // Validate person entities with doc-type-aware rules
       if (entity.entity_type === 'person') {
-        const name = entity.name.trim();
-        
-        // Reject empty/whitespace names
-        if (!name) {
-          console.warn('[Metadata Agent v1] Rejecting person entity (empty name)', { 
+        const validation = validatePersonEntity(entity.name, entity.role, docType);
+        if (!validation.valid) {
+          console.warn(`[Metadata Agent v2.2] Rejecting person entity (${validation.reason})`, { 
             document_id, 
-            rejected_name: name 
-          });
-          continue;
-        }
-
-        // Reject names containing parentheses (placeholder indicators)
-        if (name.includes('(') || name.includes(')')) {
-          console.warn('[Metadata Agent v1] Rejecting person entity (contains parentheses/placeholder)', { 
-            document_id, 
-            rejected_name: name 
-          });
-          continue;
-        }
-
-        // Reject ministry/department names (ending with "departementet")
-        if (name.toLowerCase().endsWith('departementet')) {
-          console.warn('[Metadata Agent v1] Rejecting person entity (ministry name detected)', { 
-            document_id, 
-            rejected_name: name 
-          });
-          continue;
-        }
-
-        // Reject minister titles (ending with "minister" or "ministern")
-        if (name.toLowerCase().endsWith('minister') || name.toLowerCase().endsWith('ministern')) {
-          console.warn('[Metadata Agent v1] Rejecting person entity (minister title detected)', { 
-            document_id, 
-            rejected_name: name 
-          });
-          continue;
-        }
-
-        // Reject placeholder names (stoplist - case insensitive)
-        const placeholderStoplist = [
-          'not specified',
-          '(not specified)',
-          'okänd',
-          'ej angiven',
-          'särskild utredare',
-          'utredaren',
-          'samordnaren',
-          'ordföranden',
-          'socialtjänstministern',
-          'klimatministern',
-          'näringsministern',
-          'utbildningsministern',
-          'justitieministern'
-        ];
-        
-        const lowerName = name.toLowerCase();
-        if (placeholderStoplist.includes(lowerName)) {
-          console.warn('[Metadata Agent v1] Rejecting person entity (placeholder/stoplist match)', { 
-            document_id, 
-            rejected_name: name 
-          });
-          continue;
-        }
-
-        // Must contain at least one space (first + surname)
-        if (!name.includes(' ')) {
-          console.warn('[Metadata Agent v1] Rejecting person entity (no space in name)', { 
-            document_id, 
-            rejected_name: name 
-          });
-          continue;
-        }
-
-        // Must contain at least one alphabetical character
-        if (!/[a-zA-ZåäöÅÄÖ]/.test(name)) {
-          console.warn('[Metadata Agent v1] Rejecting person entity (no alphabetical characters)', { 
-            document_id, 
-            rejected_name: name 
-          });
-          continue;
-        }
-
-        // Reject common role titles (extended stoplist)
-        const roleStoplist = [
-          'särskild utredare',
-          'samordnaren',
-          'ordföranden',
-          'utredaren',
-          'särskilde utredaren',
-          'vice ordföranden',
-          'sekreteraren',
-          'kommittén'
-        ];
-        
-        if (roleStoplist.some(role => lowerName === role || lowerName.startsWith(role + ' ') || lowerName.endsWith(' ' + role))) {
-          console.warn('[Metadata Agent v1] Rejecting person entity (role title detected)', { 
-            document_id, 
-            rejected_name: name 
+            rejected_name: entity.name,
+            doc_type: docType
           });
           continue;
         }
@@ -466,7 +580,7 @@ Task: Extract lead investigator (actual name only, not role title) and committee
         // Entity exists, reuse it
         entityId = existingEntity.id;
         entitiesReused++;
-        console.log('[Metadata Agent v1] Reusing existing entity', { 
+        console.log('[Metadata Agent v2.2] Reusing existing entity', { 
           document_id, 
           entity_id: entityId,
           name: entity.name 
@@ -478,16 +592,20 @@ Task: Extract lead investigator (actual name only, not role title) and committee
           .insert({
             entity_type: entity.entity_type,
             name: entity.name,
-            role: entity.role,
+            role: entity.role, // Store exact Swedish title
             source_document_id: document_id,
             source_page: sourcePage,
-            source_excerpt: sourceExcerpt
+            source_excerpt: sourceExcerpt,
+            metadata: {
+              doc_type_source: docType,
+              extraction_version: '2.2.0'
+            }
           })
           .select('id')
           .single();
 
         if (entityError || !newEntity) {
-          console.error('[Metadata Agent v1] Failed to create entity', { 
+          console.error('[Metadata Agent v2.2] Failed to create entity', { 
             document_id,
             entity: entity.name,
             error: entityError?.message 
@@ -497,16 +615,17 @@ Task: Extract lead investigator (actual name only, not role title) and committee
 
         entityId = newEntity.id;
         entitiesCreated++;
-        console.log('[Metadata Agent v1] Created new entity', { 
+        console.log('[Metadata Agent v2.2] Created new entity', { 
           document_id, 
           entity_id: entityId,
           name: entity.name,
+          role: entity.role,
           type: entity.entity_type
         });
       }
 
       // Check if relation already exists (deduplication)
-      const relationType = mapRoleToRelationType(entity.role);
+      const relationType = mapRoleToRelationType(entity.role, docType);
       
       const { data: existingRelation } = await supabase
         .from('relations')
@@ -517,18 +636,17 @@ Task: Extract lead investigator (actual name only, not role title) and committee
         .maybeSingle();
 
       if (existingRelation) {
-        console.log('[Metadata Agent v1] Relation already exists, skipping', { 
+        console.log('[Metadata Agent v2.2] Relation already exists, skipping', { 
           document_id,
           entity_id: entityId,
           relation_id: existingRelation.id,
           relation_type: relationType
         });
-        // Don't increment relationsCreated, but do count entity type
         entityBreakdown[entity.entity_type]++;
         continue;
       }
 
-      // Create relation (only if it doesn't exist)
+      // Create relation
       const { error: relationError } = await supabase
         .from('relations')
         .insert({
@@ -542,13 +660,14 @@ Task: Extract lead investigator (actual name only, not role title) and committee
           source_excerpt: sourceExcerpt,
           metadata: {
             extraction_date: new Date().toISOString(),
-            agent_version: '1.0.0',
-            role: entity.role
+            agent_version: '2.2.0',
+            role: entity.role,
+            doc_type: docType
           }
         });
 
       if (relationError) {
-        console.error('[Metadata Agent v1] Failed to create relation', { 
+        console.error('[Metadata Agent v2.2] Failed to create relation', { 
           document_id,
           entity_id: entityId,
           error: relationError.message 
@@ -559,7 +678,7 @@ Task: Extract lead investigator (actual name only, not role title) and committee
       relationsCreated++;
       entityBreakdown[entity.entity_type]++;
       
-      console.log('[Metadata Agent v1] Created relation', { 
+      console.log('[Metadata Agent v2.2] Created relation', { 
         document_id,
         entity_id: entityId,
         relation_type: relationType
@@ -570,8 +689,9 @@ Task: Extract lead investigator (actual name only, not role title) and committee
 
     // Build output data
     const outputData: MetadataAgentOutput = {
-      agent_version: '1.0.0',
+      agent_version: '2.2.0',
       model_used: "gpt-4o-mini",
+      document_type: docType,
       completed_at: new Date().toISOString(),
       processing_time_ms: processingTime,
       entities_reported: extractedEntities.length,
@@ -579,23 +699,20 @@ Task: Extract lead investigator (actual name only, not role title) and committee
       entities_reused: entitiesReused,
       relations_created: relationsCreated,
       entity_breakdown: entityBreakdown,
-      analyzed_sections: [
-        "Front matter",
-        "Uppdraget section",
-        "Kommittén section",
-        "First 15000 characters"
-      ],
+      analyzed_sections: docType === 'proposition'
+        ? ["Front matter", "Förord", "Signature blocks", "First 15000 + last 10000 chars"]
+        : ["Front matter", "Uppdraget section", "Kommittén section", "First 15000 characters"],
       skipped_sections: [
+        "Middle sections",
         "Bilagor (Annexes)",
-        "Table of contents",
-        "Detailed appendices",
-        "Content beyond first 15000 chars"
+        "Detailed appendices"
       ],
       uncertainties: []
     };
 
-    console.log('[Metadata Agent v1] ✅ Success', { 
+    console.log('[Metadata Agent v2.2] ✅ Success', { 
       document_id,
+      doc_type: docType,
       entities_created: entitiesCreated,
       entities_reused: entitiesReused,
       relations_created: relationsCreated,
@@ -617,13 +734,16 @@ Task: Extract lead investigator (actual name only, not role title) and committee
     return new Response(
       JSON.stringify({ 
         success: true,
+        entities_created: entitiesCreated,
+        entities_reused: entitiesReused,
+        relations_created: relationsCreated,
         output_data: outputData
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
-    console.error('[Metadata Agent v1] ❌ Error:', error);
+    console.error('[Metadata Agent v2.2] ❌ Error:', error);
 
     const { task_id } = await req.json().catch(() => ({}));
     
