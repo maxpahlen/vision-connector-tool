@@ -9,6 +9,8 @@ import { TaskQueueMonitor } from '@/components/admin/TaskQueueMonitor';
 import { ProcessList } from '@/components/admin/ProcessList';
 import { DocumentList } from '@/components/admin/DocumentList';
 import { PropositionScraperTest } from '@/components/admin/PropositionScraperTest';
+import { PropositionTextExtractorTest } from '@/components/admin/PropositionTextExtractorTest';
+import { PropositionAgentTest } from '@/components/admin/PropositionAgentTest';
 
 export default function AdminScraper() {
   return (
@@ -26,8 +28,10 @@ export default function AdminScraper() {
           <StateMachineTest />
         </div>
         
-        {/* Phase 5.2: Proposition Scraper */}
+        {/* Phase 5.2: Proposition Pipeline */}
         <PropositionScraperTest />
+        <PropositionTextExtractorTest />
+        <PropositionAgentTest />
         
         <IntegrationTest />
         <TimelineAgentV2Test />
