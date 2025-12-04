@@ -1,6 +1,40 @@
 # Phase 5.2: Proposition Slice — Implementation Log
 
 **Started:** 2025-12-03
+**Updated:** 2025-12-04
+
+---
+
+## Scraper Version History
+
+### v5.2.2 (2025-12-04) — JSON API Pagination
+
+**Critical Fix**: Switched from HTML scraping to regeringen.se internal Filter API.
+
+**Problem**: The `/rattsliga-dokument/proposition/?page=N` URL does NOT work—regeringen.se uses client-side JavaScript for pagination, limiting HTML scraping to first ~20 items.
+
+**Solution**: Use the internal AJAX endpoint:
+```
+https://www.regeringen.se/Filter/GetFilteredItems
+  ?lang=sv
+  &filterType=Taxonomy
+  &filterByType=FilterablePageBase
+  &preFilteredCategories=1329  // Category ID for propositions
+  &page=N
+```
+
+This API returns proper paginated results and supports real `page=N` parameter.
+
+**Changes**:
+- `buildFilterApiUrl(page)` constructs the API URL
+- `parseFilterApiResponse()` handles JSON or HTML responses
+- Added debug logging for response structure
+- Kept existing detail-page PDF extraction (pdf-scorer)
+- Kept Lagstiftningskedja link extraction
+
+---
+
+**Started:** 2025-12-03
 
 ---
 
