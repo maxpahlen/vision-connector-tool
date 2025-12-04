@@ -22,7 +22,8 @@ interface ScrapeResult {
   page: number;
   hasMore: boolean;
   inserted: number;
-  skipped: number;
+  skippedExistingInDb: number;
+  skippedDuplicateInPage: number;
   references_created: number;
   errors: string[];
 }
@@ -48,8 +49,10 @@ export function PropositionScraperTest() {
       
       if (data.inserted > 0) {
         toast.success(`Scraped ${data.inserted} propositions, created ${data.references_created} references`);
-      } else if (data.skipped > 0) {
-        toast.info(`All ${data.skipped} propositions already exist`);
+      } else if (data.skippedExistingInDb > 0) {
+        toast.info(`All ${data.skippedExistingInDb} propositions already exist in DB`);
+      } else if (data.skippedDuplicateInPage > 0) {
+        toast.warning(`Found ${data.skippedDuplicateInPage} duplicates in page HTML`);
       } else {
         toast.warning('No propositions found on this page');
       }
@@ -120,8 +123,14 @@ export function PropositionScraperTest() {
                 Inserted: {result.inserted}
               </Badge>
               <Badge variant="secondary">
-                Skipped: {result.skipped}
+                DB Exists: {result.skippedExistingInDb}
               </Badge>
+              {result.skippedDuplicateInPage > 0 && (
+                <Badge variant="outline" className="text-amber-600 border-amber-400">
+                  <AlertCircle className="h-3 w-3 mr-1" />
+                  Page Dupes: {result.skippedDuplicateInPage}
+                </Badge>
+              )}
               <Badge variant="outline">
                 <Link className="h-3 w-3 mr-1" />
                 References: {result.references_created}

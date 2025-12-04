@@ -43,7 +43,8 @@ interface ScrapeResult {
   page: number;
   hasMore: boolean;
   inserted: number;
-  skipped: number;
+  skippedExistingInDb: number;
+  skippedDuplicateInPage: number;
   references_created: number;
   errors: string[];
 }
@@ -175,14 +176,20 @@ function parsePropositionItem(item: any, baseUrl: string): PropositionMetadata |
 function parsePropositionListHtml(html: string, baseUrl: string): PropositionMetadata[] {
   const propositions: PropositionMetadata[] = [];
   
+  // In-page deduplication: track URLs we've already seen in this HTML response
+  const seenUrls = new Set<string>();
+  
   // Try DOM parsing first
   try {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
     
     if (doc) {
-      // Find all list items or article elements
-      const items = doc.querySelectorAll('li, article, .sortcompact, .item');
+      // FIX: Use a single, specific selector to avoid matching both parent <li> and child .sortcompact
+      // The .sortcompact class is the card wrapper for each proposition result
+      const items = doc.querySelectorAll('.sortcompact');
+      
+      console.log('[Proposition Scraper v5.2.3] DOM selector matched', items.length, 'items');
       
       for (let i = 0; i < items.length; i++) {
         const item = items[i] as Element;
@@ -196,6 +203,14 @@ function parsePropositionListHtml(html: string, baseUrl: string): PropositionMet
         if (url && !url.startsWith('http')) {
           url = `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
         }
+        
+        // In-page deduplication: skip if we've already seen this URL in this response
+        const canonicalKey = url.trim().toLowerCase();
+        if (seenUrls.has(canonicalKey)) {
+          console.log('[Proposition Scraper v5.2.3] Duplicate URL in page, skipping', { url: url.substring(0, 80) });
+          continue;
+        }
+        seenUrls.add(canonicalKey);
         
         // Extract doc number
         const docNumMatch = linkText.match(/Prop\.\s*(\d{4}\/\d{2}:\d+)/i);
@@ -228,7 +243,7 @@ function parsePropositionListHtml(html: string, baseUrl: string): PropositionMet
       }
     }
   } catch (e) {
-    console.log('[Proposition Scraper v5.2.2] DOM parsing failed, using regex fallback');
+    console.log('[Proposition Scraper v5.2.3] DOM parsing failed, using regex fallback');
   }
   
   // Fallback to regex if DOM parsing didn't find anything
@@ -558,7 +573,8 @@ serve(async (req) => {
       page,
       hasMore,
       inserted: 0,
-      skipped: 0,
+      skippedExistingInDb: 0,
+      skippedDuplicateInPage: 0,
       references_created: 0,
       errors: []
     };
@@ -566,9 +582,20 @@ serve(async (req) => {
     // Process each proposition (limited)
     const toProcess = propositions.slice(0, limit);
     
+    // Secondary in-loop deduplication (safety net for doc_number collisions)
+    const processedDocNumbers = new Set<string>();
+    
     for (const prop of toProcess) {
       try {
-        // Check if already exists
+        // In-loop deduplication by doc_number (safety net)
+        if (processedDocNumbers.has(prop.docNumber)) {
+          console.log('[Proposition Scraper v5.2.3] Duplicate doc_number in batch, skipping', { docNumber: prop.docNumber });
+          result.skippedDuplicateInPage++;
+          continue;
+        }
+        processedDocNumbers.add(prop.docNumber);
+        
+        // Check if already exists in database
         if (skipExisting) {
           const { data: existing } = await supabase
             .from('documents')
@@ -577,8 +604,8 @@ serve(async (req) => {
             .maybeSingle();
           
           if (existing) {
-            console.log('[Proposition Scraper v5.2.2] Skipping existing', { docNumber: prop.docNumber });
-            result.skipped++;
+            console.log('[Proposition Scraper v5.2.3] Skipping existing in DB', { docNumber: prop.docNumber });
+            result.skippedExistingInDb++;
             continue;
           }
         }
@@ -673,12 +700,14 @@ serve(async (req) => {
       }
     }
     
-    console.log('[Proposition Scraper v5.2.2] Complete', { 
+    console.log('[Proposition Scraper v5.2.3] Complete', { 
       inserted: result.inserted,
-      skipped: result.skipped,
+      skippedExistingInDb: result.skippedExistingInDb,
+      skippedDuplicateInPage: result.skippedDuplicateInPage,
       references: result.references_created,
       errors: result.errors.length,
-      hasMore 
+      hasMore,
+      totalProcessed: result.inserted + result.skippedExistingInDb + result.skippedDuplicateInPage
     });
     
     return new Response(
