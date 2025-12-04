@@ -2,7 +2,7 @@
 
 **Created:** 2025-12-03  
 **Updated:** 2025-12-04  
-**Status:** Pilot Implementation In Progress  
+**Status:** ✅ Pilot Validation Complete — Ready for Scaling  
 **Depends on:** Phase 5.1 (Timeline Agent v2.1 ✅)
 
 ---
@@ -16,23 +16,33 @@
 | `scrape-proposition-index` v5.2.3 | ✅ Done | JSON API pagination, in-page deduplication |
 | `genvag-classifier.ts` | ✅ Done | Link classification for document references |
 | Timeline Agent v2.2 event types | ✅ Done | Added proposition-specific event types |
+| Metadata Agent v2.2 | ✅ Done | Document-type-aware, proposition minister extraction |
 | `process-stage-machine.ts` | ✅ Done | Added 'enacted' stage |
 | `PropositionScraperTest.tsx` | ✅ Done | Admin UI test component |
 | `PropositionTextExtractorTest.tsx` | ✅ Done | Text extraction + process setup |
 | `PropositionAgentTest.tsx` | ✅ Done | Agent pilot testing UI |
-| Admin page integration | ✅ Done | All components in AdminScraper.tsx |
+| Admin page integration | ✅ Done | Tabbed interface in AdminScraper.tsx |
 | Task queue update to v2 | ✅ Done | `process-task-queue` calls `agent-timeline-v2` |
 
 ### Pilot Validation Checklist
 
-- [ ] Proposition text extraction pilot (3 docs)
+- [x] Proposition text extraction pilot (3 docs)
   - Pilot docs: `Prop. 2025/26:36`, `Prop. 2025/26:48`, `Prop. 2025/26:42`
-  - Expected: All 3 have `has_pdf = true` and `has_text = true`
+  - Result: All 3 have `has_pdf = true` and `has_text = true` ✅
   
-- [ ] Proposition Timeline/Metadata pilot (3 docs)
-  - Expected per doc: ≥1 timeline event (ideally `proposition_published`)
-  - Expected per doc: ≥1 minister entity with citation (50-500 chars excerpt)
-  - No duplicate explosion
+- [x] Proposition Timeline pilot (3 docs)
+  - Result: All 3 have ≥1 timeline event (proposition_submitted, law_enacted) ✅
+  - Confidence: High for all events ✅
+  
+- [x] Proposition Metadata pilot (initial run)
+  - Issue found: Ministers labeled as "utredare" ❌
+  
+- [x] Fix proposition minister role classification
+  - Metadata Agent v2.2 now doc-type-aware ✅
+  
+- [x] Re-run Metadata Agent pilot (corrected)
+  - Result: Ministers correctly identified with Swedish titles ✅
+  - No duplicate explosion ✅
 
 ### Pending After Pilot
 
@@ -83,15 +93,17 @@ This phase implements end-to-end ingestion, parsing, and discovery for Swedish G
 | `proposition_published` | Publication date on regeringen.se | High |
 | `government_decision_date` | "Beslut vid regeringssammanträde..." | High if exact date |
 | `impact_analysis_date` | Konsekvensanalys date | Medium/High |
-| Existing deadline types | `remiss_period_end`, etc. | As per v2.1 |
+| `law_enacted` | Law comes into effect | High if exact date |
 
 ### 1.3 Entities to Extract
 
 | Entity Type | Description | Example |
 |-------------|-------------|---------|
-| `person` (minister) | Government actors who signed | "Justitieminister Gunnar Strömmer" |
+| `person` (minister) | Government actors who signed | "Carl-Oskar Bohlin (försvarsminister)" |
 | `committee` | Referenced committee | "Utredningen om..." |
 | `organization` | Consulted stakeholders | "Sveriges Kommuner och Regioner" |
+
+**Critical Note:** For propositions, ministers are extracted with their exact Swedish titles (justitieminister, försvarsminister, etc.), NOT with SOU-style roles (utredare).
 
 ### 1.4 References to Create
 
@@ -110,7 +122,6 @@ From "Lagstiftningskedja" links on proposition pages:
 
 ### 2.1 New Event Types for Propositions
 
-Add to `EVENT_TYPES`:
 ```typescript
 const EVENT_TYPES = [
   // Existing
@@ -131,8 +142,6 @@ const EVENT_TYPES = [
 
 ### 2.2 Updated Committee Type Classification
 
-When extracting `committee_formed` events, classify the committee type:
-
 | `committee_type` value | Swedish terms | Description |
 |------------------------|---------------|-------------|
 | `main_committee` | Kommitté, huvudkommitté | Main investigation body |
@@ -140,19 +149,7 @@ When extracting `committee_formed` events, classify the committee type:
 | `expert_group` | Sakkunniggrupp, referensgrupp | Expert advisory group |
 | `secretariat` | Sekretariatet | Administrative support |
 
-**Metadata structure:**
-```json
-{
-  "committee_event_kind": "lead_investigator_appointed",
-  "committee_type": "main_committee",
-  "role": "särskild utredare",
-  "person_name": "Erik Tiberg"
-}
-```
-
 ### 2.3 Updated Deadline Type Classification
-
-When extracting deadline events, use these `deadline_type` values:
 
 | `deadline_type` value | Description |
 |-----------------------|-------------|
@@ -163,62 +160,44 @@ When extracting deadline events, use these `deadline_type` values:
 | `milestone` | Non-report milestone |
 | `unspecified_deadline` | Fallback when unclear |
 
-**Metadata structure:**
-```json
-{
-  "deadline_type": "interim_report",
-  "deadline_kind": "interim_report",
-  "deadline_index": 1,
-  "deadline_label": "Delredovisning"
-}
-```
-
 ---
 
 ## 3. Metadata Agent v2.2 for Propositions
 
-### 3.1 Entity Extraction Rules
+### 3.1 Document-Type-Aware Extraction
 
-| Entity Type | Extraction Trigger | Validation |
-|-------------|-------------------|------------|
-| Minister | "Statsrådet", "Minister", signature block | Must have real name |
-| Referenced legislation | "SFS 20XX:XXX", chapter + paragraph | Must be complete reference |
-| Amended laws | "Ändring av...", "upphävs" | Must cite specific law |
-| Stakeholders | "Remissinstanser", "Yttranden från" | Must be real org name |
-| Budget impact | "Budgeteffekt", "Kostnad", "SEK" | Must have numeric value |
+The Metadata Agent v2.2 now detects `doc_type` and uses appropriate prompts:
+
+**For Propositions:**
+- Extracts ministers and political office holders
+- Looks for signature blocks, "Förord", ministerial introductions
+- Role field contains exact Swedish title (e.g., "justitieminister")
+- Does NOT use "utredare" or committee-style roles
+
+**For SOUs/Directives:**
+- Extracts lead investigators (utredare, särskild utredare)
+- Extracts committee names
+- Does NOT extract ministers
 
 ### 3.2 Required Citation Fields
 
 Every extracted entity MUST include:
 - `source_page`: Page number in PDF
 - `source_excerpt`: 50-500 char exact quote
-- `source_document_id`: Link to source proposition
+- `source_document_id`: Link to source document
 
-### 3.3 Structured Metadata for Propositions
+### 3.3 Role Vocabulary
 
-```typescript
-interface PropositionMetadata {
-  // Budget impacts
-  budget_impact?: {
-    amount_sek?: number;
-    multi_year?: boolean;
-    years_affected?: number[];
-  };
-  
-  // Legislative references
-  amended_laws?: Array<{
-    sfs_number: string;  // e.g., "SFS 2010:800"
-    chapter?: string;
-    paragraph?: string;
-  }>;
-  
-  // Committee reference
-  source_committee?: {
-    name: string;
-    doc_number?: string;  // e.g., "SOU 2024:50"
-  };
-}
-```
+**Proposition roles:**
+- `justitieminister`, `försvarsminister`, `finansminister`, etc.
+- `statsråd`
+- `departementschef`
+- `statssekreterare`
+
+**SOU/Directive roles:**
+- `utredare`
+- `särskild_utredare`
+- `committee`
 
 ---
 
@@ -244,18 +223,7 @@ interface PropositionMetadata {
 
 ### 4.2 Lagstiftningskedja Link Extraction
 
-For each proposition page, find "Lagstiftningskedja" section and extract:
-
-```typescript
-interface GenvagLink {
-  url: string;
-  anchor_text: string;
-  reference_type: 'based_on' | 'cites' | 'responds_to' | 'amends' | 'related';
-  target_doc_number?: string;  // Extracted from URL or text
-}
-```
-
-**Classification rules:**
+Classification rules:
 | Pattern | Reference Type |
 |---------|----------------|
 | `/statens-offentliga-utredningar/` | `based_on` |
@@ -266,79 +234,40 @@ interface GenvagLink {
 
 ---
 
-## 5. Head Detective v3 Updates
+## 5. Validation Results
 
-### 5.1 Proposition Handling
+### 5.1 Pilot Sample
 
-```typescript
-// In head-detective/index.ts
-if (document.doc_type === 'proposition') {
-  // 1. Dispatch Timeline Agent v2.2
-  await dispatchTask({
-    task_type: 'timeline_extraction',
-    agent_name: 'timeline-v2',
-    document_id: document.id,
-    process_id: process.id
-  });
-  
-  // 2. Dispatch Metadata Agent v2.2
-  await dispatchTask({
-    task_type: 'metadata_extraction',
-    agent_name: 'metadata-v2',
-    document_id: document.id,
-    process_id: process.id
-  });
-  
-  // 3. Process Genvägar links (new)
-  await dispatchTask({
-    task_type: 'genvagar_processing',
-    agent_name: 'genvagar-classifier',
-    document_id: document.id
-  });
-}
-```
+| Proposition | Ministry | Text Length | Timeline Events | Ministers |
+|-------------|----------|-------------|-----------------|-----------|
+| Prop. 2025/26:36 | Försvarsdepartementet | ~91k | 2 | ✅ |
+| Prop. 2025/26:48 | Justitiedepartementet | ~201k | 2 | ✅ |
+| Prop. 2025/26:42 | Finansdepartementet | ~185k | 2 | ✅ |
 
-### 5.2 Process Stage Updates
+### 5.2 Success Criteria (All Met ✅)
 
-When proposition is processed, update process stage:
-- If proposition submitted → stage = `proposition`
-- If law enacted → stage = `enacted`
+| Criterion | Target | Result |
+|-----------|--------|--------|
+| Text extraction | 3/3 | ✅ 3/3 |
+| Process created | 3/3 | ✅ 3/3 |
+| Timeline events | ≥1 per doc | ✅ 2 per doc |
+| Minister entities | ≥1 per doc | ✅ Corrected |
+| No duplicates | 0 | ✅ Verified |
+
+### 5.3 Regression Tests
+
+- [x] Existing SOUs still process correctly
+- [x] Timeline Agent v2.1 behavior unchanged for directives/SOUs
+- [x] Entity deduplication works across doc types
+- [x] Search returns propositions correctly
+- [x] Performance < 500ms for search
 
 ---
 
-## 6. Validation Plan
-
-### 6.1 Pilot Sample (3 docs)
-
-Selected propositions spanning different ministries:
-- `Prop. 2025/26:36` — Försvarsdepartementet
-- `Prop. 2025/26:48` — Justitiedepartementet  
-- `Prop. 2025/26:42` — Finansdepartementet
-
-### 6.2 Success Criteria
-
-| Criterion | Target | Measurement |
-|-----------|--------|-------------|
-| Text extraction | 3/3 | All pilot docs have `raw_content` |
-| Process created | 3/3 | Each has linked process with `current_stage='proposition'` |
-| Timeline events | ≥1 per doc | At least one event type extracted |
-| Minister entities | ≥1 per doc | With valid citation (50-500 char excerpt) |
-| No duplicates | 0 | Re-run produces same count |
-
-### 6.3 Regression Tests
-
-- [ ] Existing SOUs still process correctly
-- [ ] Timeline Agent v2.1 behavior unchanged for directives/SOUs
-- [ ] Entity deduplication works across doc types
-- [ ] Search returns propositions correctly
-- [ ] Performance < 500ms for search
-
----
-
-## 7. Implementation Steps
+## 6. Implementation Steps
 
 ### Step 1: Update Timeline Agent Prompt ✅
-Add committee_type and deadline_type clarifications
+Added committee_type and deadline_type clarifications
 
 ### Step 2: Create Proposition Scraper ✅
 - [x] `scrape-proposition-index/index.ts`
@@ -350,39 +279,41 @@ Add committee_type and deadline_type clarifications
 - [x] `_shared/genvag-classifier.ts`
 - [x] URL pattern matching
 - [x] Reference type classification
-- [x] Document resolution logic
 
 ### Step 4: Create Admin UI Components ✅
 - [x] `PropositionScraperTest.tsx`
 - [x] `PropositionTextExtractorTest.tsx`
 - [x] `PropositionAgentTest.tsx`
 
-### Step 5: Run Pilot (In Progress)
-- [ ] Extract text for 3 pilot docs
-- [ ] Create processes for 3 pilot docs
-- [ ] Run Timeline Agent v2.2
-- [ ] Run Metadata Agent v2.2
-- [ ] Verify results
+### Step 5: Run Pilot ✅
+- [x] Extract text for 3 pilot docs
+- [x] Create processes for 3 pilot docs
+- [x] Run Timeline Agent v2.2
+- [x] Run Metadata Agent v2.2 (initial)
+- [x] Fix minister role classification
+- [x] Re-run Metadata Agent v2.2 (corrected)
+- [x] Verify results
 
-### Step 6: Scale to Full Dataset
+### Step 6: Scale to Full Dataset (Pending)
 - [ ] Extract text for all propositions
 - [ ] Run agents on all propositions
 - [ ] Document final results
 
 ---
 
-## 8. Files Created/Modified
+## 7. Files Created/Modified
 
 | File | Action | Description |
 |------|--------|-------------|
 | `supabase/functions/scrape-proposition-index/index.ts` | Created | Proposition scraper |
 | `supabase/functions/_shared/genvag-classifier.ts` | Created | Link classifier |
 | `supabase/functions/agent-timeline-v2/index.ts` | Modified | Added proposition events |
+| `supabase/functions/agent-metadata/index.ts` | Modified | v2.2 doc-type-aware |
 | `supabase/functions/process-task-queue/index.ts` | Modified | Calls agent-timeline-v2 |
 | `src/components/admin/PropositionScraperTest.tsx` | Created | Scraper test UI |
 | `src/components/admin/PropositionTextExtractorTest.tsx` | Created | Text extraction UI |
 | `src/components/admin/PropositionAgentTest.tsx` | Created | Agent pilot test UI |
-| `src/pages/AdminScraper.tsx` | Modified | Added new components |
+| `src/pages/AdminScraper.tsx` | Modified | Tabbed interface |
 
 ---
 
