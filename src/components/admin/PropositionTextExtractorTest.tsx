@@ -216,7 +216,9 @@ export function PropositionTextExtractorTest() {
         success: true,
       };
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const errMsg = (err && typeof err === 'object' && 'message' in err) 
+        ? (err as { message: string }).message 
+        : String(err);
       console.error(`[Prop Process Setup] FAILED { error: "${errMsg}", docNumber: "${prop.doc_number}" }`);
       return {
         docNumber: prop.doc_number,
