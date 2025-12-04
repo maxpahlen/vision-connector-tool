@@ -94,9 +94,12 @@ export function PropositionAgentTest() {
           .eq('source_document_id', doc.id)
           .eq('entity_type', 'person');
 
-        const ministerCount = ministers?.filter(e => 
-          e.role?.toLowerCase().includes('minister')
-        ).length || 0;
+        const ministerCount = ministers?.filter(e => {
+          const role = e.role?.toLowerCase() || '';
+          return role.includes('minister') || 
+                 role.includes('statsråd') || 
+                 role.includes('departementschef');
+        }).length || 0;
 
         enrichedPropositions.push({
           id: doc.id,
