@@ -83,9 +83,10 @@ function parseFilterApiResponse(json: any, baseUrl: string): PropositionMetadata
   console.log('[Proposition Scraper v5.2.2] JSON response keys:', jsonKeys);
   
   // Check if response contains HTML string (common pattern)
-  if (json.Html || json.html || json.Content || json.content) {
-    const htmlContent = json.Html || json.html || json.Content || json.content;
-    console.log('[Proposition Scraper v5.2.2] Found HTML content in JSON, parsing...');
+  // Note: regeringen.se API returns HTML in "Message" field
+  if (json.Message || json.Html || json.html || json.Content || json.content) {
+    const htmlContent = json.Message || json.Html || json.html || json.Content || json.content;
+    console.log('[Proposition Scraper v5.2.2] Found HTML content in JSON (Message field), parsing...');
     return parsePropositionListHtml(htmlContent, baseUrl);
   }
   
