@@ -43,6 +43,9 @@
 - [x] Re-run Metadata Agent pilot (corrected)
   - Result: Ministers correctly identified with Swedish titles ✅
   - No duplicate explosion ✅
+  
+- [x] UI fix for minister count display
+  - Filter updated to include `statsråd`, `departementschef` ✅
 
 ### Pending After Pilot
 
@@ -292,6 +295,7 @@ Added committee_type and deadline_type clarifications
 - [x] Run Metadata Agent v2.2 (initial)
 - [x] Fix minister role classification
 - [x] Re-run Metadata Agent v2.2 (corrected)
+- [x] Fix UI minister count filter (statsråd, departementschef)
 - [x] Verify results
 
 ### Step 6: Scale to Full Dataset (Pending)

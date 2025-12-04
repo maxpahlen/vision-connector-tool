@@ -1,7 +1,7 @@
 # Phase 5.2: Proposition Slice — Implementation Log
 
 **Started:** 2025-12-03
-**Updated:** 2025-12-04
+**Updated:** 2025-12-04 (Pilot Complete)
 **Status:** ✅ Pilot Validation Complete
 
 ---
@@ -47,6 +47,11 @@ The Metadata Agent v1 was designed exclusively for SOUs and used investigator-sp
 - Ministers now correctly identified with Swedish titles
 - No misclassification into SOU roles
 - All citations meet quality standards (50-500 char excerpts)
+
+**UI Fix Applied (2025-12-04):**
+- `PropositionAgentTest.tsx` minister count filter updated
+- Now includes Swedish roles: `statsråd`, `departementschef` (not just "minister")
+- UI correctly displays minister counts for all pilot propositions
 
 ---
 
@@ -99,6 +104,15 @@ Reorganized into tabbed interface:
 - **SOUs & Directives tab**: Original pipeline tools
 - **Data Explorer tab**: Task queue, processes, documents
 - **System tab**: Version info and diagnostics
+
+### Task 6: UI Minister Count Fix ✅
+
+**File:** `src/components/admin/PropositionAgentTest.tsx`
+
+Minister count filter now includes Swedish role vocabulary:
+- `minister` (justitieminister, försvarsminister, etc.)
+- `statsråd` (cabinet minister)
+- `departementschef` (department head)
 
 ---
 
