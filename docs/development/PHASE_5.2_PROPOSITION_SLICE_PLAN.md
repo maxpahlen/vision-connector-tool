@@ -1,8 +1,8 @@
 # Phase 5.2: Proposition Slice — Detailed Plan
 
 **Created:** 2025-12-03  
-**Updated:** 2025-12-03  
-**Status:** Implementation In Progress  
+**Updated:** 2025-12-04  
+**Status:** Pilot Implementation In Progress  
 **Depends on:** Phase 5.1 (Timeline Agent v2.1 ✅)
 
 ---
@@ -13,20 +13,42 @@
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| `scrape-proposition-index` v5.2 | ✅ Done | Updated with correct URL, pagination, Lagstiftningskedja extraction |
+| `scrape-proposition-index` v5.2.3 | ✅ Done | JSON API pagination, in-page deduplication |
 | `genvag-classifier.ts` | ✅ Done | Link classification for document references |
 | Timeline Agent v2.2 event types | ✅ Done | Added proposition-specific event types |
 | `process-stage-machine.ts` | ✅ Done | Added 'enacted' stage |
 | `PropositionScraperTest.tsx` | ✅ Done | Admin UI test component |
-| Admin page integration | ✅ Done | Added to AdminScraper.tsx |
+| `PropositionTextExtractorTest.tsx` | ✅ Done | Text extraction + process setup |
+| `PropositionAgentTest.tsx` | ✅ Done | Agent pilot testing UI |
+| Admin page integration | ✅ Done | All components in AdminScraper.tsx |
+| Task queue update to v2 | ✅ Done | `process-task-queue` calls `agent-timeline-v2` |
 
-### Pending Validation
+### Pilot Validation Checklist
 
-- [ ] Run scraper on 10 propositions
-- [ ] Validate Lagstiftningskedja link extraction
-- [ ] Verify document_references creation
-- [ ] Test Timeline Agent v2.2 on propositions
+- [ ] Proposition text extraction pilot (3 docs)
+  - Pilot docs: `Prop. 2025/26:36`, `Prop. 2025/26:48`, `Prop. 2025/26:42`
+  - Expected: All 3 have `has_pdf = true` and `has_text = true`
+  
+- [ ] Proposition Timeline/Metadata pilot (3 docs)
+  - Expected per doc: ≥1 timeline event (ideally `proposition_published`)
+  - Expected per doc: ≥1 minister entity with citation (50-500 chars excerpt)
+  - No duplicate explosion
+
+### Pending After Pilot
+
+- [ ] Run scraper on remaining propositions
+- [ ] Full batch text extraction
+- [ ] Full batch agent processing
 - [ ] Complete PHASE_5.2_COMPLETION_SUMMARY.md
+
+---
+
+## Known Limitations
+
+1. **Budget propositions not yet tested** — `Prop. 2025/26:1` excluded from pilot (too large/atypical)
+2. **`Prop. 2025/26:52` missing pdf_url** — Still awaiting backfill or manual fix
+3. **Propositions get independent processes** — Case-level merging deferred to Phase 6
+4. **JSON API rate limits** — May hit Cloudflare protection on high-volume scraping
 
 ---
 
@@ -49,7 +71,7 @@ This phase implements end-to-end ingestion, parsing, and discovery for Swedish G
 
 | Document Type | Example | Source |
 |---------------|---------|--------|
-| **Proposition** | Prop. 2024/25:123 | regeringen.se/propositioner |
+| **Proposition** | Prop. 2024/25:123 | regeringen.se/rattsliga-dokument/proposition/ |
 | **Bilaga** (attachments) | BIL, KOM | Attached to propositions |
 
 ### 1.2 Timeline Events to Extract
@@ -73,7 +95,7 @@ This phase implements end-to-end ingestion, parsing, and discovery for Swedish G
 
 ### 1.4 References to Create
 
-From "Genvägar" links on proposition pages:
+From "Lagstiftningskedja" links on proposition pages:
 
 | Reference Type | Source Pattern | Target |
 |----------------|----------------|--------|
@@ -204,7 +226,9 @@ interface PropositionMetadata {
 
 ### 4.1 Scraper: `scrape-proposition-index`
 
-**Source:** https://www.regeringen.se/propositioner/
+**Source:** https://www.regeringen.se/rattsliga-dokument/proposition/
+
+**API Endpoint:** `https://www.regeringen.se/Filter/GetFilteredItems?preFilteredCategories=1329&page=N`
 
 **Fields to extract:**
 | Field | Source | Example |
@@ -218,9 +242,9 @@ interface PropositionMetadata {
 | `lifecycle_stage` | Set to | `proposition` |
 | `doc_type` | Set to | `proposition` |
 
-### 4.2 Genvägar Link Extraction
+### 4.2 Lagstiftningskedja Link Extraction
 
-For each proposition page, find "Genvägar" section and extract:
+For each proposition page, find "Lagstiftningskedja" section and extract:
 
 ```typescript
 interface GenvagLink {
@@ -284,23 +308,21 @@ When proposition is processed, update process stage:
 
 ## 6. Validation Plan
 
-### 6.1 Test Sample
+### 6.1 Pilot Sample (3 docs)
 
-Select 10 propositions spanning different ministries and years:
-- 2 from Justitiedepartementet
-- 2 from Finansdepartementet
-- 2 from Socialdepartementet
-- 4 from other departments
+Selected propositions spanning different ministries:
+- `Prop. 2025/26:36` — Försvarsdepartementet
+- `Prop. 2025/26:48` — Justitiedepartementet  
+- `Prop. 2025/26:42` — Finansdepartementet
 
 ### 6.2 Success Criteria
 
 | Criterion | Target | Measurement |
 |-----------|--------|-------------|
-| Scraper success rate | 100% | All 10 propositions ingested |
-| Timeline events | ≥1 per doc | At least publication or decision date |
-| Entity extraction | ≥1 minister per doc | No placeholders |
-| Genvägar links | 80%+ classified | Correct reference_type |
-| Citation coverage | 95%+ | source_page + source_excerpt |
+| Text extraction | 3/3 | All pilot docs have `raw_content` |
+| Process created | 3/3 | Each has linked process with `current_stage='proposition'` |
+| Timeline events | ≥1 per doc | At least one event type extracted |
+| Minister entities | ≥1 per doc | With valid citation (50-500 char excerpt) |
 | No duplicates | 0 | Re-run produces same count |
 
 ### 6.3 Regression Tests
@@ -315,63 +337,52 @@ Select 10 propositions spanning different ministries and years:
 
 ## 7. Implementation Steps
 
-### Step 1: Update Timeline Agent Prompt
-Add committee_type and deadline_type clarifications (done as part of this plan)
+### Step 1: Update Timeline Agent Prompt ✅
+Add committee_type and deadline_type clarifications
 
-### Step 2: Create Proposition Scraper
-- [ ] `scrape-proposition-index/index.ts`
-- [ ] Pagination handling
-- [ ] PDF URL extraction
-- [ ] Genvägar section parsing
+### Step 2: Create Proposition Scraper ✅
+- [x] `scrape-proposition-index/index.ts`
+- [x] JSON API pagination
+- [x] PDF URL extraction via pdf-scorer
+- [x] Lagstiftningskedja section parsing
 
-### Step 3: Create Genvägar Classifier
-- [ ] `_shared/genvag-classifier.ts`
-- [ ] URL pattern matching
-- [ ] Reference type classification
-- [ ] Document resolution logic
+### Step 3: Create Genvägar Classifier ✅
+- [x] `_shared/genvag-classifier.ts`
+- [x] URL pattern matching
+- [x] Reference type classification
+- [x] Document resolution logic
 
-### Step 4: Update Head Detective
-- [ ] Handle `doc_type = 'proposition'`
-- [ ] Dispatch to Timeline Agent v2.2
-- [ ] Dispatch to Metadata Agent v2.2
-- [ ] Trigger Genvägar processing
+### Step 4: Create Admin UI Components ✅
+- [x] `PropositionScraperTest.tsx`
+- [x] `PropositionTextExtractorTest.tsx`
+- [x] `PropositionAgentTest.tsx`
 
-### Step 5: Validate on 10 Samples
-- [ ] Run full pipeline
-- [ ] Review extracted events
-- [ ] Review extracted entities
-- [ ] Review created references
-- [ ] Check for regressions
+### Step 5: Run Pilot (In Progress)
+- [ ] Extract text for 3 pilot docs
+- [ ] Create processes for 3 pilot docs
+- [ ] Run Timeline Agent v2.2
+- [ ] Run Metadata Agent v2.2
+- [ ] Verify results
 
-### Step 6: Document Results
-- [ ] Update PHASE_5.2_COMPLETION_SUMMARY.md
-- [ ] Update test tracking docs
-- [ ] Record any issues found
+### Step 6: Scale to Full Dataset
+- [ ] Extract text for all propositions
+- [ ] Run agents on all propositions
+- [ ] Document final results
 
 ---
 
-## 8. Files to Create/Modify
+## 8. Files Created/Modified
 
 | File | Action | Description |
 |------|--------|-------------|
-| `supabase/functions/scrape-proposition-index/index.ts` | Create | Proposition scraper |
-| `supabase/functions/_shared/genvag-classifier.ts` | Create | Link classifier |
-| `supabase/functions/agent-timeline-v2/index.ts` | Modify | Add proposition events |
-| `supabase/functions/agent-metadata/index.ts` | Modify | Add proposition entities |
-| `supabase/functions/agent-head-detective/index.ts` | Modify | Handle propositions |
-| `src/components/admin/PropositionScraperTest.tsx` | Create | Admin UI test component |
-
----
-
-## 9. Approval Checkpoint
-
-Before implementation begins, confirm:
-
-- [ ] Phase 5.2 scope is approved
-- [ ] Timeline Agent v2.2 event types are correct
-- [ ] Metadata Agent v2.2 entity rules are correct
-- [ ] Genvägar classification rules are approved
-- [ ] Test sample selection is approved
+| `supabase/functions/scrape-proposition-index/index.ts` | Created | Proposition scraper |
+| `supabase/functions/_shared/genvag-classifier.ts` | Created | Link classifier |
+| `supabase/functions/agent-timeline-v2/index.ts` | Modified | Added proposition events |
+| `supabase/functions/process-task-queue/index.ts` | Modified | Calls agent-timeline-v2 |
+| `src/components/admin/PropositionScraperTest.tsx` | Created | Scraper test UI |
+| `src/components/admin/PropositionTextExtractorTest.tsx` | Created | Text extraction UI |
+| `src/components/admin/PropositionAgentTest.tsx` | Created | Agent pilot test UI |
+| `src/pages/AdminScraper.tsx` | Modified | Added new components |
 
 ---
 
@@ -380,3 +391,4 @@ Before implementation begins, confirm:
 - [Phase 5 Implementation Plan](./PHASE_5_IMPLEMENTATION_PLAN.md)
 - [Phase 5 Branch Plan](./branches/phase-5-legislative-graph-expansion.md)
 - [Phase 5 Test Plan](../testing/phase-5-test-plan.md)
+- [Phase 5.2 Implementation Log](./PHASE_5.2_IMPLEMENTATION_LOG.md)

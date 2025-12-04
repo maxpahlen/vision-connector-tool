@@ -155,10 +155,10 @@ async function processTimelineExtractionTask(
     throw new Error('Missing document_id or process_id in task');
   }
   
-  console.log(`Calling agent-timeline for document: ${documentId}, process: ${processId}`);
+  console.log(`Calling agent-timeline-v2 for document: ${documentId}, process: ${processId}`);
   
   const { data, error } = await supabase.functions.invoke(
-    'agent-timeline',
+    'agent-timeline-v2',
     {
       body: {
         document_id: documentId,
