@@ -189,7 +189,106 @@ Ministers now have correct Swedish titles (e.g., "försvarsminister", "justitiem
 
 ---
 
+## Known Behaviour: 19/20 Proposition Extraction (NON-BLOCKING)
+
+**Status:** ⚠️ Known limitation — not a blocker for batch scaling
+
+### Description
+
+The proposition scraper occasionally extracts **19/20 items** per page instead of the expected 20/20. The regeringen.se API consistently returns 20 items per page, but 1 item may be silently dropped during HTML parsing.
+
+### Current Hypothesis
+
+Items are skipped if they fail one of three validation checks in `parsePropositionListHtml`:
+
+1. **No proposition link** (`skipNoLink`): The DOM item lacks an anchor tag with `href*="/proposition/"`
+2. **No doc number match** (`skipNoDocNum`): The link text doesn't match pattern `Prop. YYYY/YY:XXX`
+3. **Duplicate URL** (`skipDuplicate`): Same URL appeared earlier in the page response
+
+This is **intentional and conservative**—the scraper is designed to reject ambiguous items rather than risk ingesting non-proposition content.
+
+### Diagnostic Metrics Added
+
+As of v5.2.4, the following diagnostic counters are logged after each page parse:
+
+```ts
+console.log('[Prop Scraper] Parse summary', {
+  domItems,     // Total .sortcompact elements found in DOM
+  parsed,       // Successfully extracted propositions
+  skipNoLink,   // Items skipped: no valid /proposition/ link
+  skipNoDocNum, // Items skipped: link text lacks Prop. YYYY/YY:XXX pattern
+  skipDuplicate // Items skipped: duplicate URL within same page
+});
+```
+
+**Example output (20/20 successful):**
+```
+[Prop Scraper] Parse summary { domItems: 20, parsed: 20, skipNoLink: 0, skipNoDocNum: 0, skipDuplicate: 0 }
+```
+
+**Example output (19/20 with 1 skip):**
+```
+[Prop Scraper] Parse summary { domItems: 20, parsed: 19, skipNoLink: 1, skipNoDocNum: 0, skipDuplicate: 0 }
+[Prop Scraper] Skip examples (no proposition link): [{ itemIndex: 7, textPreview: "Relaterade dokument om..." }]
+```
+
+### Where to Find Logs
+
+1. **Edge Function Logs**: Lovable Cloud → Edge Functions → `scrape-proposition-index`
+2. **Search term**: `[Prop Scraper] Parse summary`
+3. **Skip details**: `[Prop Scraper] Skip examples`
+
+### Why We Are Not Fixing Now
+
+1. **Pipeline works correctly** — pilot validation passed 100%
+2. **Coverage is sufficient** — losing 1 item per page (5%) is acceptable during R&D
+3. **Risk of false positives** — loosening selectors could ingest non-proposition content
+4. **Forensic quality matters more** — better to drop ambiguous items than pollute database
+5. **Canonical source exists** — Riksdagen.se API can provide complete historical coverage later
+
+### Product Philosophy
+
+> *"It is better to drop ambiguous HTML items than to incorrectly ingest non-proposition noise."*
+
+This aligns with Whyse's legislative intelligence principles:
+- **Strict canonical ingestion**
+- **Forensic quality over coverage**
+- **Agent correctness depends on clean input**
+- **Predictable behaviour over perfect completeness**
+
+### How to Revisit Later
+
+**When to investigate:**
+- If coverage gaps become user-visible
+- If batch processing shows systematic patterns
+- When moving to production-grade proposition support
+
+**Safe adjustment strategies:**
+
+1. **Analyze skip examples**: Use the logged `textPreview` to understand what's being dropped
+2. **Expand link patterns**: If items have valid `/prop.` or `/prop-` links, add fallback selectors
+3. **Loosen doc number regex**: If `Prop 2024/25:1` (no period) appears, expand pattern
+4. **Verify before ingesting**: Any pattern change should be tested on 3+ pages first
+
+**Investigation query:**
+```sql
+-- Check for gaps in scraped propositions by doc_number sequence
+SELECT doc_number FROM documents 
+WHERE doc_type = 'proposition' 
+ORDER BY doc_number;
+```
+
+---
+
 ## Scraper Version History
+
+### v5.2.4 (2025-12-08) — Diagnostic Logging (NON-BLOCKING)
+
+Added instrumentation to understand 19/20 extraction behaviour:
+- Parse summary counters: `domItems`, `parsed`, `skipNoLink`, `skipNoDocNum`, `skipDuplicate`
+- First 2 examples logged per skip category (minimal log spam)
+- No behaviour changes — scraper works exactly as before
+- Full documentation in this section
 
 ### v5.2.3 (2025-12-04) — In-Page Deduplication Fix
 
