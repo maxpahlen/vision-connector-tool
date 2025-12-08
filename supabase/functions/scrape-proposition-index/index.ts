@@ -10,7 +10,7 @@ const corsHeaders = {
 };
 
 /**
- * Proposition Index Scraper v5.2.2
+ * Proposition Index Scraper v5.2.4
  * 
  * Uses the internal regeringen.se Filter API for pagination:
  * https://www.regeringen.se/Filter/GetFilteredItems
@@ -21,6 +21,7 @@ const corsHeaders = {
  * - JSON API pagination (bypasses client-side JS limitation)
  * - Detail page extraction using pdf-scorer (DOM-based)
  * - Document reference classification
+ * - Diagnostic logging for 19/20 extraction behaviour (v5.2.4)
  */
 
 interface PropositionMetadata {
@@ -172,12 +173,27 @@ function parsePropositionItem(item: any, baseUrl: string): PropositionMetadata |
 /**
  * Parse proposition listing from HTML (fallback or when API returns HTML)
  * Matches actual regeringen.se structure
+ * 
+ * Known Behaviour (NON-BLOCKING): Occasionally extracts 19/20 items instead of 20/20.
+ * This is intentional—items are dropped if they lack valid proposition links or doc numbers.
+ * Diagnostic logging added to track skip categories. See PHASE_5.2_IMPLEMENTATION_LOG.md.
  */
 function parsePropositionListHtml(html: string, baseUrl: string): PropositionMetadata[] {
   const propositions: PropositionMetadata[] = [];
   
   // In-page deduplication: track URLs we've already seen in this HTML response
   const seenUrls = new Set<string>();
+  
+  // === Diagnostic Counters (NON-BLOCKING instrumentation) ===
+  let domItems = 0;
+  let skipNoLink = 0;
+  let skipNoDocNum = 0;
+  let skipDuplicate = 0;
+  
+  // Keep first 2 examples of each skip type for diagnostic breadcrumbs
+  const skipNoLinkExamples: { itemIndex: number; textPreview: string }[] = [];
+  const skipNoDocNumExamples: { itemIndex: number; textPreview: string }[] = [];
+  const skipDuplicateExamples: { itemIndex: number; textPreview: string }[] = [];
   
   // Try DOM parsing first
   try {
@@ -188,13 +204,23 @@ function parsePropositionListHtml(html: string, baseUrl: string): PropositionMet
       // FIX: Use a single, specific selector to avoid matching both parent <li> and child .sortcompact
       // The .sortcompact class is the card wrapper for each proposition result
       const items = doc.querySelectorAll('.sortcompact');
+      domItems = items.length;
       
       console.log('[Proposition Scraper v5.2.3] DOM selector matched', items.length, 'items');
       
       for (let i = 0; i < items.length; i++) {
         const item = items[i] as Element;
+        const itemText = item.textContent?.trim() || '';
+        const textPreview = itemText.substring(0, 100).replace(/\s+/g, ' ');
+        
         const linkEl = item.querySelector('a[href*="/proposition/"]');
-        if (!linkEl) continue;
+        if (!linkEl) {
+          skipNoLink++;
+          if (skipNoLinkExamples.length < 2) {
+            skipNoLinkExamples.push({ itemIndex: i, textPreview });
+          }
+          continue;
+        }
         
         let url = linkEl.getAttribute('href') || '';
         const linkText = linkEl.textContent?.trim() || '';
@@ -207,14 +233,23 @@ function parsePropositionListHtml(html: string, baseUrl: string): PropositionMet
         // In-page deduplication: skip if we've already seen this URL in this response
         const canonicalKey = url.trim().toLowerCase();
         if (seenUrls.has(canonicalKey)) {
-          console.log('[Proposition Scraper v5.2.3] Duplicate URL in page, skipping', { url: url.substring(0, 80) });
+          skipDuplicate++;
+          if (skipDuplicateExamples.length < 2) {
+            skipDuplicateExamples.push({ itemIndex: i, textPreview: linkText.substring(0, 100) });
+          }
           continue;
         }
         seenUrls.add(canonicalKey);
         
         // Extract doc number
         const docNumMatch = linkText.match(/Prop\.\s*(\d{4}\/\d{2}:\d+)/i);
-        if (!docNumMatch) continue;
+        if (!docNumMatch) {
+          skipNoDocNum++;
+          if (skipNoDocNumExamples.length < 2) {
+            skipNoDocNumExamples.push({ itemIndex: i, textPreview: linkText.substring(0, 100) });
+          }
+          continue;
+        }
         
         const docNumber = `Prop. ${docNumMatch[1]}`;
         
@@ -244,6 +279,27 @@ function parsePropositionListHtml(html: string, baseUrl: string): PropositionMet
     }
   } catch (e) {
     console.log('[Proposition Scraper v5.2.3] DOM parsing failed, using regex fallback');
+  }
+  
+  // === Diagnostic Summary Log (NON-BLOCKING) ===
+  const parsed = propositions.length;
+  console.log('[Prop Scraper] Parse summary', {
+    domItems,
+    parsed,
+    skipNoLink,
+    skipNoDocNum,
+    skipDuplicate,
+  });
+  
+  // Log first 2 examples of each skip category (breadcrumbs, not spam)
+  if (skipNoLinkExamples.length > 0) {
+    console.log('[Prop Scraper] Skip examples (no proposition link):', skipNoLinkExamples);
+  }
+  if (skipNoDocNumExamples.length > 0) {
+    console.log('[Prop Scraper] Skip examples (no doc number match):', skipNoDocNumExamples);
+  }
+  if (skipDuplicateExamples.length > 0) {
+    console.log('[Prop Scraper] Skip examples (duplicate URL):', skipDuplicateExamples);
   }
   
   // Fallback to regex if DOM parsing didn't find anything
