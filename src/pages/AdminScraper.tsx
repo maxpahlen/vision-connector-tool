@@ -11,7 +11,8 @@ import { DocumentList } from '@/components/admin/DocumentList';
 import { PropositionScraperTest } from '@/components/admin/PropositionScraperTest';
 import { PropositionTextExtractorTest } from '@/components/admin/PropositionTextExtractorTest';
 import { PropositionAgentTest } from '@/components/admin/PropositionAgentTest';
-import { FileText, Bot, Database, Settings } from 'lucide-react';
+import { PropositionBatchProcessor } from '@/components/admin/PropositionBatchProcessor';
+import { FileText, Bot, Database, Settings, Play } from 'lucide-react';
 
 export default function AdminScraper() {
   return (
@@ -24,10 +25,14 @@ export default function AdminScraper() {
       </div>
 
       <Tabs defaultValue="propositions" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="propositions" className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
             Propositions
+          </TabsTrigger>
+          <TabsTrigger value="batch" className="flex items-center gap-2">
+            <Play className="h-4 w-4" />
+            Batch Process
           </TabsTrigger>
           <TabsTrigger value="sou" className="flex items-center gap-2">
             <Bot className="h-4 w-4" />
@@ -43,13 +48,13 @@ export default function AdminScraper() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Propositions Tab - Phase 5.2 Focus */}
+        {/* Propositions Tab - Phase 5.2 Pilot Focus */}
         <TabsContent value="propositions" className="space-y-6 mt-6">
           <Card>
             <CardHeader>
-              <CardTitle>Phase 5.2: Proposition Pipeline</CardTitle>
+              <CardTitle>Phase 5.2: Proposition Pipeline (Pilot)</CardTitle>
               <CardDescription>
-                End-to-end proposition processing: scraping, text extraction, and agent analysis
+                Manual testing for pilot propositions: scraping, text extraction, and agent analysis
               </CardDescription>
             </CardHeader>
           </Card>
@@ -59,6 +64,20 @@ export default function AdminScraper() {
             <PropositionTextExtractorTest />
             <PropositionAgentTest />
           </div>
+        </TabsContent>
+
+        {/* Batch Processing Tab */}
+        <TabsContent value="batch" className="space-y-6 mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Batch Processing</CardTitle>
+              <CardDescription>
+                Process propositions in batches of 5: text extraction → process setup → Timeline Agent → Metadata Agent
+              </CardDescription>
+            </CardHeader>
+          </Card>
+          
+          <PropositionBatchProcessor />
         </TabsContent>
 
         {/* SOU & Directives Tab */}
@@ -114,7 +133,7 @@ export default function AdminScraper() {
               <div className="text-sm text-muted-foreground">
                 <p>• Metadata Agent: v2.2.0 (proposition-aware)</p>
                 <p>• Timeline Agent: v2.2 (proposition events)</p>
-                <p>• Proposition Scraper: v5.2.3</p>
+                <p>• Proposition Scraper: v5.2.4 (diagnostic logging)</p>
               </div>
             </CardContent>
           </Card>
