@@ -135,6 +135,7 @@ serve(async (req) => {
     let document;
     let targetPdfUrl = pdfUrl;
     let docNumber = '';
+    let documentMetadata: Record<string, unknown> = {};
 
     // If documentId provided, fetch the document to get PDF URL
     if (documentId) {
@@ -152,9 +153,107 @@ serve(async (req) => {
       document = data;
       targetPdfUrl = data.pdf_url;
       docNumber = data.doc_number || '';
+      documentMetadata = data.metadata || {};
 
+      // ============================================
+      // GUARD: Skip non-PDF primary files (v5.2.5)
+      // ============================================
+      const primaryFileType = documentMetadata.primary_file_type as string | undefined;
+      
       if (!targetPdfUrl) {
+        // No PDF URL - check if this is intentionally a non-PDF document
+        if (primaryFileType && primaryFileType !== 'pdf') {
+          console.log(`[process-sou-pdf] Skipping non-PDF document: ${docNumber} (primary_file_type: ${primaryFileType})`);
+          
+          // Update metadata to reflect skipped status
+          const updatedMetadata = {
+            ...documentMetadata,
+            pdf_text_status: 'skipped_non_pdf',
+            pdf_text_message: `Primary file type is ${primaryFileType}, skipping PDF extraction`,
+            pdf_extraction_skipped_at: new Date().toISOString(),
+          };
+
+          await supabase
+            .from('documents')
+            .update({ metadata: updatedMetadata })
+            .eq('id', documentId);
+
+          // Mark task as completed if task_id provided (this is expected behaviour, not an error)
+          if (task_id) {
+            await supabase
+              .from('agent_tasks')
+              .update({
+                status: 'completed',
+                completed_at: new Date().toISOString(),
+                output_data: {
+                  document_id: documentId,
+                  skipped: true,
+                  reason: `Non-PDF primary file type: ${primaryFileType}`,
+                },
+              })
+              .eq('id', task_id);
+          }
+
+          return createSuccessResponse({
+            skipped: true,
+            reason: `Non-PDF primary file type: ${primaryFileType}`,
+            documentId,
+          });
+        }
+        
         throw new Error('Document has no PDF URL');
+      }
+      
+      // ============================================
+      // GUARD: Reject PDF URLs that are actually non-PDFs (belt-and-braces)
+      // ============================================
+      const pdfUrlLower = targetPdfUrl.toLowerCase();
+      if (pdfUrlLower.endsWith('.xlsx') || pdfUrlLower.endsWith('.xls') || 
+          pdfUrlLower.endsWith('.docx') || pdfUrlLower.endsWith('.doc')) {
+        console.log(`[process-sou-pdf] Rejecting non-PDF URL masquerading as pdf_url: ${targetPdfUrl}`);
+        
+        const detectedFileType = pdfUrlLower.endsWith('.xlsx') || pdfUrlLower.endsWith('.xls') ? 'excel' : 'word';
+        
+        // Update metadata to reflect skipped status and correct the primary file type
+        const updatedMetadata = {
+          ...documentMetadata,
+          primary_file_type: detectedFileType,
+          pdf_text_status: 'skipped_non_pdf',
+          pdf_text_message: `URL points to ${detectedFileType} file, not PDF`,
+          pdf_extraction_skipped_at: new Date().toISOString(),
+        };
+
+        await supabase
+          .from('documents')
+          .update({ 
+            pdf_url: null, // Clear the incorrect pdf_url
+            metadata: updatedMetadata 
+          })
+          .eq('id', documentId);
+
+        // Mark task as completed (expected behaviour)
+        if (task_id) {
+          await supabase
+            .from('agent_tasks')
+            .update({
+              status: 'completed',
+              completed_at: new Date().toISOString(),
+              output_data: {
+                document_id: documentId,
+                skipped: true,
+                reason: `URL points to ${detectedFileType} file, not PDF`,
+                corrected_primary_file_type: detectedFileType,
+              },
+            })
+            .eq('id', task_id);
+        }
+
+        return createSuccessResponse({
+          skipped: true,
+          reason: `URL points to ${detectedFileType} file, not PDF`,
+          correctedPrimaryFileType: detectedFileType,
+          documentId,
+        });
       }
     }
 

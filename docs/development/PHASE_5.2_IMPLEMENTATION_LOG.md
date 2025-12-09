@@ -1,8 +1,8 @@
 # Phase 5.2: Proposition Slice — Implementation Log
 
 **Started:** 2025-12-03
-**Updated:** 2025-12-04 (Pilot Complete)
-**Status:** ✅ Pilot Validation Complete
+**Updated:** 2025-12-09 (Non-PDF Attachment Handling v5.2.5)
+**Status:** ✅ Pilot Validation Complete, Batch Processing Ready
 
 ---
 
@@ -280,7 +280,155 @@ ORDER BY doc_number;
 
 ---
 
+## Non-PDF Attachment Handling (v5.2.5)
+
+**Added:** 2025-12-09
+**Status:** ✅ Implemented
+
+### Problem
+
+Budget propositions like `Prop. 2025/26:1` and `Prop. 2025/26:2` have **Excel files** (`.xlsx`) as their primary downloadable attachment instead of PDFs. The previous scraper incorrectly set `pdf_url` to the Excel file URL, and the text extractor then failed with "Invalid PDF structure" errors.
+
+### Solution
+
+A three-layer fix across scraping and extraction:
+
+#### 1. pdf-scorer.ts: File Type Classification
+
+New exports in `_shared/pdf-scorer.ts`:
+
+```typescript
+// Classify file type based on URL extension and link text
+function classifyFileType(href: string, linkText: string | null): FileType;
+
+// Check if URL has non-PDF extension (early filter)
+function hasNonPdfExtension(href: string): boolean;
+
+// Extract all attachments with file type classification
+function extractAttachments(doc: Document): AttachmentExtractionResult;
+```
+
+The `findPdfCandidates` and `scorePdfCandidate` functions now skip obvious non-PDF extensions (`.xlsx`, `.xls`, `.docx`, `.doc`, etc.) early, preventing them from being selected as "best PDF".
+
+#### 2. scrape-proposition-index: Attachment Metadata
+
+The proposition scraper now:
+
+1. Extracts **all** downloadable attachments from "Ladda ner" sections
+2. Classifies each attachment by file type (`pdf`, `excel`, `word`, `other`)
+3. Stores attachments in `documents.metadata.attachments` array
+4. Sets `documents.metadata.primary_file_type` based on what was found
+5. Only populates `pdf_url` if a **real PDF** was found
+
+**Metadata structure:**
+
+```json
+{
+  "primary_file_type": "excel",
+  "attachments": [
+    {
+      "url": "https://www.regeringen.se/...",
+      "file_type": "excel",
+      "label": "Specifikation av budgetens utgifter...",
+      "source": "ladda_ner_section"
+    }
+  ],
+  "scraper_version": "5.2.5"
+}
+```
+
+#### 3. process-sou-pdf: Graceful Skip for Non-PDFs
+
+The text extraction function now:
+
+1. Checks `metadata.primary_file_type` before attempting extraction
+2. If primary file type is non-PDF (and `pdf_url` is null), sets `pdf_text_status: 'skipped_non_pdf'`
+3. If `pdf_url` points to a non-PDF extension (belt-and-braces), clears `pdf_url`, corrects `primary_file_type`, and sets `pdf_text_status: 'skipped_non_pdf'`
+4. Marks the task as **completed** (not failed) since this is expected behaviour
+
+**Status values for `metadata.pdf_text_status`:**
+
+| Value | Meaning |
+|-------|---------|
+| `ok` | Successfully extracted text from PDF |
+| `error` | PDF extraction failed (real error) |
+| `skipped_non_pdf` | Intentionally skipped - primary file is not a PDF |
+
+### Repair Script for Existing Records
+
+Run this SQL to fix `Prop. 2025/26:1` and `Prop. 2025/26:2`:
+
+```sql
+UPDATE documents
+SET 
+  pdf_url = NULL,
+  metadata = jsonb_set(
+    jsonb_set(
+      COALESCE(metadata, '{}'::jsonb),
+      '{primary_file_type}',
+      '"excel"',
+      true
+    ),
+    '{pdf_text_status}',
+    '"skipped_non_pdf"',
+    true
+  )
+WHERE doc_type = 'proposition'
+  AND doc_number IN ('Prop. 2025/26:1', 'Prop. 2025/26:2');
+```
+
+### Testing Verification
+
+After implementation, verify with:
+
+```sql
+SELECT 
+  doc_number,
+  pdf_url,
+  metadata->>'primary_file_type' AS primary_file_type,
+  metadata->>'pdf_text_status' AS pdf_text_status,
+  jsonb_array_length(metadata->'attachments') AS attachment_count
+FROM documents
+WHERE doc_number IN ('Prop. 2025/26:1', 'Prop. 2025/26:2');
+```
+
+**Expected results:**
+
+| doc_number | pdf_url | primary_file_type | pdf_text_status | attachment_count |
+|------------|---------|-------------------|-----------------|------------------|
+| Prop. 2025/26:1 | NULL | excel | skipped_non_pdf | ≥1 |
+| Prop. 2025/26:2 | NULL | excel | skipped_non_pdf | ≥1 |
+
+### Logging for Forensics
+
+When the scraper encounters a non-PDF primary file, it logs:
+
+```
+[Proposition Scraper v5.2.5] Non-PDF primary file detected {
+  docNumber: "Prop. 2025/26:1",
+  primaryFileType: "excel",
+  attachmentCount: 3,
+  firstAttachmentLabel: "Specifikation av budgetens utgifter..."
+}
+```
+
+When the text extractor skips a non-PDF:
+
+```
+[process-sou-pdf] Skipping non-PDF document: Prop. 2025/26:1 (primary_file_type: excel)
+```
+
+---
+
 ## Scraper Version History
+
+### v5.2.5 (2025-12-09) — Non-PDF Attachment Handling
+
+- File type classification in `pdf-scorer.ts`
+- Attachment extraction with file type metadata
+- `primary_file_type` and `attachments` stored in document metadata
+- Non-PDF files no longer populate `pdf_url`
+- Text extraction gracefully skips non-PDFs with `skipped_non_pdf` status
 
 ### v5.2.4 (2025-12-08) — Diagnostic Logging (NON-BLOCKING)
 

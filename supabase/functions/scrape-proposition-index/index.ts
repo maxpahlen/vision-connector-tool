@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.81.1";
 import { DOMParser, Element } from "https://deno.land/x/deno_dom@v0.1.43/deno-dom-wasm.ts";
 import { classifyGenvagLink, extractDocNumber, type GenvagLink, type ClassifiedReference } from "../_shared/genvag-classifier.ts";
-import { extractAndScorePdfs } from "../_shared/pdf-scorer.ts";
+import { extractAndScorePdfs, extractAttachments, type AttachmentCandidate, type FileType } from "../_shared/pdf-scorer.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,7 +10,7 @@ const corsHeaders = {
 };
 
 /**
- * Proposition Index Scraper v5.2.4
+ * Proposition Index Scraper v5.2.5
  * 
  * Uses the internal regeringen.se Filter API for pagination:
  * https://www.regeringen.se/Filter/GetFilteredItems
@@ -22,6 +22,7 @@ const corsHeaders = {
  * - Detail page extraction using pdf-scorer (DOM-based)
  * - Document reference classification
  * - Diagnostic logging for 19/20 extraction behaviour (v5.2.4)
+ * - Non-PDF attachment handling with file type classification (v5.2.5)
  */
 
 interface PropositionMetadata {
@@ -31,6 +32,8 @@ interface PropositionMetadata {
   pdfUrl?: string;
   ministry?: string;
   publicationDate?: string;
+  primaryFileType?: FileType;
+  attachments?: AttachmentCandidate[];
 }
 
 interface LagstiftningskedjaLink {
@@ -369,34 +372,98 @@ function parseDate(dateStr: string): string | undefined {
 }
 
 /**
- * Extract PDF URL from detail page using DOM-based pdf-scorer
+ * Extract PDF URL and attachments from detail page using DOM-based pdf-scorer
+ * Now includes file type classification and attachment extraction (v5.2.5)
  */
-function extractPdfUrlFromDom(html: string, docNumber: string): { url: string | null; confidence: number; reasoning: string[] } {
+function extractPdfAndAttachments(
+  html: string, 
+  docNumber: string
+): { 
+  pdfUrl: string | null; 
+  confidence: number; 
+  reasoning: string[];
+  primaryFileType: FileType | null;
+  attachments: AttachmentCandidate[];
+} {
   try {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
     
     if (!doc) {
-      return { url: null, confidence: 0, reasoning: ['Failed to parse HTML'] };
+      return { 
+        pdfUrl: null, 
+        confidence: 0, 
+        reasoning: ['Failed to parse HTML'],
+        primaryFileType: null,
+        attachments: []
+      };
     }
     
-    const result = extractAndScorePdfs(doc, 'proposition', docNumber);
+    // Extract all attachments first (with file type classification)
+    const attachmentResult = extractAttachments(doc);
     
-    console.log('[Proposition Scraper v5.2.2] PDF extraction', {
+    // Then try to find the best PDF specifically
+    const pdfResult = extractAndScorePdfs(doc, 'proposition', docNumber);
+    
+    // Determine primary file type
+    let primaryFileType = attachmentResult.primaryFileType;
+    
+    // If we found a good PDF, that's our primary
+    if (pdfResult.bestPdf && pdfResult.confidence >= 20) {
+      primaryFileType = 'pdf';
+    }
+    
+    console.log('[Proposition Scraper v5.2.5] PDF/Attachment extraction', {
       docNumber,
-      found: !!result.bestPdf,
-      confidence: result.confidence
+      foundPdf: !!pdfResult.bestPdf,
+      pdfConfidence: pdfResult.confidence,
+      primaryFileType,
+      attachmentCount: attachmentResult.attachments.length,
+      attachmentTypes: attachmentResult.attachments.map(a => a.fileType)
     });
     
+    // If best PDF exists but is actually a non-PDF (shouldn't happen after pdf-scorer fix, but belt-and-braces)
+    let finalPdfUrl = pdfResult.bestPdf;
+    if (finalPdfUrl) {
+      const lowerUrl = finalPdfUrl.toLowerCase();
+      if (lowerUrl.endsWith('.xlsx') || lowerUrl.endsWith('.xls') || 
+          lowerUrl.endsWith('.docx') || lowerUrl.endsWith('.doc')) {
+        console.log('[Proposition Scraper v5.2.5] Rejecting non-PDF as pdf_url:', finalPdfUrl);
+        finalPdfUrl = null;
+        primaryFileType = attachmentResult.attachments[0]?.fileType || 'other';
+      }
+    }
+    
     return {
-      url: result.bestPdf,
-      confidence: result.confidence,
-      reasoning: result.reasoning
+      pdfUrl: finalPdfUrl,
+      confidence: pdfResult.confidence,
+      reasoning: pdfResult.reasoning,
+      primaryFileType,
+      attachments: attachmentResult.attachments
     };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    return { url: null, confidence: 0, reasoning: [`Error: ${errorMsg}`] };
+    return { 
+      pdfUrl: null, 
+      confidence: 0, 
+      reasoning: [`Error: ${errorMsg}`],
+      primaryFileType: null,
+      attachments: []
+    };
   }
+}
+
+/**
+ * Extract PDF URL from detail page using DOM-based pdf-scorer
+ * @deprecated Use extractPdfAndAttachments instead
+ */
+function extractPdfUrlFromDom(html: string, docNumber: string): { url: string | null; confidence: number; reasoning: string[] } {
+  const result = extractPdfAndAttachments(html, docNumber);
+  return {
+    url: result.pdfUrl,
+    confidence: result.confidence,
+    reasoning: result.reasoning
+  };
 }
 
 /**
@@ -562,13 +629,13 @@ serve(async (req) => {
   try {
     const { page = 1, limit = 10, skipExisting = true } = await req.json().catch(() => ({}));
     
-    console.log('[Proposition Scraper v5.2.2] Starting', { page, limit, skipExisting });
+    console.log('[Proposition Scraper v5.2.5] Starting', { page, limit, skipExisting });
     
     const baseUrl = 'https://www.regeringen.se';
     
     // Use the internal Filter API for proper pagination
     const apiUrl = buildFilterApiUrl(page);
-    console.log('[Proposition Scraper v5.2.2] Fetching Filter API', { page, apiUrl });
+    console.log('[Proposition Scraper v5.2.5] Fetching Filter API', { page, apiUrl });
     
     const apiResponse = await fetch(apiUrl, {
       headers: {
@@ -681,18 +748,54 @@ serve(async (req) => {
         if (detailResponse.ok) {
           const detailHtml = await detailResponse.text();
           
-          // Extract PDF URL using pdf-scorer
-          const pdfResult = extractPdfUrlFromDom(detailHtml, prop.docNumber);
-          prop.pdfUrl = pdfResult.url || undefined;
+          // Extract PDF URL and attachments using v5.2.5 combined function
+          const extractResult = extractPdfAndAttachments(detailHtml, prop.docNumber);
+          prop.pdfUrl = extractResult.pdfUrl || undefined;
+          prop.primaryFileType = extractResult.primaryFileType || undefined;
+          prop.attachments = extractResult.attachments;
+          
+          // Log non-PDF primary file type for forensics
+          if (extractResult.primaryFileType && extractResult.primaryFileType !== 'pdf') {
+            console.log('[Proposition Scraper v5.2.5] Non-PDF primary file detected', {
+              docNumber: prop.docNumber,
+              primaryFileType: extractResult.primaryFileType,
+              attachmentCount: extractResult.attachments.length,
+              firstAttachmentLabel: extractResult.attachments[0]?.label?.substring(0, 60)
+            });
+          }
           
           // Extract Lagstiftningskedja links
           lagstiftningskedjaLinks = extractLagstiftningskedjaLinks(detailHtml, baseUrl);
           
-          console.log('[Proposition Scraper v5.2.2] Detail extracted', { 
+          console.log('[Proposition Scraper v5.2.5] Detail extracted', { 
             docNumber: prop.docNumber,
             hasPdf: !!prop.pdfUrl,
+            primaryFileType: prop.primaryFileType,
+            attachmentCount: prop.attachments?.length || 0,
             lagstiftningskedjaCount: lagstiftningskedjaLinks.length
           });
+        }
+        
+        // Build metadata with attachments and primary file type
+        const documentMetadata: Record<string, unknown> = {
+          scraped_at: new Date().toISOString(),
+          scraper_version: '5.2.5',
+          lagstiftningskedja_count: lagstiftningskedjaLinks.length,
+        };
+        
+        // Add primary file type if determined
+        if (prop.primaryFileType) {
+          documentMetadata.primary_file_type = prop.primaryFileType;
+        }
+        
+        // Add attachments if any
+        if (prop.attachments && prop.attachments.length > 0) {
+          documentMetadata.attachments = prop.attachments.map(a => ({
+            url: a.url,
+            file_type: a.fileType,
+            label: a.label,
+            source: a.source
+          }));
         }
         
         // Insert document
@@ -703,21 +806,17 @@ serve(async (req) => {
             doc_number: prop.docNumber,
             doc_type: 'proposition',
             url: prop.url,
-            pdf_url: prop.pdfUrl,
+            pdf_url: prop.pdfUrl, // Will be null for non-PDF primary files
             ministry: prop.ministry,
             publication_date: prop.publicationDate,
             lifecycle_stage: 'proposition',
-            metadata: {
-              scraped_at: new Date().toISOString(),
-              scraper_version: '5.2.2',
-              lagstiftningskedja_count: lagstiftningskedjaLinks.length
-            }
+            metadata: documentMetadata
           })
           .select()
           .single();
         
         if (insertError) {
-          console.error('[Proposition Scraper v5.2.2] Insert error', { 
+          console.error('[Proposition Scraper v5.2.5] Insert error', { 
             docNumber: prop.docNumber, 
             error: insertError.message 
           });
@@ -728,9 +827,10 @@ serve(async (req) => {
         result.propositions.push(prop);
         result.inserted++;
         
-        console.log('[Proposition Scraper v5.2.2] ✅ Inserted', { 
+        console.log('[Proposition Scraper v5.2.5] ✅ Inserted', { 
           id: insertedDoc.id,
-          docNumber: prop.docNumber 
+          docNumber: prop.docNumber,
+          primaryFileType: prop.primaryFileType || 'pdf'
         });
         
         // Store document references
@@ -748,7 +848,7 @@ serve(async (req) => {
         
       } catch (propError) {
         const errorMsg = propError instanceof Error ? propError.message : 'Unknown error';
-        console.error('[Proposition Scraper v5.2.2] Error processing', { 
+        console.error('[Proposition Scraper v5.2.5] Error processing', { 
           docNumber: prop.docNumber, 
           error: errorMsg 
         });
@@ -756,7 +856,7 @@ serve(async (req) => {
       }
     }
     
-    console.log('[Proposition Scraper v5.2.3] Complete', { 
+    console.log('[Proposition Scraper v5.2.5] Complete', { 
       inserted: result.inserted,
       skippedExistingInDb: result.skippedExistingInDb,
       skippedDuplicateInPage: result.skippedDuplicateInPage,
@@ -772,7 +872,7 @@ serve(async (req) => {
     );
     
   } catch (error) {
-    console.error('[Proposition Scraper v5.2.2] ❌ Error:', error);
+    console.error('[Proposition Scraper v5.2.5] ❌ Error:', error);
     
     return new Response(
       JSON.stringify({ 

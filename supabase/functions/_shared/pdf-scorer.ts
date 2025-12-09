@@ -19,6 +19,77 @@ export interface PdfExtractionResult {
   htmlSnapshot: string | null;
 }
 
+// ============================================
+// Attachment Classification (v5.2.5)
+// ============================================
+
+export type FileType = 'pdf' | 'excel' | 'word' | 'other';
+
+export interface AttachmentCandidate {
+  url: string;
+  fileType: FileType;
+  label: string;
+  source: 'ladda_ner_section' | 'download_section' | 'body';
+}
+
+export interface AttachmentExtractionResult {
+  primaryFileType: FileType | null;
+  attachments: AttachmentCandidate[];
+  extractionLog: string[];
+}
+
+/**
+ * Classify file type based on URL extension and link text
+ */
+export function classifyFileType(href: string, linkText: string | null): FileType {
+  const lowerHref = href.toLowerCase();
+  const lowerText = (linkText || '').toLowerCase();
+
+  // Check URL extension first (most reliable)
+  if (lowerHref.endsWith('.pdf')) {
+    return 'pdf';
+  }
+  if (lowerHref.endsWith('.xlsx') || lowerHref.endsWith('.xls')) {
+    return 'excel';
+  }
+  if (lowerHref.endsWith('.docx') || lowerHref.endsWith('.doc')) {
+    return 'word';
+  }
+
+  // Check link text indicators
+  if (lowerText.includes('(pdf)') || lowerText.includes('pdf,')) {
+    return 'pdf';
+  }
+  if (lowerText.includes('(xlsx)') || lowerText.includes('(xls)') || lowerText.includes('excel')) {
+    return 'excel';
+  }
+  if (lowerText.includes('(docx)') || lowerText.includes('(doc)') || lowerText.includes('word')) {
+    return 'word';
+  }
+
+  // For contentassets/globalassets URLs without extension, assume PDF unless indicated otherwise
+  if (lowerHref.includes('contentassets') || lowerHref.includes('globalassets')) {
+    // But if the link text strongly suggests Excel, classify as such
+    if (lowerText.includes('specifikation') && lowerText.includes('utgifter')) {
+      return 'excel'; // Budget specification files are typically Excel
+    }
+    // Default to PDF for regeringen.se CDN links without clear extension
+    return 'pdf';
+  }
+
+  return 'other';
+}
+
+/**
+ * Check if a URL has a non-PDF file extension
+ * Used as early filter to avoid scoring non-PDF files as PDF candidates
+ */
+export function hasNonPdfExtension(href: string): boolean {
+  const lowerHref = href.toLowerCase();
+  const nonPdfExtensions = ['.xlsx', '.xls', '.docx', '.doc', '.pptx', '.ppt', '.zip', '.rar'];
+  return nonPdfExtensions.some(ext => lowerHref.endsWith(ext));
+}
+
 /**
  * Determine the location of a link within the page structure
  */
@@ -78,7 +149,99 @@ export function isInDownloadSection(link: Element, doc: Document): boolean {
 }
 
 /**
+ * Extract all downloadable attachments from the page with file type classification
+ */
+export function extractAttachments(doc: Document): AttachmentExtractionResult {
+  const attachments: AttachmentCandidate[] = [];
+  const extractionLog: string[] = [];
+  const seenUrls = new Set<string>();
+
+  extractionLog.push('[Attachment Extractor] Starting attachment extraction');
+
+  // Find "Ladda ner" sections
+  const allHeadings = doc.querySelectorAll('h2, h3, h4');
+  for (const heading of allHeadings) {
+    const text = heading.textContent?.toLowerCase() || '';
+    if (text.includes('ladda ner') || text.includes('download')) {
+      const section = heading.parentElement;
+      if (section) {
+        const linksInSection = section.querySelectorAll('a[href]');
+        for (const link of linksInSection) {
+          const href = (link as Element).getAttribute('href') || '';
+          const linkText = link.textContent?.trim() || '';
+          
+          if (!href || href === '#' || seenUrls.has(href)) continue;
+          
+          // Normalize URL
+          let fullUrl = href;
+          if (href.startsWith('/')) {
+            fullUrl = `https://www.regeringen.se${href}`;
+          }
+          
+          const fileType = classifyFileType(fullUrl, linkText);
+          seenUrls.add(href);
+          
+          attachments.push({
+            url: fullUrl,
+            fileType,
+            label: linkText.substring(0, 200),
+            source: 'ladda_ner_section'
+          });
+          
+          extractionLog.push(`[Attachment Extractor] Found ${fileType}: ${linkText.substring(0, 50)}`);
+        }
+      }
+    }
+  }
+
+  // Find structured download sections
+  const structuredSections = doc.querySelectorAll('.list--icons, .download, .file-list');
+  for (const section of structuredSections) {
+    const links = (section as Element).querySelectorAll('a[href]');
+    for (const link of links) {
+      const href = (link as Element).getAttribute('href') || '';
+      const linkText = link.textContent?.trim() || '';
+      
+      if (!href || href === '#' || seenUrls.has(href)) continue;
+      
+      let fullUrl = href;
+      if (href.startsWith('/')) {
+        fullUrl = `https://www.regeringen.se${href}`;
+      }
+      
+      const fileType = classifyFileType(fullUrl, linkText);
+      seenUrls.add(href);
+      
+      attachments.push({
+        url: fullUrl,
+        fileType,
+        label: linkText.substring(0, 200),
+        source: 'download_section'
+      });
+    }
+  }
+
+  // Determine primary file type (first PDF if available, otherwise first attachment)
+  let primaryFileType: FileType | null = null;
+  const pdfAttachment = attachments.find(a => a.fileType === 'pdf');
+  if (pdfAttachment) {
+    primaryFileType = 'pdf';
+  } else if (attachments.length > 0) {
+    primaryFileType = attachments[0].fileType;
+  }
+
+  extractionLog.push(`[Attachment Extractor] Total: ${attachments.length} attachments, primary: ${primaryFileType}`);
+
+  return {
+    primaryFileType,
+    attachments,
+    extractionLog
+  };
+}
+
+/**
  * Find all PDF candidates using multi-tier detection
+ * Now filters out non-PDF extensions early
  */
 export function findPdfCandidates(doc: Document): Element[] {
   const candidates = new Set<Element>();
@@ -106,12 +269,24 @@ export function findPdfCandidates(doc: Document): Element[] {
     }
   }
   
-  // Global fallback: all PDF links
+  // Global fallback: all PDF links (with early non-PDF filtering)
   allLinks.forEach(link => {
     const href = (link as Element).getAttribute('href') || '';
-    if (href.endsWith('.pdf') || 
-        href.includes('contentassets') || 
-        href.includes('globalassets')) {
+    const hrefLower = href.toLowerCase();
+    
+    // ============================================
+    // GUARD: Skip obvious non-PDF extensions early (v5.2.5)
+    // ============================================
+    if (hasNonPdfExtension(href)) {
+      // Log for forensics but don't add to candidates
+      console.log('[pdf-scorer] Skipping non-PDF file extension:', href.substring(0, 100));
+      return; // continue to next link
+    }
+    
+    // Only add if it looks like a PDF
+    if (hrefLower.endsWith('.pdf') || 
+        hrefLower.includes('contentassets') || 
+        hrefLower.includes('globalassets')) {
       candidates.add(link as Element);
     }
   });
@@ -144,6 +319,21 @@ export function scorePdfCandidate(
   let score = 0;
   const signals: string[] = [];
   const penalties: string[] = [];
+  
+  // ============================================
+  // GUARD: Disqualify non-PDF extensions (v5.2.5 belt-and-braces)
+  // ============================================
+  if (hasNonPdfExtension(fullUrl)) {
+    return {
+      url: fullUrl,
+      score: -999,
+      signals: [],
+      penalties: ['DISQUALIFIED:non_pdf_extension'],
+      linkText,
+      filename,
+      location
+    };
+  }
   
   // === CORE SIGNALS (+10-25 points) ===
   if (fullUrl.endsWith('.pdf')) {
