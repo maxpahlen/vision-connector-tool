@@ -150,6 +150,7 @@ export function isInDownloadSection(link: Element, doc: Document): boolean {
 
 /**
  * Extract all downloadable attachments from the page with file type classification
+ * Only extracts from actual "Ladda ner" sections, not footer/navigation
  */
 export function extractAttachments(doc: Document): AttachmentExtractionResult {
   const attachments: AttachmentCandidate[] = [];
@@ -158,12 +159,28 @@ export function extractAttachments(doc: Document): AttachmentExtractionResult {
 
   extractionLog.push('[Attachment Extractor] Starting attachment extraction');
 
-  // Find "Ladda ner" sections
+  // Find "Ladda ner" sections specifically (not footer links)
   const allHeadings = doc.querySelectorAll('h2, h3, h4');
   for (const heading of allHeadings) {
     const text = heading.textContent?.toLowerCase() || '';
     if (text.includes('ladda ner') || text.includes('download')) {
-      const section = heading.parentElement;
+      // Get the parent section but not the whole page
+      let section = heading.parentElement;
+      
+      // Walk up max 2 levels to find the containing section
+      let depth = 0;
+      while (section && depth < 2) {
+        // Stop if we hit the main content wrapper
+        if (section.classList?.contains('main-content') || 
+            section.classList?.contains('article-content') ||
+            section.tagName?.toLowerCase() === 'main' ||
+            section.tagName?.toLowerCase() === 'article') {
+          break;
+        }
+        section = section.parentElement;
+        depth++;
+      }
+      
       if (section) {
         const linksInSection = section.querySelectorAll('a[href]');
         for (const link of linksInSection) {
@@ -171,6 +188,35 @@ export function extractAttachments(doc: Document): AttachmentExtractionResult {
           const linkText = link.textContent?.trim() || '';
           
           if (!href || href === '#' || seenUrls.has(href)) continue;
+          
+          // Skip social sharing, navigation, and footer links
+          if (href.includes('facebook.com') || 
+              href.includes('twitter.com') || 
+              href.includes('linkedin.com') ||
+              href.includes('email-protection') ||
+              href.includes('/sveriges-regering/') ||
+              href.includes('/regeringens-politik/') ||
+              href.includes('/sverige-i-eu/') ||
+              href.includes('/sa-styrs-sverige/') ||
+              href.includes('/press/') ||
+              href.includes('/kontakt/') ||
+              href.includes('/jobba-hos-oss/') ||
+              href.includes('/kalendarium/')) {
+            continue;
+          }
+          
+          // Only include links that look like actual document downloads
+          const isDownloadLink = 
+            href.endsWith('.pdf') ||
+            href.endsWith('.xlsx') || href.endsWith('.xls') ||
+            href.endsWith('.docx') || href.endsWith('.doc') ||
+            href.includes('contentassets') ||
+            href.includes('globalassets') ||
+            linkText.toLowerCase().includes('(pdf') ||
+            linkText.toLowerCase().includes('(xlsx') ||
+            linkText.match(/\([\d,.]+ ?[kmg]b\)/i); // Has file size indicator
+          
+          if (!isDownloadLink) continue;
           
           // Normalize URL
           let fullUrl = href;
@@ -194,8 +240,8 @@ export function extractAttachments(doc: Document): AttachmentExtractionResult {
     }
   }
 
-  // Find structured download sections
-  const structuredSections = doc.querySelectorAll('.list--icons, .download, .file-list');
+  // Find structured download sections (.list--icons typically contains actual downloads)
+  const structuredSections = doc.querySelectorAll('.list--icons');
   for (const section of structuredSections) {
     const links = (section as Element).querySelectorAll('a[href]');
     for (const link of links) {
@@ -203,6 +249,11 @@ export function extractAttachments(doc: Document): AttachmentExtractionResult {
       const linkText = link.textContent?.trim() || '';
       
       if (!href || href === '#' || seenUrls.has(href)) continue;
+      
+      // Skip non-document links
+      if (href.includes('facebook.com') || href.includes('twitter.com') || href.includes('linkedin.com')) {
+        continue;
+      }
       
       let fullUrl = href;
       if (href.startsWith('/')) {
