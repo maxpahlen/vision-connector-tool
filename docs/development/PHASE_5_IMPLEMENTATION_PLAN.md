@@ -1,170 +1,158 @@
 # Phase 5: Implementation Plan
 
 **Created:** 2025-12-02  
-**Status:** Phase 5.1 Complete → Phase 5.2 Ready
+**Last Updated:** 2025-12-09  
+**Status:** Phase 5.2 Complete → Phase 5.3 Ready
 
 ---
 
-## Milestone: Timeline Agent v2.1 — COMPLETE ✅
+## Phase 5.1: Foundation ✅ COMPLETE
 
-**Validated:** 2025-12-03  
-**Test Results:** 10 documents (5 directives + 5 SOUs), 100% success rate
+**Completed:** 2025-12-03
 
 ### Summary
+- Database migrations for `lifecycle_stage`, `document_references`, `external_urls`
+- Timeline Agent v2.1 with confidence scoring and metadata layer
+- Validated on 10 documents (5 directives + 5 SOUs) with 100% success
 
-Timeline Agent v2.1 successfully:
-- ✅ Enriches metadata on existing events (upsert instead of skip)
-- ✅ Person-based deduplication works for `committee_formed` events
-- ✅ No false positives or duplicate explosions
-- ✅ Idempotency preserved across re-runs
-- ✅ Metadata quality is high and aligns with forensic-citation standard
+See: `docs/development/PHASE_5.2_IMPLEMENTATION_LOG.md` for details.
 
-### Test Results Breakdown
+---
 
-| Metric | Value |
+## Phase 5.2: Propositions ✅ COMPLETE
+
+**Completed:** 2025-12-09
+
+### Final Metrics
+
+| Metric | Count |
 |--------|-------|
-| Documents processed | 10 |
-| Events extracted | 69 |
-| Events inserted | 17 |
-| Events updated | 39 |
-| Processing time | 3.8s - 67.5s per doc |
+| Total Propositions | 100 |
+| With Text Extracted | 98 |
+| Skipped (Non-PDF) | 2 |
+| With Linked Process | 96 |
+| Timeline Events | 213 |
+| Metadata Entities | 50 |
+| Document References | 537 |
 
-### Key Validations Passed
+### Key Deliverables
 
-1. **Dir. 2025:97**: 3 `remiss_period_end` events correctly updated with `deadline_kind`, `deadline_index`, `deadline_label`
-2. **SOU 2025:103**: 9 `committee_formed` events — 6 updated, 3 inserted — each with unique `person_name`
-3. **SOU 2025:51**: 15 `committee_formed` events — multiple experts on same date correctly handled
-4. **SOU 2025:52**: 14 committee members + 1 secretary — all with proper metadata
+- ✅ Proposition scraper (`scrape-proposition-index`)
+- ✅ Timeline Agent v2.2 with proposition events
+- ✅ Metadata Agent v2.2 with minister role classification
+- ✅ Non-PDF handling (budget propositions)
+- ✅ Lagstiftningskedja link extraction
 
-### Known Behavior (Accepted for Now)
+### Documentation
 
-- `deadline_index` restarts for different deadline kinds (interim/final)
-- This is acceptable and will be revisited in Phase 6 when full sequencing logic is introduced
+- `PHASE_5.2_COMPLETION_SUMMARY.md` - Full metrics and validation
+- `LAGSTIFTNINGSKEDJA_IMPROVEMENT_PLAN.md` - Future resolution improvements
+- `SCRAPER_KNOWN_ISSUES.md` - Known issues and workarounds
 
----
+### Known Limitations
 
-## Implementation Order
-
-### Phase 5.1: Foundation ✅ COMPLETE
-
-#### A. Database Migrations ✅
-```sql
--- 1. lifecycle_stage column added to documents
--- 2. document_references table created
--- 3. external_urls JSONB column added to documents
-```
-
-#### B. Timeline Agent v2.1 ✅
-- Confidence scoring implemented
-- New event types working
-- Metadata layer (committee_event_kind, deadline_kind, etc.)
-- Person-based deduplication for committee_formed
-- Metadata upsert on re-runs
-- Regression test passed on existing SOUs
-
-#### C. Metadata Agent v2 (pending)
-- Add `organization` entity type
-- Remove ministry extraction
-- Strengthen validation rules
+1. Budget propositions (Prop. 2025/26:1, 2) use Excel files, not PDFs
+2. Lagstiftningskedja resolution at 2% (improvement planned for later)
+3. Scraper occasionally extracts 19/20 items per page (non-blocking)
 
 ---
 
-### Phase 5.2: Propositions (Ready to Start)
+## Phase 5.3: Remisser + Remissvar (Next)
 
-See detailed plan below.
+**Status:** Ready to Start
+
+### Objectives
+
+1. **Remiss Scraper**
+   - Scrape `regeringen.se/remisser`
+   - Extract remiss period dates
+   - Link to parent SOU/proposition
+
+2. **Remissvar Handling**
+   - Extract stakeholder organizations
+   - Support multiple orgs per remissvar
+   - Link to parent remiss
+
+3. **Agent Updates**
+   - Timeline Agent: `remiss_period_start`, `remiss_period_end` events
+   - Metadata Agent: Organization entity extraction
+
+### Pilot Strategy
+
+1. Select 5 representative remisser
+2. Run full pipeline (scrape → extract → agents)
+3. Validate stakeholder extraction
+4. Scale to full dataset
+
+### Success Criteria
+
+- [ ] Remisser with text extracted
+- [ ] Remiss period events in timeline
+- [ ] Stakeholder organizations extracted
+- [ ] Links to parent documents
 
 ---
 
-### Phase 5.3: Remisser + Remissvar (Week 4-5)
+## Phase 5.4: Committee Reports + Laws
 
-#### A. Remiss Scraper
-- Scrape regeringen.se/remisser
-- Extract remiss period dates
-- Link to parent SOU/proposition
+**Status:** Planned
 
-#### B. Remissvar Handling
-- Extract stakeholder organizations
-- Multiple orgs per remissvar
-- Link to parent remiss
-
-#### C. Validation
-- 10 sample remisser
-- Stakeholder extraction accuracy
-- Remiss period events
-
-### Phase 5.4: Committee Reports + Laws (Week 6-7)
-
-#### A. Committee Report Scraper
-- Scrape riksdagen.se/betankanden
+### A. Committee Report Scraper
+- Scrape `riksdagen.se/betankanden`
 - Extract committee names
 - Link to propositions
 
-#### B. Law Scraper
-- Scrape riksdagen.se/lagar
+### B. Law Scraper
+- Scrape `riksdagen.se/lagar`
 - Extract enactment dates
 - Link to source propositions
 
-#### C. Validation
-- 5 samples each type
-- Cross-document linking
-- Timeline continuity
-
-### Phase 5.5: Integration (Week 8)
-
-- End-to-end testing
-- Performance benchmarks
-- Documentation update
-- Phase completion summary
-
 ---
 
-## Test Plan Summary
+## Phase 5.5: Integration
 
-### Per Document Type
+**Status:** Planned
 
-| Document Type | Sample Size | Key Validations |
-|--------------|-------------|-----------------|
-| Propositions | 10 | Timeline events, Genvägar links |
-| Remisser | 10 | Period dates, stakeholders |
-| Remissvar | 20 | Stakeholder orgs extraction |
-| Committee Reports | 5 | Committee names, prop links |
-| Laws | 5 | Enactment dates, source links |
-
-### Regression Tests
-
-- [x] Existing SOUs still process correctly
-- [x] Timeline Agent v2.1 events not duplicated
-- [ ] Entity deduplication works
-- [ ] Search includes all doc types
-- [ ] Performance < 500ms
-
-### Data Quality Metrics
-
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Citation coverage | 95%+ | source_page + source_excerpt present |
-| Entity precision | 98%+ | No placeholder entities |
-| Reference accuracy | 90%+ | Correct reference_type classification |
-| Confidence calibration | ✅ Validated | High = actual day, Medium = month, Low = year |
+- End-to-end testing across all document types
+- Performance benchmarks
+- Cross-document timeline visualization
+- Phase completion summary
 
 ---
 
 ## Artifact Checklist
 
+### Phase 5.1 ✅
 - [x] Database migration SQL
-- [x] Timeline Agent v2.1 (agent-timeline-v2/index.ts)
-- [ ] Metadata Agent v2 (agent-metadata/index.ts updated)
-- [ ] Proposition scraper (scrape-proposition-index/index.ts)
-- [ ] Genvägar classifier (_shared/genvag-classifier.ts)
-- [ ] Head Detective v3 (agent-head-detective/index.ts updated)
-- [x] Test documentation (docs/testing/phase-5-test-plan.md)
+- [x] Timeline Agent v2.1
+- [x] Test documentation
+
+### Phase 5.2 ✅
+- [x] Proposition scraper
+- [x] Timeline Agent v2.2
+- [x] Metadata Agent v2.2
+- [x] Genvägar classifier
+- [x] Non-PDF handling
+- [x] Completion summary
+
+### Phase 5.3 (Pending)
+- [ ] Remiss scraper
+- [ ] Remissvar handling
+- [ ] Organization entity support
+- [ ] Stakeholder extraction
+
+### Phase 5.4 (Pending)
+- [ ] Committee report scraper
+- [ ] Law scraper
+- [ ] Riksdagen API integration
 
 ---
 
-## Ready for Phase 5.2
+## Data Quality Metrics
 
-Next steps:
-1. **Review Phase 5.2 plan** (see phase-5-legislative-graph-expansion.md)
-2. **Implement Proposition scraper**
-3. **Extend Timeline Agent for proposition events**
-4. **Extend Metadata Agent for proposition entities**
+| Metric | Phase 5.1 | Phase 5.2 | Target |
+|--------|-----------|-----------|--------|
+| Citation coverage | 95%+ | 95%+ | 95%+ |
+| Entity precision | 98%+ | 98%+ | 98%+ |
+| Reference extraction | N/A | 537 refs | ✅ |
+| Timeline events | 69 | 213 | ✅ |
