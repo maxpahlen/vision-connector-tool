@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { DOMParser } from 'https://deno.land/x/deno_dom@v0.1.43/deno-dom-wasm.ts';
+import { DOMParser, Element } from 'https://deno.land/x/deno_dom@v0.1.43/deno-dom-wasm.ts';
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { 
   detectDocumentType, 
@@ -11,6 +11,12 @@ import {
   extractAndScorePdfs,
   type PdfCandidate
 } from '../_shared/pdf-scorer.ts';
+import {
+  classifyGenvagLink,
+  extractDocNumber,
+  type GenvagLink,
+  type ClassifiedReference
+} from '../_shared/genvag-classifier.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -34,6 +40,20 @@ const RequestSchema = z.object({
   { message: 'Either url or regeringen_url must be provided' }
 );
 
+interface LagstiftningskedjaLink {
+  url: string;
+  anchorText: string;
+  docType?: string;
+}
+
+interface ExtractedReference {
+  url: string;
+  anchorText: string;
+  referenceType: string;
+  targetDocNumber: string | null;
+  confidence: string;
+}
+
 interface DocumentMetadata {
   docType: 'sou' | 'directive' | 'ds' | 'unknown';
   docNumber: string;
@@ -49,6 +69,84 @@ interface DocumentMetadata {
   extraction_log: string[];
   html_snapshot?: string;
   last_extraction_attempt: string;
+  lagstiftningskedja_links: LagstiftningskedjaLink[];
+  extracted_references: ExtractedReference[];
+}
+
+/**
+ * Extract Lagstiftningskedja (legislative chain) links from detail page
+ */
+function extractLagstiftningskedjaLinks(doc: any, baseUrl: string): LagstiftningskedjaLink[] {
+  const links: LagstiftningskedjaLink[] = [];
+  
+  // Look for lagstiftningskedja/genvägar sections
+  const sections = doc.querySelectorAll(
+    '[class*="lagstiftning"], [class*="legislative"], [class*="related"], ' +
+    '[class*="genvag"], [class*="shortcut"], .publication-shortcuts, .shortcuts'
+  );
+  
+  console.log(`[Lagstiftningskedja] Found ${sections.length} potential sections`);
+  
+  for (let i = 0; i < sections.length; i++) {
+    const section = sections[i] as Element;
+    const sectionLinks = section.querySelectorAll('a[href]');
+    
+    for (let j = 0; j < sectionLinks.length; j++) {
+      const link = sectionLinks[j] as Element;
+      let url = link.getAttribute('href') || '';
+      const anchorText = link.textContent?.trim() || '';
+      
+      if (!url || url === '#' || !anchorText) continue;
+      
+      if (!url.startsWith('http')) {
+        url = `https://www.regeringen.se${url.startsWith('/') ? '' : '/'}${url}`;
+      }
+      
+      // Determine doc type from URL
+      let docType: string | undefined;
+      if (url.includes('/statens-offentliga-utredningar/')) docType = 'sou';
+      else if (url.includes('/kommittedirektiv/')) docType = 'directive';
+      else if (url.includes('/propositioner/') || url.includes('/proposition/')) docType = 'proposition';
+      else if (url.includes('/remisser/')) docType = 'remiss';
+      else if (url.includes('/departementsserien/')) docType = 'ds';
+      
+      links.push({ url, anchorText, docType });
+    }
+  }
+  
+  // Also check the main content area for linked documents
+  const mainContent = doc.querySelector('main#content, .l-main, article');
+  if (mainContent) {
+    // Look for links in "Relaterade" or similar sections
+    const relatedLinks = mainContent.querySelectorAll('a[href*="/remisser/"], a[href*="/kommittedirektiv/"], a[href*="/statens-offentliga-utredningar/"], a[href*="/propositioner/"]');
+    
+    for (let i = 0; i < relatedLinks.length; i++) {
+      const link = relatedLinks[i] as Element;
+      let url = link.getAttribute('href') || '';
+      const anchorText = link.textContent?.trim() || '';
+      
+      if (!url || url === '#' || !anchorText) continue;
+      
+      if (!url.startsWith('http')) {
+        url = `https://www.regeringen.se${url.startsWith('/') ? '' : '/'}${url}`;
+      }
+      
+      // Check if already in list
+      if (links.some(l => l.url === url)) continue;
+      
+      let docType: string | undefined;
+      if (url.includes('/statens-offentliga-utredningar/')) docType = 'sou';
+      else if (url.includes('/kommittedirektiv/')) docType = 'directive';
+      else if (url.includes('/propositioner/') || url.includes('/proposition/')) docType = 'proposition';
+      else if (url.includes('/remisser/')) docType = 'remiss';
+      else if (url.includes('/departementsserien/')) docType = 'ds';
+      
+      links.push({ url, anchorText, docType });
+    }
+  }
+  
+  console.log(`[Lagstiftningskedja] Extracted ${links.length} links total`);
+  return links;
 }
 
 function parseRegeringenDocument(html: string, url: string): DocumentMetadata {
@@ -62,6 +160,25 @@ function parseRegeringenDocument(html: string, url: string): DocumentMetadata {
   const docType = docTypeInfo?.type || 'unknown';
   
   const pdfResult = extractAndScorePdfs(doc, docType, docNumber);
+  
+  // Extract Lagstiftningskedja links
+  const lagstiftningskedjaLinks = extractLagstiftningskedjaLinks(doc, url);
+  
+  // Classify each link using genvag-classifier
+  const extractedReferences: ExtractedReference[] = lagstiftningskedjaLinks.map(link => {
+    const genvagLink: GenvagLink = { url: link.url, anchorText: link.anchorText };
+    const classification = classifyGenvagLink(genvagLink);
+    
+    return {
+      url: link.url,
+      anchorText: link.anchorText,
+      referenceType: classification.referenceType,
+      targetDocNumber: classification.targetDocNumber,
+      confidence: classification.confidence,
+    };
+  });
+  
+  console.log(`[Document] Extracted ${extractedReferences.length} references from ${docNumber || url}`);
   
   return {
     docType: (docType as 'sou' | 'directive' | 'ds') || 'unknown',
@@ -78,6 +195,8 @@ function parseRegeringenDocument(html: string, url: string): DocumentMetadata {
     extraction_log: pdfResult.extractionLog,
     html_snapshot: pdfResult.htmlSnapshot || undefined,
     last_extraction_attempt: new Date().toISOString(),
+    lagstiftningskedja_links: lagstiftningskedjaLinks,
+    extracted_references: extractedReferences,
   };
 }
 
@@ -258,6 +377,51 @@ Deno.serve(async (req) => {
       }
     }
     
+    // Store document references from Lagstiftningskedja
+    if (metadata.extracted_references.length > 0) {
+      console.log(`Storing ${metadata.extracted_references.length} document references...`);
+      
+      let refsCreated = 0;
+      for (const ref of metadata.extracted_references) {
+        // Try to find target document if we have a doc number
+        let targetDocumentId: string | null = null;
+        if (ref.targetDocNumber) {
+          const { data: targetDoc } = await supabase
+            .from('documents')
+            .select('id')
+            .eq('doc_number', ref.targetDocNumber)
+            .maybeSingle();
+          
+          if (targetDoc) {
+            targetDocumentId = targetDoc.id;
+          }
+        }
+        
+        // Insert reference (using source_excerpt to store anchor text for forensic traceability)
+        const { error: refError } = await supabase
+          .from('document_references')
+          .upsert({
+            source_document_id: documentId,
+            target_document_id: targetDocumentId,
+            target_doc_number: ref.anchorText, // Store full anchor text as doc number for matching
+            reference_type: ref.referenceType,
+            confidence: ref.confidence,
+            source_excerpt: ref.anchorText,
+          }, {
+            onConflict: 'source_document_id,target_doc_number',
+            ignoreDuplicates: true,
+          });
+        
+        if (refError) {
+          console.error(`Error inserting reference: ${refError.message}`);
+        } else {
+          refsCreated++;
+        }
+      }
+      
+      console.log(`Created ${refsCreated} document references for ${metadata.docNumber}`);
+    }
+    
     if (metadata.pdfUrl && metadata.pdf_confidence_score >= 40) {
       console.log(`PDF found with ${metadata.pdf_confidence_score}% confidence.`);
       
@@ -332,6 +496,8 @@ Deno.serve(async (req) => {
         pdf_url: metadata.pdfUrl,
         pdf_confidence: metadata.pdf_confidence_score,
         pdf_status: metadata.pdf_status,
+        references_extracted: metadata.extracted_references.length,
+        lagstiftningskedja_links: metadata.lagstiftningskedja_links.length,
         metadata,
       }),
       { 
