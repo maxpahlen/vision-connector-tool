@@ -43,6 +43,12 @@ Provide intelligence layer for strategic decision-making by analyzing patterns a
 - **Entity prominence:** Which entities are becoming more/less active?
 - **Policy cycles:** Identify recurring patterns in legislative timing
 
+#### 6. Semantic Linking Across Policy Documents
+- **Deep conceptual similarity:** Surface non-obvious connections across SOU, Dir., Prop., Remissvar
+- **Cross-temporal discovery:** Find related proposals across different years
+- **Outcome-agnostic matching:** Connect rejected SOUs with revived propositions
+- **Policy memory:** Enable questions like "Has this idea been attempted before?"
+
 ### Out of Scope
 
 - ❌ User behavior tracking (privacy concerns)
@@ -58,6 +64,7 @@ Provide intelligence layer for strategic decision-making by analyzing patterns a
 - [ ] Entity co-occurrence network visualized and explorable
 - [ ] Change tracking dashboard operational
 - [ ] Prediction model validated against historical data (>75% accuracy)
+- [ ] Semantic links discoverable in Document Detail UI with >80% precision
 - [ ] All insights cite evidence (no black-box predictions)
 
 ---
@@ -340,6 +347,68 @@ Rationale:
 - Returns trend data for charting
 - Supports time range, aggregation level (monthly, yearly)
 
+**5. `get-semantic-links`**
+- Returns semantically similar documents for a given document
+- Includes match scores, explanations, and shared evidence
+
+**6. `generate-document-summary`**
+- Generates structured summaries for embedding
+- Extracts policy aims, actors, keywords, ideological framing
+
+### Semantic Linking Module
+
+> **Detailed Plan:** See [SEMANTIC_LINK_AGENT_PLAN.md](../SEMANTIC_LINK_AGENT_PLAN.md)
+
+#### Purpose
+Surface non-obvious, high-value connections across policy documents based on deep conceptual similarity rather than explicit references.
+
+#### Components
+
+**A. Summarizer Agent**
+- Generates 200-500 word structured summaries per document
+- Extracts: policy aim, core recommendations, key actors, policy domains, keywords
+- Flags outcome status (enacted, rejected, pending, superseded)
+
+**B. Embedding + Indexing**
+- **Recommended model:** `intfloat/multilingual-e5-large` (1024 dims, excellent Swedish support)
+- **Vector store:** pgvector (native PostgreSQL, no extra infrastructure)
+- Index all summaries for scalable similarity search
+
+**C. Matching Engine**
+Composite scoring algorithm:
+
+| Signal | Weight | Max Contribution |
+|--------|--------|------------------|
+| Embedding similarity | 50% | 0.50 |
+| Shared utredare | +0.15 each | 0.30 |
+| Shared keywords | +0.02 each | 0.20 |
+| Shared policy domains | +0.05 each | 0.15 |
+| Shared remissinstans | +0.05 each | 0.15 |
+| Temporal distance | -0.01/year | -0.20 |
+
+**D. Link Storage**
+```sql
+CREATE TABLE semantic_links (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_document_id UUID NOT NULL REFERENCES documents(id),
+  target_document_id UUID NOT NULL REFERENCES documents(id),
+  score FLOAT NOT NULL CHECK (score >= 0 AND score <= 1),
+  confidence TEXT NOT NULL, -- 'high', 'medium', 'low'
+  explanation TEXT NOT NULL, -- Human-readable reasoning
+  shared_entities JSONB DEFAULT '[]',
+  keywords_overlap JSONB DEFAULT '[]',
+  score_breakdown JSONB DEFAULT '{}',
+  status TEXT DEFAULT 'auto', -- 'auto', 'verified', 'rejected'
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(source_document_id, target_document_id)
+);
+```
+
+#### Key Requirements
+- **Precision > Recall:** Only surface confident matches (score > 0.6)
+- **Explainable:** Every link includes human-readable explanation
+- **Auditable:** Admin can verify or reject auto-generated links
+
 ---
 
 ## Testing Strategy
@@ -443,6 +512,7 @@ REFRESH MATERIALIZED VIEW mv_top_influencers;
 
 - [Phase 6: Relationship Inference](./phase-6-relationship-inference.md)
 - [Product Roadmap](../PRODUCT_ROADMAP.md)
+- [Semantic Link Agent Plan](../SEMANTIC_LINK_AGENT_PLAN.md) — Detailed technical plan for semantic linking
 
 ---
 
@@ -456,9 +526,11 @@ REFRESH MATERIALIZED VIEW mv_top_influencers;
 **Explainability First:**
 - All predictions include rationale
 - All influence scores cite evidence
+- All semantic links include human-readable explanations
 - No black-box models
 
 **Future Extensions:**
 - Natural language queries ("What climate legislation is coming?")
 - Anomaly detection (unusual patterns in legislative activity)
 - Recommendation engine (suggest related cases to users)
+- "Find similar" functionality from any document
