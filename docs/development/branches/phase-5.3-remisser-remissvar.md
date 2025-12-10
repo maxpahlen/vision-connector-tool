@@ -109,7 +109,19 @@ Tracks individual remissvar files:
 - [x] Admin UI component for testing
 - [x] **FIX**: Add strict URL validation to reject generic /remisser/ page
 - [x] **FIX**: Implement two-phase discovery (references → page scrape)
+- [x] **FIX**: Add Lagstiftningskedja extraction to `scrape-regeringen-document` (was only in proposition scraper)
+- [ ] Re-scrape existing SOUs to populate document_references
 - [ ] Validate on 10+ SOUs with working remiss chains
+
+### Lagstiftningskedja Extraction (Added 2025-12-10)
+
+The `scrape-regeringen-document` function now extracts Lagstiftningskedja/Genvägar links for SOUs and Directives, not just propositions. This populates the `document_references` table with links to:
+- Related remisser
+- Related directives  
+- Related SOUs
+- Related propositions
+
+This enables the remiss scraper to find remiss pages via the document_references table instead of relying solely on page scraping.
 
 ### Phase 2: Remiss Index Scraping (After Validation)
 - [ ] Scraper for regeringen.se/remisser with pagination
