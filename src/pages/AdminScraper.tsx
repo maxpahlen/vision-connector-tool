@@ -12,7 +12,8 @@ import { PropositionScraperTest } from '@/components/admin/PropositionScraperTes
 import { PropositionTextExtractorTest } from '@/components/admin/PropositionTextExtractorTest';
 import { PropositionAgentTest } from '@/components/admin/PropositionAgentTest';
 import { PropositionBatchProcessor } from '@/components/admin/PropositionBatchProcessor';
-import { FileText, Bot, Database, Settings, Play } from 'lucide-react';
+import { RemissScraperTest } from '@/components/admin/RemissScraperTest';
+import { FileText, Bot, Database, Settings, Play, FileSearch } from 'lucide-react';
 
 export default function AdminScraper() {
   return (
@@ -24,8 +25,12 @@ export default function AdminScraper() {
         </p>
       </div>
 
-      <Tabs defaultValue="propositions" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+      <Tabs defaultValue="remiss" className="w-full">
+        <TabsList className="grid w-full grid-cols-6">
+          <TabsTrigger value="remiss" className="flex items-center gap-2">
+            <FileSearch className="h-4 w-4" />
+            Remisser
+          </TabsTrigger>
           <TabsTrigger value="propositions" className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
             Propositions
@@ -47,6 +52,20 @@ export default function AdminScraper() {
             System
           </TabsTrigger>
         </TabsList>
+
+        {/* Remisser Tab - Phase 5.3 */}
+        <TabsContent value="remiss" className="space-y-6 mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Phase 5.3: Remisser + Remissvar</CardTitle>
+              <CardDescription>
+                Scan SOU documents to find remiss pages and extract remissvar responses
+              </CardDescription>
+            </CardHeader>
+          </Card>
+          
+          <RemissScraperTest />
+        </TabsContent>
 
         {/* Propositions Tab - Phase 5.2 Pilot Focus */}
         <TabsContent value="propositions" className="space-y-6 mt-6">
@@ -131,6 +150,7 @@ export default function AdminScraper() {
             </CardHeader>
             <CardContent>
               <div className="text-sm text-muted-foreground">
+                <p>• Remiss Scraper: v5.3.0 (SOU-linked remisser)</p>
                 <p>• Metadata Agent: v2.2.0 (proposition-aware)</p>
                 <p>• Timeline Agent: v2.2 (proposition events)</p>
                 <p>• Proposition Scraper: v5.2.4 (diagnostic logging)</p>
