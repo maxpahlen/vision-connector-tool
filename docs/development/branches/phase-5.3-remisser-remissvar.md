@@ -12,6 +12,17 @@ Phase 5.3 implements the ingestion of Swedish government consultation documents 
 
 ---
 
+## Coverage Baseline (2025-12-10)
+
+Initial analysis revealed:
+- **Total SOUs**: 71
+- **SOUs with remiss references in document_references**: 0 (references are from propositions, not SOUs)
+- **Propositions with remiss references**: 65
+
+This means we must rely on page scraping with strict URL validation.
+
+---
+
 ## Objectives
 
 ### Primary Goals
@@ -23,6 +34,35 @@ Phase 5.3 implements the ingestion of Swedish government consultation documents 
 - Scrape the full remiss index at regeringen.se/remisser
 - Match remisser to SOUs by title/document number
 - Extract stakeholder organizations as entities
+
+---
+
+## Discovery Strategy (Fixed 2025-12-10)
+
+### Problem
+Initial implementation incorrectly matched generic `/remisser/` index page instead of specific remiss pages.
+
+### Solution: Two-Phase Resolution
+
+**Phase A: Check document_references**
+- Query `document_references` for links containing "remiss" in `target_doc_number`
+- Extract URL if present in `source_excerpt`
+- Set `discovery_method = 'references'`
+
+**Phase B: Page Scrape with Strict Validation**
+- Only accept URLs matching pattern: `/remisser/YYYY/MM/...`
+- Reject generic `/remisser/` or `/remisser` URLs
+- Search in Lagstiftningskedja/Genvägar sections first
+- Score candidate links by relevance
+- Set `discovery_method = 'page_scrape'`
+
+### URL Validation Rule
+```typescript
+function isValidRemissUrl(url: string): boolean {
+  const datePathPattern = /\/remisser\/\d{4}\/\d{2}\//;
+  return datePathPattern.test(url);
+}
+```
 
 ---
 
@@ -39,7 +79,7 @@ Tracks remiss pages linked to parent SOUs:
 - remiss_deadline (date)
 - status (text: pending, scraped, failed)
 - remissvar_count (integer)
-- metadata (jsonb)
+- metadata (jsonb) -- includes discovery_method
 - created_at, updated_at (timestamptz)
 ```
 
@@ -67,6 +107,8 @@ Tracks individual remissvar files:
 - [x] Edge function `scrape-sou-remiss` to find remiss links from SOU pages
 - [x] Parse remiss pages to extract remissvar documents
 - [x] Admin UI component for testing
+- [x] **FIX**: Add strict URL validation to reject generic /remisser/ page
+- [x] **FIX**: Implement two-phase discovery (references → page scrape)
 - [ ] Validate on 10+ SOUs with working remiss chains
 
 ### Phase 2: Remiss Index Scraping (After Validation)
