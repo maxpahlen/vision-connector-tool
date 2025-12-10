@@ -74,10 +74,49 @@ interface DocumentMetadata {
 }
 
 /**
+ * Check if a URL is a valid government document link (not social media, etc.)
+ */
+function isValidDocumentUrl(url: string): boolean {
+  // Reject social media and sharing links
+  const invalidPatterns = [
+    'facebook.com',
+    'twitter.com',
+    'linkedin.com',
+    'x.com',
+    'sharer',
+    'share',
+    'mailto:',
+    'javascript:',
+    '#',
+  ];
+  
+  const lowerUrl = url.toLowerCase();
+  for (const pattern of invalidPatterns) {
+    if (lowerUrl.includes(pattern)) return false;
+  }
+  
+  // Must be a regeringen.se link to a document
+  return url.includes('regeringen.se/');
+}
+
+/**
+ * Determine document type from URL path
+ */
+function inferDocTypeFromUrl(url: string): string | undefined {
+  if (url.includes('/statens-offentliga-utredningar/')) return 'sou';
+  if (url.includes('/kommittedirektiv/')) return 'directive';
+  if (url.includes('/propositioner/') || url.includes('/proposition/')) return 'proposition';
+  if (url.includes('/remisser/')) return 'remiss';
+  if (url.includes('/departementsserien/')) return 'ds';
+  return undefined;
+}
+
+/**
  * Extract Lagstiftningskedja (legislative chain) links from detail page
  */
 function extractLagstiftningskedjaLinks(doc: any, baseUrl: string): LagstiftningskedjaLink[] {
   const links: LagstiftningskedjaLink[] = [];
+  const seenUrls = new Set<string>();
   
   // Look for lagstiftningskedja/genvägar sections
   const sections = doc.querySelectorAll(
@@ -102,22 +141,23 @@ function extractLagstiftningskedjaLinks(doc: any, baseUrl: string): Lagstiftning
         url = `https://www.regeringen.se${url.startsWith('/') ? '' : '/'}${url}`;
       }
       
-      // Determine doc type from URL
-      let docType: string | undefined;
-      if (url.includes('/statens-offentliga-utredningar/')) docType = 'sou';
-      else if (url.includes('/kommittedirektiv/')) docType = 'directive';
-      else if (url.includes('/propositioner/') || url.includes('/proposition/')) docType = 'proposition';
-      else if (url.includes('/remisser/')) docType = 'remiss';
-      else if (url.includes('/departementsserien/')) docType = 'ds';
+      // Skip invalid or duplicate URLs
+      if (!isValidDocumentUrl(url)) continue;
+      if (seenUrls.has(url)) continue;
+      seenUrls.add(url);
       
-      links.push({ url, anchorText, docType });
+      const docType = inferDocTypeFromUrl(url);
+      // Only include links that are identifiable document types
+      if (docType) {
+        links.push({ url, anchorText, docType });
+      }
     }
   }
   
   // Also check the main content area for linked documents
   const mainContent = doc.querySelector('main#content, .l-main, article');
   if (mainContent) {
-    // Look for links in "Relaterade" or similar sections
+    // Look for links to government documents specifically
     const relatedLinks = mainContent.querySelectorAll('a[href*="/remisser/"], a[href*="/kommittedirektiv/"], a[href*="/statens-offentliga-utredningar/"], a[href*="/propositioner/"]');
     
     for (let i = 0; i < relatedLinks.length; i++) {
@@ -131,21 +171,19 @@ function extractLagstiftningskedjaLinks(doc: any, baseUrl: string): Lagstiftning
         url = `https://www.regeringen.se${url.startsWith('/') ? '' : '/'}${url}`;
       }
       
-      // Check if already in list
-      if (links.some(l => l.url === url)) continue;
+      // Skip invalid or duplicate URLs  
+      if (!isValidDocumentUrl(url)) continue;
+      if (seenUrls.has(url)) continue;
+      seenUrls.add(url);
       
-      let docType: string | undefined;
-      if (url.includes('/statens-offentliga-utredningar/')) docType = 'sou';
-      else if (url.includes('/kommittedirektiv/')) docType = 'directive';
-      else if (url.includes('/propositioner/') || url.includes('/proposition/')) docType = 'proposition';
-      else if (url.includes('/remisser/')) docType = 'remiss';
-      else if (url.includes('/departementsserien/')) docType = 'ds';
-      
-      links.push({ url, anchorText, docType });
+      const docType = inferDocTypeFromUrl(url);
+      if (docType) {
+        links.push({ url, anchorText, docType });
+      }
     }
   }
   
-  console.log(`[Lagstiftningskedja] Extracted ${links.length} links total`);
+  console.log(`[Lagstiftningskedja] Extracted ${links.length} valid document links`);
   return links;
 }
 
