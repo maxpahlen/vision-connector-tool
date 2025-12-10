@@ -2,14 +2,13 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { DOMParser, Element } from 'https://deno.land/x/deno_dom@v0.1.43/deno-dom-wasm.ts';
 
 /**
- * Phase 5.3: Remiss Scraper for SOU Documents
+ * Phase 5.3: Remiss Scraper for SOU Documents (Fixed Strategy)
  * 
- * This edge function:
- * 1. Takes an SOU document from our database
- * 2. Visits its regeringen.se page
- * 3. Looks for "Remiss" links in Lagstiftningskedja/Genvägar sections
- * 4. Parses the remiss page to extract remissvar documents
- * 5. Stores results in remiss_documents and remiss_responses tables
+ * Two-phase resolution strategy:
+ * 1. Phase A: Check document_references for existing remiss links
+ * 2. Phase B: Scrape SOU page for specific remiss links (not generic index)
+ * 
+ * Critical: Must NOT match generic /remisser/ index page
  */
 
 const corsHeaders = {
@@ -37,58 +36,132 @@ interface RemissPageResult {
   extraction_log: string[];
 }
 
+type DiscoveryMethod = 'references' | 'page_scrape' | 'not_found';
+
 /**
- * Extract remiss link from SOU page's Lagstiftningskedja/Genvägar section
+ * Validate that a remiss URL is specific (not the generic index page)
+ * Valid: /remisser/2024/01/remiss-av-betankandet-...
+ * Invalid: /remisser/ or /remisser
  */
-function findRemissLink(html: string, baseUrl: string): string | null {
+function isValidRemissUrl(url: string): boolean {
+  // Must have date path like /remisser/YYYY/MM/
+  const datePathPattern = /\/remisser\/\d{4}\/\d{2}\//;
+  return datePathPattern.test(url);
+}
+
+/**
+ * Phase A: Try to find remiss URL from document_references table
+ */
+async function findRemissFromReferences(
+  supabase: any,
+  documentId: string
+): Promise<{ url: string; method: DiscoveryMethod } | null> {
+  // Look for references where target_doc_number contains "remiss"
+  const { data: refs, error } = await supabase
+    .from('document_references')
+    .select('target_doc_number, source_excerpt')
+    .eq('source_document_id', documentId)
+    .ilike('target_doc_number', '%remiss%');
+
+  if (error || !refs || refs.length === 0) {
+    return null;
+  }
+
+  // Try to extract a URL from the references
+  for (const ref of refs as Array<{ target_doc_number: string | null; source_excerpt: string | null }>) {
+    const text = ref.target_doc_number || '';
+    
+    // Check if we can construct a remiss URL from the reference
+    // Pattern: "Remiss av betänkandet <title> (SOU YYYY:XX)"
+    const souMatch = text.match(/SOU\s*(\d{4}):(\d+)/i);
+    if (souMatch) {
+      // We have the SOU number - but we can't construct the exact URL
+      // because the slug format varies
+      console.log(`Found remiss reference mentioning: ${text.substring(0, 100)}`);
+    }
+    
+    // If source_excerpt contains a URL
+    const urlMatch = (ref.source_excerpt || '').match(/https?:\/\/[^\s"'<>]+remisser\/\d{4}\/\d{2}\/[^\s"'<>]+/);
+    if (urlMatch && isValidRemissUrl(urlMatch[0])) {
+      return { url: urlMatch[0], method: 'references' };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Phase B: Scrape SOU page for specific remiss link
+ * Only accepts URLs with date paths, rejects generic /remisser/ page
+ */
+function findRemissLinkFromPage(html: string, baseUrl: string): string | null {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   if (!doc) return null;
 
-  const log: string[] = [];
+  // Only search within the main content area
+  const mainContent = doc.querySelector('main#content, .l-main, article');
+  const searchArea = mainContent || doc.body;
+  if (!searchArea) return null;
 
-  // Look for Lagstiftningskedja or Genvägar sections
-  const sections = doc.querySelectorAll('.publication-shortcuts, .shortcuts, [class*="genvag"], [class*="shortcut"]');
-  log.push(`Found ${sections.length} shortcut sections`);
+  // Look specifically in Lagstiftningskedja or Genvägar sections
+  const shortcutSections = searchArea.querySelectorAll(
+    '.publication-shortcuts, .shortcuts, [class*="genvag"], [class*="shortcut"], .related-links'
+  );
 
-  // Also look for any links containing "remiss" in the page
-  const allLinks = doc.querySelectorAll('a[href*="/remiss"]');
-  
-  for (const link of allLinks) {
-    const href = (link as Element).getAttribute('href');
-    const text = (link as Element).textContent?.toLowerCase() || '';
-    
-    // Match remiss links but exclude remissvar links
-    if (href && (text.includes('remiss') || href.includes('/remisser/'))) {
-      // Skip if it's a remissvar link
-      if (text.includes('remissvar') || text.includes('svar')) continue;
-      
-      // Build full URL
-      const fullUrl = href.startsWith('http') ? href : `https://www.regeringen.se${href}`;
-      log.push(`Found remiss link: ${fullUrl}`);
-      return fullUrl;
+  const candidateLinks: Array<{ url: string; score: number; text: string }> = [];
+
+  // Helper to process links
+  const processLink = (link: Element, sectionBonus: number) => {
+    const href = link.getAttribute('href');
+    if (!href) return;
+
+    const text = link.textContent?.toLowerCase() || '';
+    const fullUrl = href.startsWith('http') ? href : `https://www.regeringen.se${href}`;
+
+    // Skip remissvar/svar links
+    if (text.includes('remissvar') || text.includes('svar på remiss')) return;
+
+    // Must contain "remiss" somewhere
+    if (!text.includes('remiss') && !fullUrl.includes('/remisser/')) return;
+
+    // Critical: Must be a specific remiss page, not the index
+    if (!isValidRemissUrl(fullUrl)) {
+      console.log(`Rejecting generic remiss URL: ${fullUrl}`);
+      return;
     }
-  }
 
-  // Fallback: look in specific containers
-  const containers = doc.querySelectorAll('.block-related, .related-content, aside');
-  for (const container of containers) {
-    const containerEl = container as Element;
-    const links = containerEl.querySelectorAll('a');
+    // Score the link
+    let score = sectionBonus;
+    if (text.includes('remiss av')) score += 3;
+    if (text.includes('betänkandet')) score += 2;
+    if (text.startsWith('remiss')) score += 1;
+
+    candidateLinks.push({ url: fullUrl, score, text: text.substring(0, 50) });
+  };
+
+  // First, search in shortcut sections (higher priority)
+  for (const section of shortcutSections) {
+    const links = (section as Element).querySelectorAll('a[href*="/remiss"]');
     for (const link of links) {
-      const href = (link as Element).getAttribute('href');
-      const text = (link as Element).textContent?.toLowerCase() || '';
-      
-      if (href && text.includes('remiss') && !text.includes('remissvar')) {
-        const fullUrl = href.startsWith('http') ? href : `https://www.regeringen.se${href}`;
-        log.push(`Found remiss link in container: ${fullUrl}`);
-        return fullUrl;
-      }
+      processLink(link as Element, 10);
     }
   }
 
-  log.push('No remiss link found');
-  console.log(log.join('\n'));
-  return null;
+  // Fallback: search all links in main content (lower priority)
+  const allLinks = searchArea.querySelectorAll('a[href*="/remiss"]');
+  for (const link of allLinks) {
+    processLink(link as Element, 0);
+  }
+
+  if (candidateLinks.length === 0) {
+    console.log('No valid remiss links found on page');
+    return null;
+  }
+
+  // Sort by score and return the best match
+  candidateLinks.sort((a, b) => b.score - a.score);
+  console.log(`Found ${candidateLinks.length} candidate remiss links, best: ${candidateLinks[0].url} (score: ${candidateLinks[0].score})`);
+  return candidateLinks[0].url;
 }
 
 /**
@@ -102,11 +175,9 @@ function classifyFileType(url: string, linkText: string): 'pdf' | 'word' | 'exce
   if (lowerUrl.match(/\.(docx?|rtf)$/) || lowerText.includes('word')) return 'word';
   if (lowerUrl.match(/\.(xlsx?|csv)$/) || lowerText.includes('excel')) return 'excel';
   
-  // Check for contentdisposition hints in URL
   if (lowerUrl.includes('contentdisposition=attachment')) {
     if (lowerUrl.includes('.pdf')) return 'pdf';
-    // Default to PDF for government document downloads
-    return 'pdf';
+    return 'pdf'; // Default for government downloads
   }
   
   return 'other';
@@ -116,14 +187,9 @@ function classifyFileType(url: string, linkText: string): 'pdf' | 'word' | 'exce
  * Extract organization name from filename or link text
  */
 function extractOrganization(filename: string, linkText: string): string | null {
-  // Common patterns in remissvar filenames
-  // Example: "Remissvar-Sveriges-Kommuner-och-Regioner.pdf"
-  // Example: "Naturvårdsverket.pdf"
-  
   const text = linkText || filename;
   if (!text) return null;
   
-  // Remove common prefixes
   let org = text
     .replace(/^remissvar[-_\s]*/i, '')
     .replace(/\.pdf$/i, '')
@@ -131,9 +197,7 @@ function extractOrganization(filename: string, linkText: string): string | null 
     .replace(/[-_]/g, ' ')
     .trim();
   
-  // If too short, it's probably not a real org name
   if (org.length < 3) return null;
-  
   return org;
 }
 
@@ -180,7 +244,6 @@ function parseRemissPage(html: string, remissUrl: string): RemissPageResult {
   const downloadSections = doc.querySelectorAll('.download-document, .document-list, [class*="download"], [class*="remissvar"]');
   log.push(`Found ${downloadSections.length} download sections`);
 
-  // Also search for direct PDF links
   const allLinks = doc.querySelectorAll('a[href*=".pdf"], a[href*="contentdisposition=attachment"], a[href*="/download/"]');
   log.push(`Found ${allLinks.length} potential document links`);
 
@@ -192,7 +255,6 @@ function parseRemissPage(html: string, remissUrl: string): RemissPageResult {
 
     const fullUrl = href.startsWith('http') ? href : `https://www.regeringen.se${href}`;
     
-    // Skip duplicates
     if (seenUrls.has(fullUrl)) continue;
     seenUrls.add(fullUrl);
 
@@ -214,7 +276,6 @@ function parseRemissPage(html: string, remissUrl: string): RemissPageResult {
       linkText.toLowerCase().includes('remissvar') ||
       linkText.toLowerCase().includes('yttrande') ||
       filename.toLowerCase().includes('remissvar') ||
-      // If in a remissvar section
       (link as Element).closest('[class*="remissvar"]') !== null;
 
     if (isRemissvar || fileType === 'pdf') {
@@ -260,12 +321,13 @@ Deno.serve(async (req) => {
       document_id: string;
       doc_number: string;
       status: 'success' | 'no_remiss' | 'error' | 'skipped';
+      discovery_method?: DiscoveryMethod;
       remiss_url?: string;
       remissvar_count?: number;
       error?: string;
     }> = [];
 
-    // If specific document_id provided, process just that one
+    // Build query
     let query = supabase
       .from('documents')
       .select('id, doc_number, url, title')
@@ -313,19 +375,38 @@ Deno.serve(async (req) => {
       }
 
       try {
-        // Fetch the SOU page
-        const souResponse = await fetch(sou.url!, {
-          headers: {
-            'User-Agent': 'Vision-Connector-Tool/1.0 (Educational Research Tool)',
-          },
-        });
+        let remissLink: string | null = null;
+        let discoveryMethod: DiscoveryMethod = 'not_found';
 
-        if (!souResponse.ok) {
-          throw new Error(`HTTP ${souResponse.status} fetching SOU page`);
+        // Phase A: Try document_references first
+        console.log(`Phase A: Checking document_references for ${sou.doc_number}`);
+        const refResult = await findRemissFromReferences(supabase, sou.id);
+        if (refResult) {
+          remissLink = refResult.url;
+          discoveryMethod = refResult.method;
+          console.log(`Found remiss via references: ${remissLink}`);
         }
 
-        const souHtml = await souResponse.text();
-        const remissLink = findRemissLink(souHtml, sou.url!);
+        // Phase B: Scrape SOU page if no reference found
+        if (!remissLink && sou.url) {
+          console.log(`Phase B: Scraping SOU page for ${sou.doc_number}`);
+          const souResponse = await fetch(sou.url, {
+            headers: {
+              'User-Agent': 'Vision-Connector-Tool/1.0 (Educational Research Tool)',
+            },
+          });
+
+          if (souResponse.ok) {
+            const souHtml = await souResponse.text();
+            remissLink = findRemissLinkFromPage(souHtml, sou.url);
+            if (remissLink) {
+              discoveryMethod = 'page_scrape';
+              console.log(`Found remiss via page scrape: ${remissLink}`);
+            }
+          } else {
+            console.log(`HTTP ${souResponse.status} fetching SOU page`);
+          }
+        }
 
         if (!remissLink) {
           console.log(`No remiss link found for ${sou.doc_number}`);
@@ -333,11 +414,10 @@ Deno.serve(async (req) => {
             document_id: sou.id,
             doc_number: sou.doc_number,
             status: 'no_remiss',
+            discovery_method: 'not_found',
           });
           continue;
         }
-
-        console.log(`Found remiss link: ${remissLink}`);
 
         // Fetch and parse the remiss page
         const remissResponse = await fetch(remissLink, {
@@ -367,6 +447,7 @@ Deno.serve(async (req) => {
             status: 'scraped',
             remissvar_count: remissData.remissvar_documents.length,
             metadata: {
+              discovery_method: discoveryMethod,
               extraction_log: remissData.extraction_log,
               remissinstanser_filename: remissData.remissinstanser_pdf?.filename,
             },
@@ -405,6 +486,7 @@ Deno.serve(async (req) => {
           document_id: sou.id,
           doc_number: sou.doc_number,
           status: 'success',
+          discovery_method: discoveryMethod,
           remiss_url: remissLink,
           remissvar_count: remissData.remissvar_documents.length,
         });
@@ -431,6 +513,11 @@ Deno.serve(async (req) => {
       errors: results.filter(r => r.status === 'error').length,
       skipped: results.filter(r => r.status === 'skipped').length,
       total_remissvar: results.reduce((sum, r) => sum + (r.remissvar_count || 0), 0),
+      by_discovery_method: {
+        references: results.filter(r => r.discovery_method === 'references').length,
+        page_scrape: results.filter(r => r.discovery_method === 'page_scrape').length,
+        not_found: results.filter(r => r.discovery_method === 'not_found').length,
+      },
     };
 
     console.log('\n=== Summary ===');

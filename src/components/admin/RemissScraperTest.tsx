@@ -13,6 +13,7 @@ interface RemissResult {
   document_id: string;
   doc_number: string;
   status: 'success' | 'no_remiss' | 'error' | 'skipped';
+  discovery_method?: 'references' | 'page_scrape' | 'not_found';
   remiss_url?: string;
   remissvar_count?: number;
   error?: string;
@@ -20,15 +21,21 @@ interface RemissResult {
 
 interface ScrapeResponse {
   success: boolean;
-  summary: {
+  summary?: {
     total_processed: number;
     success: number;
     no_remiss: number;
     errors: number;
     skipped: number;
     total_remissvar: number;
+    by_discovery_method?: {
+      references: number;
+      page_scrape: number;
+      not_found: number;
+    };
   };
-  results: RemissResult[];
+  results?: RemissResult[];
+  message?: string;
 }
 
 export function RemissScraperTest() {
@@ -143,7 +150,7 @@ export function RemissScraperTest() {
           </Button>
         </div>
 
-        {result && (
+        {result && result.summary && result.results && (
           <div className="space-y-4 mt-4">
             {/* Summary */}
             <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
@@ -173,6 +180,16 @@ export function RemissScraperTest() {
               </div>
             </div>
 
+            {/* Discovery Method Breakdown */}
+            {result.summary.by_discovery_method && (
+              <div className="flex gap-4 text-sm text-muted-foreground">
+                <span>Discovery: </span>
+                <span className="text-green-600">{result.summary.by_discovery_method.references} via references</span>
+                <span className="text-blue-600">{result.summary.by_discovery_method.page_scrape} via page scrape</span>
+                <span className="text-yellow-600">{result.summary.by_discovery_method.not_found} not found</span>
+              </div>
+            )}
+
             {/* Results Table */}
             <div className="border rounded-lg overflow-hidden">
               <table className="w-full text-sm">
@@ -180,6 +197,7 @@ export function RemissScraperTest() {
                   <tr>
                     <th className="text-left p-2">SOU</th>
                     <th className="text-left p-2">Status</th>
+                    <th className="text-left p-2">Method</th>
                     <th className="text-left p-2">Remissvar</th>
                     <th className="text-left p-2">Details</th>
                   </tr>
@@ -193,6 +211,14 @@ export function RemissScraperTest() {
                           {getStatusIcon(r.status)}
                           {getStatusBadge(r.status)}
                         </div>
+                      </td>
+                      <td className="p-2">
+                        {r.discovery_method && (
+                          <Badge variant="outline" className="text-xs">
+                            {r.discovery_method === 'references' ? '📚 refs' : 
+                             r.discovery_method === 'page_scrape' ? '🔍 scrape' : '—'}
+                          </Badge>
+                        )}
                       </td>
                       <td className="p-2">
                         {r.remissvar_count !== undefined && (
