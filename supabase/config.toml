@@ -21,6 +21,9 @@ verify_jwt = false
 [functions.scrape-proposition-index]
 verify_jwt = false
 
+[functions.scrape-sou-remiss]
+verify_jwt = false
+
 [functions.process-task-queue]
 verify_jwt = false
 

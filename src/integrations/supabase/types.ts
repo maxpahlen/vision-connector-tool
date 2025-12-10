@@ -403,6 +403,110 @@ export type Database = {
           },
         ]
       }
+      remiss_documents: {
+        Row: {
+          created_at: string | null
+          id: string
+          metadata: Json | null
+          parent_document_id: string
+          remiss_deadline: string | null
+          remiss_page_url: string
+          remissinstanser_pdf_url: string | null
+          remissvar_count: number | null
+          status: string | null
+          title: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          parent_document_id: string
+          remiss_deadline?: string | null
+          remiss_page_url: string
+          remissinstanser_pdf_url?: string | null
+          remissvar_count?: number | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          parent_document_id?: string
+          remiss_deadline?: string | null
+          remiss_page_url?: string
+          remissinstanser_pdf_url?: string | null
+          remissvar_count?: number | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "remiss_documents_parent_document_id_fkey"
+            columns: ["parent_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      remiss_responses: {
+        Row: {
+          created_at: string | null
+          document_id: string | null
+          file_type: string | null
+          file_url: string
+          filename: string | null
+          id: string
+          metadata: Json | null
+          remiss_id: string
+          responding_organization: string | null
+          status: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          document_id?: string | null
+          file_type?: string | null
+          file_url: string
+          filename?: string | null
+          id?: string
+          metadata?: Json | null
+          remiss_id: string
+          responding_organization?: string | null
+          status?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          document_id?: string | null
+          file_type?: string | null
+          file_url?: string
+          filename?: string | null
+          id?: string
+          metadata?: Json | null
+          remiss_id?: string
+          responding_organization?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "remiss_responses_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "remiss_responses_remiss_id_fkey"
+            columns: ["remiss_id"]
+            isOneToOne: false
+            referencedRelation: "remiss_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       timeline_events: {
         Row: {
           actors: Json | null
