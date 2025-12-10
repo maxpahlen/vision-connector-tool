@@ -13,6 +13,7 @@ import { PropositionTextExtractorTest } from '@/components/admin/PropositionText
 import { PropositionAgentTest } from '@/components/admin/PropositionAgentTest';
 import { PropositionBatchProcessor } from '@/components/admin/PropositionBatchProcessor';
 import { RemissScraperTest } from '@/components/admin/RemissScraperTest';
+import { SouLagstiftningskedjaScraper } from '@/components/admin/SouLagstiftningskedjaScraper';
 import { FileText, Bot, Database, Settings, Play, FileSearch } from 'lucide-react';
 
 export default function AdminScraper() {
@@ -64,6 +65,7 @@ export default function AdminScraper() {
             </CardHeader>
           </Card>
           
+          <SouLagstiftningskedjaScraper />
           <RemissScraperTest />
         </TabsContent>
 
