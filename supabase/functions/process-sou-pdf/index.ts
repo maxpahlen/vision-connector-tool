@@ -314,6 +314,59 @@ serve(async (req) => {
 
     console.log(`Successfully extracted ${finalText.length} characters from PDF`);
 
+    // ============================================
+    // GUARD: Detect directive content in SOU documents (data contamination check)
+    // ============================================
+    if (documentId && document?.doc_type === 'sou') {
+      const textPreview = finalText.substring(0, 100).trim();
+      if (textPreview.toLowerCase().startsWith('dir.') || textPreview.toLowerCase().startsWith('direktiv')) {
+        console.warn(`[DATA_CONTAMINATION] SOU document ${docNumber} contains directive text. This indicates wrong PDF was extracted.`);
+        console.warn(`Text preview: "${textPreview}"`);
+        
+        // Update metadata with contamination warning but still save the text for investigation
+        const contaminationMetadata = {
+          ...documentMetadata,
+          pdf_text_status: 'contamination_warning',
+          pdf_text_warning: 'SOU document contains directive text - likely wrong PDF extracted',
+          pdf_text_preview: textPreview,
+          pdf_extraction_warning_at: new Date().toISOString(),
+          pdf_text_length: finalText.length,
+          pdf_page_count: extractionResult.metadata?.pageCount,
+        };
+
+        await supabase
+          .from('documents')
+          .update({
+            raw_content: finalText, // Still save for audit
+            processed_at: new Date().toISOString(),
+            metadata: contaminationMetadata,
+          })
+          .eq('id', documentId);
+
+        if (task_id) {
+          await supabase
+            .from('agent_tasks')
+            .update({
+              status: 'completed',
+              completed_at: new Date().toISOString(),
+              output_data: {
+                document_id: documentId,
+                warning: 'contamination_detected',
+                text_preview: textPreview,
+              },
+            })
+            .eq('id', task_id);
+        }
+
+        return createSuccessResponse({
+          warning: 'contamination_detected',
+          message: 'SOU document contains directive text - likely wrong PDF extracted',
+          textPreview,
+          documentId,
+        });
+      }
+    }
+
     // Update document in database if documentId provided
     if (documentId) {
       const successMetadata = {
