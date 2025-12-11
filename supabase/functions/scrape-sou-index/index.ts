@@ -63,6 +63,13 @@ function extractMinistry(text: string): string {
   return 'Okänt departement';
 }
 
+// Validate that a URL points to an actual SOU page, not a directive or other document type
+function isValidSouUrl(url: string): boolean {
+  return url.includes('/statens-offentliga-utredningar/') &&
+         !url.includes('/kommittedirektiv/') &&
+         !url.includes('/proposition/');
+}
+
 // Parse HTML to extract inquiry entries
 function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): InquiryEntry[] {
   const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -87,20 +94,34 @@ function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): Inq
     
     const inquiryCode = inquiryMatch[0];
     
-    // Find regeringen.se link
+    // Find regeringen.se link - prioritize SOU URLs over directive URLs
     const links = (item as Element).querySelectorAll('a');
     let regeringenUrl = '';
+    let directiveUrl = ''; // Fallback for logging only
     
     for (const link of links) {
       const href = (link as Element).getAttribute('href') || '';
       if (href.includes('regeringen.se')) {
-        regeringenUrl = href.startsWith('http') ? href : `https://www.regeringen.se${href}`;
-        break;
+        const fullUrl = href.startsWith('http') ? href : `https://www.regeringen.se${href}`;
+        
+        // Prioritize valid SOU URLs
+        if (isValidSouUrl(fullUrl)) {
+          regeringenUrl = fullUrl;
+          break; // Found valid SOU URL, stop searching
+        } else if (fullUrl.includes('/kommittedirektiv/') || fullUrl.includes('/proposition/')) {
+          // Store directive/proposition URL for logging, but don't use as SOU URL
+          directiveUrl = fullUrl;
+        }
       }
     }
     
+    // If no valid SOU URL found, log warning and skip
     if (!regeringenUrl) {
-      console.log(`No regeringen.se link found for ${inquiryCode}, skipping`);
+      if (directiveUrl) {
+        console.warn(`[URL_VALIDATION] No valid SOU link found for ${inquiryCode}. Only directive/proposition detected: ${directiveUrl}. Setting url=null.`);
+      } else {
+        console.log(`No regeringen.se link found for ${inquiryCode}, skipping`);
+      }
       continue;
     }
     
@@ -113,7 +134,7 @@ function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): Inq
       // Try to get text from the link itself
       for (const link of links) {
         const href = (link as Element).getAttribute('href') || '';
-        if (href.includes('regeringen.se')) {
+        if (href.includes('regeringen.se') && isValidSouUrl(href.startsWith('http') ? href : `https://www.regeringen.se${href}`)) {
           title = link.textContent?.trim() || '';
           break;
         }
