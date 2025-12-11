@@ -436,12 +436,14 @@ Deno.serve(async (req) => {
         }
         
         // Insert reference (using source_excerpt to store anchor text for forensic traceability)
+        // target_url stores the original URL for Phase A remiss lookups
         const { error: refError } = await supabase
           .from('document_references')
           .upsert({
             source_document_id: documentId,
             target_document_id: targetDocumentId,
-            target_doc_number: ref.anchorText, // Store full anchor text as doc number for matching
+            target_doc_number: ref.targetDocNumber || ref.anchorText, // Prefer parsed doc number
+            target_url: ref.url, // Store the original URL for remiss resolution
             reference_type: ref.referenceType,
             confidence: ref.confidence,
             source_excerpt: ref.anchorText,

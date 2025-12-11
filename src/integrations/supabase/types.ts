@@ -88,6 +88,7 @@ export type Database = {
           source_page: number | null
           target_doc_number: string | null
           target_document_id: string | null
+          target_url: string | null
         }
         Insert: {
           confidence?: string | null
@@ -99,6 +100,7 @@ export type Database = {
           source_page?: number | null
           target_doc_number?: string | null
           target_document_id?: string | null
+          target_url?: string | null
         }
         Update: {
           confidence?: string | null
@@ -110,6 +112,7 @@ export type Database = {
           source_page?: number | null
           target_doc_number?: string | null
           target_document_id?: string | null
+          target_url?: string | null
         }
         Relationships: [
           {

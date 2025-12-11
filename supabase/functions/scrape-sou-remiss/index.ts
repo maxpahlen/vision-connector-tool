@@ -51,36 +51,52 @@ function isValidRemissUrl(url: string): boolean {
 
 /**
  * Phase A: Try to find remiss URL from document_references table
+ * Now uses the target_url column for direct URL lookup
  */
 async function findRemissFromReferences(
   supabase: any,
   documentId: string
 ): Promise<{ url: string; method: DiscoveryMethod } | null> {
-  // Look for references where target_doc_number contains "remiss"
-  const { data: refs, error } = await supabase
+  // Primary lookup: Check target_url column for remiss URLs directly
+  const { data: urlRefs, error: urlError } = await supabase
     .from('document_references')
-    .select('target_doc_number, source_excerpt')
+    .select('target_url, target_doc_number, source_excerpt')
+    .eq('source_document_id', documentId)
+    .like('target_url', '%/remisser/%');
+
+  if (!urlError && urlRefs && urlRefs.length > 0) {
+    // Check each reference for a valid remiss URL
+    for (const ref of urlRefs as Array<{ target_url: string | null; target_doc_number: string | null; source_excerpt: string | null }>) {
+      if (ref.target_url && isValidRemissUrl(ref.target_url)) {
+        console.log(`Phase A: Found remiss via target_url: ${ref.target_url}`);
+        return { url: ref.target_url, method: 'references' };
+      }
+    }
+  }
+
+  // Fallback: Look for references where target_doc_number contains "remiss"
+  const { data: textRefs, error: textError } = await supabase
+    .from('document_references')
+    .select('target_doc_number, source_excerpt, target_url')
     .eq('source_document_id', documentId)
     .ilike('target_doc_number', '%remiss%');
 
-  if (error || !refs || refs.length === 0) {
+  if (textError || !textRefs || textRefs.length === 0) {
     return null;
   }
 
   // Try to extract a URL from the references
-  for (const ref of refs as Array<{ target_doc_number: string | null; source_excerpt: string | null }>) {
-    const text = ref.target_doc_number || '';
-    
-    // Check if we can construct a remiss URL from the reference
-    // Pattern: "Remiss av betänkandet <title> (SOU YYYY:XX)"
-    const souMatch = text.match(/SOU\s*(\d{4}):(\d+)/i);
-    if (souMatch) {
-      // We have the SOU number - but we can't construct the exact URL
-      // because the slug format varies
-      console.log(`Found remiss reference mentioning: ${text.substring(0, 100)}`);
+  for (const ref of textRefs as Array<{ target_doc_number: string | null; source_excerpt: string | null; target_url: string | null }>) {
+    // First check target_url (may have been stored previously)
+    if (ref.target_url && isValidRemissUrl(ref.target_url)) {
+      console.log(`Phase A: Found remiss via target_url (fallback): ${ref.target_url}`);
+      return { url: ref.target_url, method: 'references' };
     }
     
-    // If source_excerpt contains a URL
+    const text = ref.target_doc_number || '';
+    console.log(`Phase A: Found remiss reference mentioning: ${text.substring(0, 100)}`);
+    
+    // If source_excerpt contains a URL (legacy data)
     const urlMatch = (ref.source_excerpt || '').match(/https?:\/\/[^\s"'<>]+remisser\/\d{4}\/\d{2}\/[^\s"'<>]+/);
     if (urlMatch && isValidRemissUrl(urlMatch[0])) {
       return { url: urlMatch[0], method: 'references' };
