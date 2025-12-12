@@ -41,3 +41,6 @@ verify_jwt = true
 
 [functions.search-entities]
 verify_jwt = true
+
+[functions.resolve-document-references]
+verify_jwt = false
