@@ -94,10 +94,11 @@ function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): Inq
     
     const inquiryCode = inquiryMatch[0];
     
-    // Find regeringen.se link - prioritize SOU URLs over directive URLs
+    // Find regeringen.se link - prioritize SOU URLs, but accept directive URLs for pagaende
     const links = (item as Element).querySelectorAll('a');
     let regeringenUrl = '';
-    let directiveUrl = ''; // Fallback for logging only
+    let directiveUrl = '';
+    let directiveLinkText = '';
     
     for (const link of links) {
       const href = (link as Element).getAttribute('href') || '';
@@ -108,42 +109,53 @@ function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): Inq
         if (isValidSouUrl(fullUrl)) {
           regeringenUrl = fullUrl;
           break; // Found valid SOU URL, stop searching
-        } else if (fullUrl.includes('/kommittedirektiv/') || fullUrl.includes('/proposition/')) {
-          // Store directive/proposition URL for logging, but don't use as SOU URL
+        } else if (fullUrl.includes('/kommittedirektiv/')) {
+          // Store directive URL and its link text (contains the real directive number/title)
           directiveUrl = fullUrl;
+          directiveLinkText = link.textContent?.trim() || '';
         }
       }
     }
     
-    // If no valid SOU URL found, log warning and skip
+    // For pagaende (ongoing) investigations, accept directive URL if no SOU URL
+    if (!regeringenUrl && directiveUrl && pageType === 'pagaende') {
+      regeringenUrl = directiveUrl;
+      console.log(`[${pageType}] Using directive URL for ${inquiryCode}: ${directiveUrl}`);
+    }
+    
+    // If no valid URL found, skip
     if (!regeringenUrl) {
-      if (directiveUrl) {
-        console.warn(`[URL_VALIDATION] No valid SOU link found for ${inquiryCode}. Only directive/proposition detected: ${directiveUrl}. Setting url=null.`);
-      } else {
-        console.log(`No regeringen.se link found for ${inquiryCode}, skipping`);
-      }
+      console.log(`No regeringen.se link found for ${inquiryCode}, skipping`);
       continue;
     }
     
-    // Extract title (usually the link text or nearby heading)
+    // Extract title - for pagaende with directive, use the directive link text (e.g., "Direktiv 2025:86 ...")
+    // This avoids picking up "Kontaktuppgifter" which appears as first text in the expanded section
     let title = '';
-    const heading = (item as Element).querySelector('h1, h2, h3, h4');
-    if (heading) {
-      title = heading.textContent?.trim() || '';
+    
+    // First priority: if we have directive link text, use it (contains the real directive title)
+    if (directiveLinkText && pageType === 'pagaende') {
+      title = directiveLinkText;
     } else {
-      // Try to get text from the link itself
-      for (const link of links) {
-        const href = (link as Element).getAttribute('href') || '';
-        if (href.includes('regeringen.se') && isValidSouUrl(href.startsWith('http') ? href : `https://www.regeringen.se${href}`)) {
-          title = link.textContent?.trim() || '';
-          break;
+      // For avslutade: try heading or SOU link text
+      const heading = (item as Element).querySelector('h1, h2, h3, h4');
+      if (heading) {
+        title = heading.textContent?.trim() || '';
+      } else {
+        // Try to get text from the SOU link itself
+        for (const link of links) {
+          const href = (link as Element).getAttribute('href') || '';
+          if (href.includes('regeringen.se') && isValidSouUrl(href.startsWith('http') ? href : `https://www.regeringen.se${href}`)) {
+            title = link.textContent?.trim() || '';
+            break;
+          }
         }
       }
     }
     
-    // If no title found, use the whole text but clean it up
+    // If still no title, use the whole text but clean it up (removing inquiryCode and "Kontaktuppgifter")
     if (!title) {
-      title = text.replace(inquiryCode, '').trim().substring(0, 200);
+      title = text.replace(inquiryCode, '').replace(/Kontaktuppgifter/gi, '').trim().substring(0, 200);
     }
     
     const ministry = extractMinistry(text);
