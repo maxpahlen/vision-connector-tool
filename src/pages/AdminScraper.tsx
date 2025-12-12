@@ -15,7 +15,8 @@ import { PropositionBatchProcessor } from '@/components/admin/PropositionBatchPr
 import { RemissScraperTest } from '@/components/admin/RemissScraperTest';
 import { SouLagstiftningskedjaScraper } from '@/components/admin/SouLagstiftningskedjaScraper';
 import { SouUrlRepairTool } from '@/components/admin/SouUrlRepairTool';
-import { FileText, Bot, Database, Settings, Play, FileSearch, Wrench } from 'lucide-react';
+import { ValidationDashboard } from '@/components/admin/ValidationDashboard';
+import { FileText, Bot, Database, Settings, Play, FileSearch, BarChart3 } from 'lucide-react';
 
 export default function AdminScraper() {
   return (
@@ -27,8 +28,12 @@ export default function AdminScraper() {
         </p>
       </div>
 
-      <Tabs defaultValue="remiss" className="w-full">
-        <TabsList className="grid w-full grid-cols-6">
+      <Tabs defaultValue="validation" className="w-full">
+        <TabsList className="grid w-full grid-cols-7">
+          <TabsTrigger value="validation" className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4" />
+            Validation
+          </TabsTrigger>
           <TabsTrigger value="remiss" className="flex items-center gap-2">
             <FileSearch className="h-4 w-4" />
             Remisser
@@ -54,6 +59,11 @@ export default function AdminScraper() {
             System
           </TabsTrigger>
         </TabsList>
+
+        {/* Validation Dashboard Tab - Phase Reset */}
+        <TabsContent value="validation" className="space-y-6 mt-6">
+          <ValidationDashboard />
+        </TabsContent>
 
         {/* Remisser Tab - Phase 5.3 */}
         <TabsContent value="remiss" className="space-y-6 mt-6">
