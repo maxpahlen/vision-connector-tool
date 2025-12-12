@@ -43,25 +43,32 @@ const ANCHOR_PATTERNS: Array<{ pattern: RegExp; type: ClassifiedReference['refer
 ];
 
 /**
- * Extract document number from URL
+ * Extract clean document number from URL or text
+ * Returns only the canonical number (e.g., "Dir. 2023:171"), not full titles
  */
-export function extractDocNumber(url: string): string | null {
-  // Try SOU pattern
-  const souMatch = url.match(/sou[.-]?(\d{4})[.-]?(\d+)/i);
+export function extractDocNumber(urlOrText: string): string | null {
+  // Try SOU pattern - from URL or text like "SOU 2024:93 Något titel..."
+  const souMatch = urlOrText.match(/sou[.\s-]?(\d{4})[.:\s-]?(\d+)/i);
   if (souMatch) {
     return `SOU ${souMatch[1]}:${souMatch[2]}`;
   }
 
-  // Try Directive pattern
-  const dirMatch = url.match(/dir[.-]?(\d{4})[.-]?(\d+)/i);
+  // Try Directive pattern - from URL or text like "Dir. 2023:171 Tilläggsdirektiv..."
+  const dirMatch = urlOrText.match(/dir\.?\s?(\d{4})[.:\s-]?(\d+)/i);
   if (dirMatch) {
     return `Dir. ${dirMatch[1]}:${dirMatch[2]}`;
   }
 
-  // Try Proposition pattern
-  const propMatch = url.match(/prop[.-]?(\d{4})[\/.-]?(\d{2})[.:-]?(\d+)/i);
+  // Try Proposition pattern - from URL or text like "Prop. 2025/26:52 Något..."
+  const propMatch = urlOrText.match(/prop\.?\s?(\d{4})[\/.-]?(\d{2})[.:\s-]?(\d+)/i);
   if (propMatch) {
     return `Prop. ${propMatch[1]}/${propMatch[2]}:${propMatch[3]}`;
+  }
+
+  // Try Ds pattern (Departementsserie)
+  const dsMatch = urlOrText.match(/ds[.\s-]?(\d{4})[.:\s-]?(\d+)/i);
+  if (dsMatch) {
+    return `Ds ${dsMatch[1]}:${dsMatch[2]}`;
   }
 
   return null;
