@@ -81,8 +81,7 @@ export function HeadDetectiveTest() {
           )
         `)
         .eq('doc_type', 'sou')
-        .not('raw_content', 'is', null)
-        .limit(10); // Limit to first 10 for testing
+        .not('raw_content', 'is', null);
 
       if (docError) throw docError;
 
@@ -105,7 +104,7 @@ export function HeadDetectiveTest() {
       setCandidates(candidateList);
       toast({
         title: 'Candidates Loaded',
-        description: `Found ${candidateList.length} processes with SOU documents (limited to 10 for testing)`,
+        description: `Found ${candidateList.length} processes with SOU documents`,
       });
     } catch (error) {
       console.error('Error loading candidates:', error);
