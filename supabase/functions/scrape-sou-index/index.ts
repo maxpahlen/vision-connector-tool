@@ -92,8 +92,26 @@ function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): Inq
   // Updated pattern to match all ministry codes (1-3 letters, including Swedish chars)
   const inquiryPattern = /([A-ZÅÄÖa-zåäö]{1,3})\s+(\d{4}):(\d+)/i;
   
-  // Anchor to the actual investigation list container
-  const listItems = doc.querySelectorAll('main .list--block.list--investigation > li');
+  // Use different CSS selectors based on page type
+  // - avslutade: uses flat list structure with .list--block.list--investigation
+  // - pagaende: uses accordion structure with .c-accordion-plain
+  let listItems: ReturnType<typeof doc.querySelectorAll>;
+  
+  if (pageType === 'pagaende') {
+    // Try accordion selector first (pagaende uses .c-accordion-plain)
+    listItems = doc.querySelectorAll('main .c-accordion-plain');
+    console.log(`[pagaende] Using accordion selector (.c-accordion-plain), found ${listItems.length} items`);
+    
+    // Fallback to generic list selector if accordion not found
+    if (listItems.length === 0) {
+      listItems = doc.querySelectorAll('main .list--block > li, main .investigation-list > li');
+      console.log(`[pagaende] Fallback to generic list selector, found ${listItems.length} items`);
+    }
+  } else {
+    // avslutade uses traditional list structure
+    listItems = doc.querySelectorAll('main .list--block.list--investigation > li');
+    console.log(`[avslutade] Using list selector (.list--block.list--investigation), found ${listItems.length} items`);
+  }
   
   console.log(`Found ${listItems.length} inquiry items on ${pageType} page`);
   
