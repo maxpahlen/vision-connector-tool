@@ -8,6 +8,7 @@ import { MetadataAgentTest } from '@/components/admin/MetadataAgentTest';
 import { TaskQueueMonitor } from '@/components/admin/TaskQueueMonitor';
 import { ProcessList } from '@/components/admin/ProcessList';
 import { DocumentList } from '@/components/admin/DocumentList';
+import { DocumentTextExtractor } from '@/components/admin/DocumentTextExtractor';
 import { PropositionScraperTest } from '@/components/admin/PropositionScraperTest';
 import { PropositionTextExtractorTest } from '@/components/admin/PropositionTextExtractorTest';
 import { PropositionAgentTest } from '@/components/admin/PropositionAgentTest';
@@ -129,6 +130,7 @@ export default function AdminScraper() {
               <ScraperControls />
               <StateMachineTest />
             </div>
+            <DocumentTextExtractor />
             <TimelineAgentV2Test />
             <HeadDetectiveTest />
             <MetadataAgentTest />
