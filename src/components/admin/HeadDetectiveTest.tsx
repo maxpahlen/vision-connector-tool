@@ -37,6 +37,8 @@ interface TestResult {
   agents?: string[];
   summary: {
     processes_analyzed?: number;
+    total_candidates?: number;
+    remaining_candidates?: number;
     processes_with_sou?: number;
     timeline_tasks_created: number;
     timeline_tasks_reused: number;
@@ -56,6 +58,7 @@ export function HeadDetectiveTest() {
   const { toast } = useToast();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [selectedProcessId, setSelectedProcessId] = useState<string>('');
+  const [batchSize, setBatchSize] = useState<number>(5);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [runningSingle, setRunningSingle] = useState(false);
   const [runningBatch, setRunningBatch] = useState(false);
@@ -124,7 +127,7 @@ export function HeadDetectiveTest() {
     setResult(null);
 
     try {
-      const body: any = { batch_mode: mode === 'batch' };
+      const body: any = { batch_mode: mode === 'batch', batch_size: batchSize };
       if (mode === 'single' && selectedProcessId) {
         body.process_id = selectedProcessId;
       }
@@ -246,24 +249,40 @@ export function HeadDetectiveTest() {
 
         {/* Batch Test */}
         {candidates.length > 0 && (
-          <div>
-            <Button
-              onClick={() => runHeadDetective('batch')}
-              disabled={runningBatch}
-              variant="default"
-              className="w-full sm:w-auto"
-            >
-              {runningBatch ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-2 h-4 w-4" />
-              )}
-              Run Batch (All Candidates)
-            </Button>
-            <p className="text-xs text-muted-foreground mt-2">
-              This will process all {candidates.length} candidate{candidates.length !== 1 ? 's' : ''}.
-              May take several minutes.
-            </p>
+          <div className="space-y-3">
+            <h4 className="font-medium text-sm">Batch Processing:</h4>
+            <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Batch size:</span>
+                <Select value={String(batchSize)} onValueChange={(v) => setBatchSize(Number(v))}>
+                  <SelectTrigger className="w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[1, 3, 5, 10, 15, 20].map((n) => (
+                      <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                onClick={() => runHeadDetective('batch')}
+                disabled={runningBatch}
+                variant="default"
+              >
+                {runningBatch ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                )}
+                Run Batch ({Math.min(batchSize, candidates.length)} of {candidates.length})
+              </Button>
+            </div>
+            {result?.summary.remaining_candidates !== undefined && result.summary.remaining_candidates > 0 && (
+              <p className="text-sm text-amber-600">
+                ⚠️ {result.summary.remaining_candidates} candidates remaining. Run batch again to continue.
+              </p>
+            )}
           </div>
         )}
 

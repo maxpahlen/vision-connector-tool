@@ -39,6 +39,7 @@ import {
 const RequestSchema = z.object({
   process_id: z.string().uuid().optional(),
   batch_mode: z.boolean().optional().default(false),
+  batch_size: z.number().int().positive().max(20).optional().default(5),
   task_id: z.string().uuid().optional(),
 });
 
@@ -602,10 +603,10 @@ Deno.serve(async (req) => {
       );
     }
     
-    const { process_id, batch_mode, task_id } = validationResult.data;
+    const { process_id, batch_mode, batch_size, task_id } = validationResult.data;
     const mode = process_id ? 'single' : 'batch';
     
-    console.log(`Mode: ${mode}`);
+    console.log(`Mode: ${mode}, Batch size: ${batch_size}`);
     if (process_id) console.log(`Target process: ${process_id}`);
     if (task_id) console.log(`Task ID: ${task_id}`);
     
@@ -656,17 +657,22 @@ Deno.serve(async (req) => {
       });
     }
     
-    // Process candidates
+    // Process candidates in batches
     const results: ProcessResult[] = [];
+    const candidatesToProcess = batch_mode ? candidates.slice(0, batch_size) : candidates;
     
-    for (const candidate of candidates) {
+    console.log(`📦 Processing ${candidatesToProcess.length} of ${candidates.length} candidates (batch_size: ${batch_size})`);
+    
+    for (const candidate of candidatesToProcess) {
       const result = await processCandidate(supabase, candidate);
       results.push(result);
     }
     
     // Compute summary statistics
     const summary = {
-      processes_analyzed: candidates.length,
+      processes_analyzed: candidatesToProcess.length,
+      total_candidates: candidates.length,
+      remaining_candidates: candidates.length - candidatesToProcess.length,
       timeline_tasks_created: results.filter(r => r.timeline_task_created).length,
       timeline_tasks_reused: results.filter(r => r.timeline_task_id && !r.timeline_task_created).length,
       metadata_tasks_created: results.filter(r => r.metadata_task_created).length,
