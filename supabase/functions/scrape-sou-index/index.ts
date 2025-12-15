@@ -95,78 +95,123 @@ function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): Inq
   // Use different CSS selectors based on page type
   // - avslutade: uses flat list structure with .list--block.list--investigation
   // - pagaende: uses accordion structure with .c-accordion-plain
-  let listItems: ReturnType<typeof doc.querySelectorAll>;
   
   if (pageType === 'pagaende') {
-    // Try accordion selector first (pagaende uses .c-accordion-plain)
-    listItems = doc.querySelectorAll('main .c-accordion-plain');
-    console.log(`[pagaende] Using accordion selector (.c-accordion-plain), found ${listItems.length} items`);
+    // Pagaende uses accordion structure - extract from .c-accordion-plain containers
+    const accordionItems = doc.querySelectorAll('main .c-accordion-plain');
+    console.log(`[pagaende] Using accordion selector (.c-accordion-plain), found ${accordionItems.length} items`);
     
-    // Fallback to generic list selector if accordion not found
-    if (listItems.length === 0) {
-      listItems = doc.querySelectorAll('main .list--block > li, main .investigation-list > li');
-      console.log(`[pagaende] Fallback to generic list selector, found ${listItems.length} items`);
-    }
-  } else {
-    // avslutade uses traditional list structure
-    listItems = doc.querySelectorAll('main .list--block.list--investigation > li');
-    console.log(`[avslutade] Using list selector (.list--block.list--investigation), found ${listItems.length} items`);
-  }
-  
-  console.log(`Found ${listItems.length} inquiry items on ${pageType} page`);
-  
-  for (const item of listItems) {
-    const text = item.textContent || '';
-    const inquiryMatch = text.match(inquiryPattern);
-    
-    if (!inquiryMatch) continue;
-    
-    const inquiryCode = inquiryMatch[0];
-    
-    // Find regeringen.se link - prioritize SOU URLs, but accept directive URLs for pagaende
-    const links = (item as Element).querySelectorAll('a');
-    let regeringenUrl = '';
-    let directiveUrl = '';
-    let directiveLinkText = '';
-    
-    for (const link of links) {
-      const href = (link as Element).getAttribute('href') || '';
-      if (href.includes('regeringen.se')) {
-        const fullUrl = href.startsWith('http') ? href : `https://www.regeringen.se${href}`;
-        
-        // Prioritize valid SOU URLs
-        if (isValidSouUrl(fullUrl)) {
-          regeringenUrl = fullUrl;
-          break; // Found valid SOU URL, stop searching
-        } else if (fullUrl.includes('/kommittedirektiv/')) {
-          // Store directive URL and its link text (contains the real directive number/title)
-          directiveUrl = fullUrl;
-          directiveLinkText = link.textContent?.trim() || '';
+    for (const item of accordionItems) {
+      // Get the accordion button which contains the inquiry code and title
+      const button = (item as Element).querySelector('.c-accordion-plain__action');
+      const buttonText = button?.textContent?.trim() || '';
+      
+      const inquiryMatch = buttonText.match(inquiryPattern);
+      if (!inquiryMatch) {
+        console.log(`[pagaende] No inquiry code in button: "${buttonText.substring(0, 50)}..."`);
+        continue;
+      }
+      
+      const inquiryCode = inquiryMatch[0];
+      
+      // Extract title from button text (after the inquiry code)
+      let title = buttonText.replace(inquiryCode, '').trim();
+      // Remove trailing icons/markers
+      title = title.replace(/\s*$/, '').trim();
+      
+      // Find directive link in .investigation-list-page-item__links
+      const linksContainer = (item as Element).querySelector('.investigation-list-page-item__links');
+      let regeringenUrl = '';
+      let directiveLinkText = '';
+      
+      if (linksContainer) {
+        const links = linksContainer.querySelectorAll('a');
+        for (const link of links) {
+          const href = (link as Element).getAttribute('href') || '';
+          const linkText = link.textContent?.trim() || '';
+          
+          // Look for directive links (not the generic SOU placeholder)
+          if (href.includes('kommittedirektiv') && href.includes('regeringen.se')) {
+            const fullUrl = href.startsWith('http') ? href : `https://www.regeringen.se${href}`;
+            
+            // Validate it's a specific document URL, not an index page
+            if (isValidDocumentUrl(fullUrl)) {
+              regeringenUrl = fullUrl;
+              directiveLinkText = linkText;
+              console.log(`[pagaende] Found directive URL for ${inquiryCode}: ${fullUrl}`);
+              break;
+            }
+          }
         }
       }
+      
+      // Skip if no valid directive URL found
+      if (!regeringenUrl) {
+        console.log(`[pagaende] No valid directive URL found for ${inquiryCode}, skipping`);
+        continue;
+      }
+      
+      // Use directive link text as title if it's more descriptive
+      if (directiveLinkText && directiveLinkText.length > title.length) {
+        title = directiveLinkText;
+      }
+      
+      // Extract ministry from full accordion text
+      const fullText = item.textContent || '';
+      const ministry = extractMinistry(fullText);
+      
+      entries.push({
+        inquiryCode,
+        title: title || `Utredning ${inquiryCode}`,
+        ministry,
+        regeringenUrl,
+        pageType,
+      });
     }
+  } else {
+    // Avslutade uses traditional list structure
+    const listItems = doc.querySelectorAll('main .list--block.list--investigation > li');
+    console.log(`[avslutade] Using list selector (.list--block.list--investigation), found ${listItems.length} items`);
     
-    // For pagaende (ongoing) investigations, accept directive URL if no SOU URL
-    if (!regeringenUrl && directiveUrl && pageType === 'pagaende') {
-      regeringenUrl = directiveUrl;
-      console.log(`[${pageType}] Using directive URL for ${inquiryCode}: ${directiveUrl}`);
-    }
-    
-    // If no valid URL found, or URL is an index page, skip
-    if (!regeringenUrl || !isValidDocumentUrl(regeringenUrl)) {
-      console.log(`No valid document URL found for ${inquiryCode} (got: ${regeringenUrl || 'none'}), skipping`);
-      continue;
-    }
-    
-    // Extract title - for pagaende with directive, use the directive link text (e.g., "Direktiv 2025:86 ...")
-    // This avoids picking up "Kontaktuppgifter" which appears as first text in the expanded section
-    let title = '';
-    
-    // First priority: if we have directive link text, use it (contains the real directive title)
-    if (directiveLinkText && pageType === 'pagaende') {
-      title = directiveLinkText;
-    } else {
-      // For avslutade: try heading or SOU link text
+    for (const item of listItems) {
+      const text = item.textContent || '';
+      const inquiryMatch = text.match(inquiryPattern);
+      
+      if (!inquiryMatch) continue;
+      
+      const inquiryCode = inquiryMatch[0];
+      
+      // Find regeringen.se link - prioritize SOU URLs
+      const links = (item as Element).querySelectorAll('a');
+      let regeringenUrl = '';
+      let directiveUrl = '';
+      let directiveLinkText = '';
+      
+      for (const link of links) {
+        const href = (link as Element).getAttribute('href') || '';
+        if (href.includes('regeringen.se')) {
+          const fullUrl = href.startsWith('http') ? href : `https://www.regeringen.se${href}`;
+          
+          // Prioritize valid SOU URLs
+          if (isValidSouUrl(fullUrl)) {
+            regeringenUrl = fullUrl;
+            break; // Found valid SOU URL, stop searching
+          } else if (fullUrl.includes('/kommittedirektiv/')) {
+            // Store directive URL and its link text (contains the real directive number/title)
+            directiveUrl = fullUrl;
+            directiveLinkText = link.textContent?.trim() || '';
+          }
+        }
+      }
+      
+      // If no valid URL found, or URL is an index page, skip
+      if (!regeringenUrl || !isValidDocumentUrl(regeringenUrl)) {
+        console.log(`No valid document URL found for ${inquiryCode} (got: ${regeringenUrl || 'none'}), skipping`);
+        continue;
+      }
+      
+      // Extract title
+      let title = '';
       const heading = (item as Element).querySelector('h1, h2, h3, h4');
       if (heading) {
         title = heading.textContent?.trim() || '';
@@ -180,24 +225,25 @@ function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): Inq
           }
         }
       }
+      
+      // If still no title, use cleaned text
+      if (!title) {
+        title = text.replace(inquiryCode, '').replace(/Kontaktuppgifter/gi, '').trim().substring(0, 200);
+      }
+      
+      const ministry = extractMinistry(text);
+      
+      entries.push({
+        inquiryCode,
+        title: title || `Utredning ${inquiryCode}`,
+        ministry,
+        regeringenUrl,
+        pageType,
+      });
     }
-    
-    // If still no title, use the whole text but clean it up (removing inquiryCode and "Kontaktuppgifter")
-    if (!title) {
-      title = text.replace(inquiryCode, '').replace(/Kontaktuppgifter/gi, '').trim().substring(0, 200);
-    }
-    
-    const ministry = extractMinistry(text);
-    
-    entries.push({
-      inquiryCode,
-      title: title || `Utredning ${inquiryCode}`,
-      ministry,
-      regeringenUrl,
-      pageType,
-    });
   }
   
+  console.log(`Found ${entries.length} inquiry items on ${pageType} page`);
   console.log(`Extracted ${entries.length} valid inquiry entries from ${pageType} page`);
   return entries;
 }
