@@ -70,6 +70,17 @@ function isValidSouUrl(url: string): boolean {
          !url.includes('/proposition/');
 }
 
+// Validate that a URL points to a specific document page, not an index/listing page
+function isValidDocumentUrl(url: string): boolean {
+  const indexPagePatterns = [
+    /\/statens-offentliga-utredningar\/?(\?|#|$)/,
+    /\/kommittedirektiv\/?(\?|#|$)/,
+    /\/proposition\/?(\?|#|$)/,
+    /\/rattsliga-dokument\/?(\?|#|$)/,
+  ];
+  return !indexPagePatterns.some(pattern => pattern.test(url));
+}
+
 // Parse HTML to extract inquiry entries
 function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): InquiryEntry[] {
   const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -123,9 +134,9 @@ function parseInquiryList(html: string, pageType: 'avslutade' | 'pagaende'): Inq
       console.log(`[${pageType}] Using directive URL for ${inquiryCode}: ${directiveUrl}`);
     }
     
-    // If no valid URL found, skip
-    if (!regeringenUrl) {
-      console.log(`No regeringen.se link found for ${inquiryCode}, skipping`);
+    // If no valid URL found, or URL is an index page, skip
+    if (!regeringenUrl || !isValidDocumentUrl(regeringenUrl)) {
+      console.log(`No valid document URL found for ${inquiryCode} (got: ${regeringenUrl || 'none'}), skipping`);
       continue;
     }
     
