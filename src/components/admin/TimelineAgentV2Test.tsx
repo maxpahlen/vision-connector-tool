@@ -4,8 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Play, CheckCircle2, XCircle, AlertTriangle, Clock } from 'lucide-react';
+import { Loader2, Play, CheckCircle2, XCircle, AlertTriangle, Clock, PlayCircle, Zap, Search } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // Pre-selected test samples for Timeline Agent v2 validation
 const TEST_SAMPLES = {
@@ -75,6 +77,180 @@ export function TimelineAgentV2Test() {
   const [currentDoc, setCurrentDoc] = useState<string | null>(null);
   const [summary, setSummary] = useState<TestSummary | null>(null);
   const { toast } = useToast();
+  
+  // Batch task queue state
+  const [docTypeFilter, setDocTypeFilter] = useState<string>("all");
+  const [unprocessedCount, setUnprocessedCount] = useState<number>(0);
+  const [processingBatch, setProcessingBatch] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ processed: number; total: number } | null>(null);
+  const [loadingCount, setLoadingCount] = useState(false);
+
+  // Count documents that don't have timeline events yet
+  const loadUnprocessedCount = async () => {
+    setLoadingCount(true);
+    try {
+      // Get all process_ids that have timeline_events
+      const { data: processedProcesses, error: eventsError } = await supabase
+        .from("timeline_events")
+        .select("process_id");
+
+      if (eventsError) throw eventsError;
+
+      const processedProcessIds = new Set(processedProcesses?.map(e => e.process_id) || []);
+
+      // Build query based on filter
+      let query = supabase
+        .from("process_documents")
+        .select("process_id, document_id, documents!inner(doc_type, raw_content)")
+        .not("documents.raw_content", "is", null);
+
+      if (docTypeFilter === "sou") {
+        query = query.eq("documents.doc_type", "sou");
+      } else if (docTypeFilter === "directive") {
+        query = query.eq("documents.doc_type", "dir");
+      }
+
+      const { data: allProcessDocs, error: docsError } = await query;
+
+      if (docsError) throw docsError;
+
+      // Count unprocessed (unique process_ids)
+      const unprocessedProcessIds = new Set<string>();
+      for (const pd of allProcessDocs || []) {
+        if (!processedProcessIds.has(pd.process_id)) {
+          unprocessedProcessIds.add(pd.process_id);
+        }
+      }
+      setUnprocessedCount(unprocessedProcessIds.size);
+      
+      toast({
+        title: "Count Updated",
+        description: `${unprocessedProcessIds.size} processes without timeline events`,
+      });
+    } catch (error) {
+      console.error("Error counting unprocessed documents:", error);
+      setUnprocessedCount(0);
+    } finally {
+      setLoadingCount(false);
+    }
+  };
+
+  // Create batch tasks in the queue
+  const processBatchDocuments = async (limit: number | null) => {
+    setProcessingBatch(true);
+    setBatchProgress(null);
+
+    try {
+      // Get all process_ids that have timeline_events
+      const { data: processedProcesses, error: eventsError } = await supabase
+        .from("timeline_events")
+        .select("process_id");
+
+      if (eventsError) throw eventsError;
+
+      const processedProcessIds = new Set(processedProcesses?.map(e => e.process_id) || []);
+
+      // Build query based on filter
+      let query = supabase
+        .from("process_documents")
+        .select("process_id, document_id, documents!inner(doc_type, raw_content)")
+        .not("documents.raw_content", "is", null);
+
+      if (docTypeFilter === "sou") {
+        query = query.eq("documents.doc_type", "sou");
+      } else if (docTypeFilter === "directive") {
+        query = query.eq("documents.doc_type", "dir");
+      }
+
+      const { data: allProcessDocs, error: docsError } = await query;
+
+      if (docsError) throw docsError;
+
+      // Filter to unprocessed only (unique by process_id)
+      const unprocessedMap = new Map<string, { process_id: string; document_id: string }>();
+      for (const pd of allProcessDocs || []) {
+        if (!processedProcessIds.has(pd.process_id) && !unprocessedMap.has(pd.process_id)) {
+          unprocessedMap.set(pd.process_id, { process_id: pd.process_id, document_id: pd.document_id });
+        }
+      }
+      
+      const unprocessedDocs = Array.from(unprocessedMap.values()).slice(0, limit || undefined);
+
+      if (unprocessedDocs.length === 0) {
+        toast({
+          title: "No Documents to Process",
+          description: "All documents with content already have timeline events extracted",
+        });
+        return;
+      }
+
+      const total = unprocessedDocs.length;
+      setBatchProgress({ processed: 0, total });
+
+      toast({
+        title: "Batch Processing Started",
+        description: `Creating tasks for ${total} documents...`,
+      });
+
+      // Create tasks for each document
+      let tasksCreated = 0;
+      for (const doc of unprocessedDocs) {
+        // Check if task already exists
+        const { data: existingTask } = await supabase
+          .from("agent_tasks")
+          .select("id")
+          .eq("task_type", "timeline_extraction")
+          .eq("document_id", doc.document_id)
+          .eq("status", "pending")
+          .maybeSingle();
+
+        if (existingTask) {
+          tasksCreated++;
+          setBatchProgress({ processed: tasksCreated, total });
+          continue;
+        }
+
+        // Create task
+        const { error: taskError } = await supabase
+          .from("agent_tasks")
+          .insert({
+            task_type: "timeline_extraction",
+            agent_name: "agent-timeline-v2",
+            status: "pending",
+            priority: 5,
+            document_id: doc.document_id,
+            process_id: doc.process_id,
+            input_data: {
+              document_id: doc.document_id,
+              process_id: doc.process_id,
+            },
+          });
+
+        if (!taskError) {
+          tasksCreated++;
+          setBatchProgress({ processed: tasksCreated, total });
+        }
+      }
+
+      toast({
+        title: "Batch Tasks Created",
+        description: `Created ${tasksCreated} timeline extraction tasks. Use Task Queue Monitor to process them.`,
+      });
+
+      // Refresh unprocessed count
+      await loadUnprocessedCount();
+    } catch (error) {
+      console.error("Error processing batch:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to process batch",
+        variant: "destructive",
+      });
+    } finally {
+      setProcessingBatch(false);
+      setBatchProgress(null);
+    }
+  };
 
   const allSamples = [
     ...TEST_SAMPLES.directives.map(d => ({ ...d, doc_type: 'directive' })),
@@ -286,23 +462,90 @@ export function TimelineAgentV2Test() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <Button 
-          onClick={runFullTestSuite}
-          disabled={running}
-          className="w-full"
-        >
-          {running ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Testing {currentDoc}...
-            </>
-          ) : (
-            <>
-              <Play className="mr-2 h-4 w-4" />
-              Run Full Test Suite (10 documents)
-            </>
+        {/* Batch Task Queue Section */}
+        <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
+          <div className="text-sm font-medium">Batch Task Queue (Rate-Limited Processing)</div>
+          
+          {/* Document Type Filter */}
+          <div className="flex items-center gap-2">
+            <Select value={docTypeFilter} onValueChange={setDocTypeFilter}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Documents</SelectItem>
+                <SelectItem value="sou">SOUs Only</SelectItem>
+                <SelectItem value="directive">Directives Only</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={loadUnprocessedCount} disabled={loadingCount} variant="outline" className="gap-2">
+              {loadingCount ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              Count Unprocessed
+            </Button>
+            {unprocessedCount > 0 && <Badge variant="outline">{unprocessedCount} unprocessed</Badge>}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={() => processBatchDocuments(10)}
+              disabled={processingBatch || unprocessedCount === 0}
+              variant="secondary"
+              className="gap-2"
+            >
+              {processingBatch ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <PlayCircle className="h-4 w-4" />
+              )}
+              Create 10 Tasks
+            </Button>
+            <Button
+              onClick={() => processBatchDocuments(null)}
+              disabled={processingBatch || unprocessedCount === 0}
+              variant="default"
+              className="gap-2"
+            >
+              {processingBatch ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Zap className="h-4 w-4" />
+              )}
+              Create All Tasks ({unprocessedCount})
+            </Button>
+          </div>
+          {batchProgress && (
+            <div className="text-sm text-muted-foreground">
+              Creating tasks: {batchProgress.processed} / {batchProgress.total}
+            </div>
           )}
-        </Button>
+          <Alert>
+            <AlertDescription className="text-xs">
+              Creates <code>timeline_extraction</code> tasks in the queue. Use the <strong>Task Queue Monitor</strong> to process them with rate limiting.
+            </AlertDescription>
+          </Alert>
+        </div>
+
+        {/* Test Suite Section */}
+        <div className="border-t pt-4">
+          <div className="text-sm font-medium mb-3">Manual Test Suite (Pre-selected Samples)</div>
+          <Button 
+            onClick={runFullTestSuite}
+            disabled={running}
+            className="w-full"
+          >
+            {running ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Testing {currentDoc}...
+              </>
+            ) : (
+              <>
+                <Play className="mr-2 h-4 w-4" />
+                Run Full Test Suite (10 documents)
+              </>
+            )}
+          </Button>
+        </div>
 
         {running && (
           <div className="space-y-2">
