@@ -274,6 +274,33 @@ Deno.serve(async (req) => {
     
     console.log(`Scraping document: ${documentUrl}${process_id ? ` for process ${process_id}` : ' (standalone test)'}`);
     
+    // Guard: Reject index/listing pages that don't point to specific documents
+    const indexPagePatterns = [
+      /\/statens-offentliga-utredningar\/?(\?|#|$)/,
+      /\/kommittedirektiv\/?(\?|#|$)/,
+      /\/proposition\/?(\?|#|$)/,
+      /\/rattsliga-dokument\/?(\?|#|$)/,
+    ];
+
+    if (indexPagePatterns.some(pattern => pattern.test(documentUrl))) {
+      const errorMsg = `URL is an index page, not a document: ${documentUrl}`;
+      console.error(errorMsg);
+      
+      // If this came from a task, mark it as failed
+      if (task_id) {
+        await supabase
+          .from('agent_tasks')
+          .update({ 
+            status: 'failed', 
+            error_message: errorMsg,
+            completed_at: new Date().toISOString()
+          })
+          .eq('id', task_id);
+      }
+      
+      throw new Error(errorMsg);
+    }
+    
     const response = await fetch(documentUrl, {
       headers: {
         'User-Agent': 'Vision-Connector-Tool/1.0 (Educational Research Tool)',
