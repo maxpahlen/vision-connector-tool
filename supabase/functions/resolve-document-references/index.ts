@@ -7,32 +7,69 @@ import {
 } from '../_shared/http-utils.ts';
 
 /**
+ * Decode HTML entities commonly found in scraped text
+ * P2 FIX: Handles both numeric (&#xF6;) and named (&ouml;) entities
+ */
+function decodeHtmlEntities(text: string): string {
+  if (!text) return text;
+  
+  const entities: Record<string, string> = {
+    '&ouml;': 'ö', '&#xF6;': 'ö', '&#246;': 'ö',
+    '&aring;': 'å', '&#xE5;': 'å', '&#229;': 'å',
+    '&auml;': 'ä', '&#xE4;': 'ä', '&#228;': 'ä',
+    '&Ouml;': 'Ö', '&#xD6;': 'Ö', '&#214;': 'Ö',
+    '&Aring;': 'Å', '&#xC5;': 'Å', '&#197;': 'Å',
+    '&Auml;': 'Ä', '&#xC4;': 'Ä', '&#196;': 'Ä',
+    '&amp;': '&', '&#38;': '&',
+    '&nbsp;': ' ', '&#160;': ' ',
+    '&ndash;': '–', '&#x2013;': '–', '&#8211;': '–',
+    '&mdash;': '—', '&#x2014;': '—', '&#8212;': '—',
+  };
+  
+  let result = text;
+  for (const [entity, char] of Object.entries(entities)) {
+    result = result.replace(new RegExp(entity, 'gi'), char);
+  }
+  return result;
+}
+
+/**
  * Extract clean document number from text
+ * P2 FIX: Improved regex patterns with HTML entity decoding
  * Returns only the canonical number (e.g., "Dir. 2023:171"), not full titles
  */
 function extractDocNumber(urlOrText: string): string | null {
-  // Try SOU pattern
-  const souMatch = urlOrText.match(/sou[.\s-]?(\d{4})[.:\s-]?(\d+)/i);
+  // Decode HTML entities first
+  const text = decodeHtmlEntities(urlOrText);
+  
+  // Try SOU pattern - STRICT
+  const souMatch = text.match(/\bSOU\s*(\d{4})\s*[:\-]\s*(\d+)/i);
   if (souMatch) {
     return `SOU ${souMatch[1]}:${souMatch[2]}`;
   }
 
-  // Try Directive pattern
-  const dirMatch = urlOrText.match(/dir\.?\s?(\d{4})[.:\s-]?(\d+)/i);
+  // Try Directive pattern - STRICT
+  const dirMatch = text.match(/\bDir\.?\s*(\d{4})\s*[:\-]\s*(\d+)/i);
   if (dirMatch) {
     return `Dir. ${dirMatch[1]}:${dirMatch[2]}`;
   }
 
-  // Try Proposition pattern
-  const propMatch = urlOrText.match(/prop\.?\s?(\d{4})[\/.-]?(\d{2})[.:\s-]?(\d+)/i);
+  // Try Proposition pattern - STRICT
+  const propMatch = text.match(/\bProp\.?\s*(\d{4})\s*[\/\-]\s*(\d{2})\s*[:\-]\s*(\d+)/i);
   if (propMatch) {
     return `Prop. ${propMatch[1]}/${propMatch[2]}:${propMatch[3]}`;
   }
 
-  // Try Ds pattern (Departementsserie)
-  const dsMatch = urlOrText.match(/ds[.\s-]?(\d{4})[.:\s-]?(\d+)/i);
+  // Try Ds pattern - STRICT
+  const dsMatch = text.match(/\bDs\s*(\d{4})\s*[:\-]\s*(\d+)/i);
   if (dsMatch) {
     return `Ds ${dsMatch[1]}:${dsMatch[2]}`;
+  }
+
+  // Try FPM pattern (Faktapromemoria)
+  const fpmMatch = text.match(/\b(\d{4}\/\d{2})\s*[:\-]?\s*FPM\s*(\d+)/i);
+  if (fpmMatch) {
+    return `${fpmMatch[1]}:FPM${fpmMatch[2]}`;
   }
 
   return null;

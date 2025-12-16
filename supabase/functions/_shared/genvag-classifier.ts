@@ -43,32 +43,72 @@ const ANCHOR_PATTERNS: Array<{ pattern: RegExp; type: ClassifiedReference['refer
 ];
 
 /**
+ * Decode HTML entities commonly found in scraped text
+ * Handles both numeric (&#xF6;) and named (&ouml;) entities
+ */
+export function decodeHtmlEntities(text: string): string {
+  if (!text) return text;
+  
+  // Map of common HTML entities found in Swedish text
+  const entities: Record<string, string> = {
+    '&ouml;': 'ö', '&#xF6;': 'ö', '&#246;': 'ö',
+    '&aring;': 'å', '&#xE5;': 'å', '&#229;': 'å',
+    '&auml;': 'ä', '&#xE4;': 'ä', '&#228;': 'ä',
+    '&Ouml;': 'Ö', '&#xD6;': 'Ö', '&#214;': 'Ö',
+    '&Aring;': 'Å', '&#xC5;': 'Å', '&#197;': 'Å',
+    '&Auml;': 'Ä', '&#xC4;': 'Ä', '&#196;': 'Ä',
+    '&amp;': '&', '&#38;': '&',
+    '&nbsp;': ' ', '&#160;': ' ',
+    '&ndash;': '–', '&#x2013;': '–', '&#8211;': '–',
+    '&mdash;': '—', '&#x2014;': '—', '&#8212;': '—',
+  };
+  
+  let result = text;
+  for (const [entity, char] of Object.entries(entities)) {
+    result = result.replace(new RegExp(entity, 'gi'), char);
+  }
+  return result;
+}
+
+/**
  * Extract clean document number from URL or text
- * Returns only the canonical number (e.g., "Dir. 2023:171"), not full titles
+ * Returns ONLY the canonical number (e.g., "Dir. 2023:171"), NOT full titles
+ * 
+ * P2 FIX: Improved regex patterns to stop at the number and not capture titles
  */
 export function extractDocNumber(urlOrText: string): string | null {
-  // Try SOU pattern - from URL or text like "SOU 2024:93 Något titel..."
-  const souMatch = urlOrText.match(/sou[.\s-]?(\d{4})[.:\s-]?(\d+)/i);
+  // Decode HTML entities first
+  const text = decodeHtmlEntities(urlOrText);
+  
+  // Try SOU pattern - STRICT: only capture "SOU YYYY:NN" format
+  // Pattern explanation: SOU followed by year:number, stopping at space/comma/paren or end
+  const souMatch = text.match(/\bSOU\s*(\d{4})\s*[:\-]\s*(\d+)/i);
   if (souMatch) {
     return `SOU ${souMatch[1]}:${souMatch[2]}`;
   }
 
-  // Try Directive pattern - from URL or text like "Dir. 2023:171 Tilläggsdirektiv..."
-  const dirMatch = urlOrText.match(/dir\.?\s?(\d{4})[.:\s-]?(\d+)/i);
+  // Try Directive pattern - STRICT: only capture "Dir. YYYY:NN" format
+  const dirMatch = text.match(/\bDir\.?\s*(\d{4})\s*[:\-]\s*(\d+)/i);
   if (dirMatch) {
     return `Dir. ${dirMatch[1]}:${dirMatch[2]}`;
   }
 
-  // Try Proposition pattern - from URL or text like "Prop. 2025/26:52 Något..."
-  const propMatch = urlOrText.match(/prop\.?\s?(\d{4})[\/.-]?(\d{2})[.:\s-]?(\d+)/i);
+  // Try Proposition pattern - STRICT: only capture "Prop. YYYY/YY:NN" format
+  const propMatch = text.match(/\bProp\.?\s*(\d{4})\s*[\/\-]\s*(\d{2})\s*[:\-]\s*(\d+)/i);
   if (propMatch) {
     return `Prop. ${propMatch[1]}/${propMatch[2]}:${propMatch[3]}`;
   }
 
-  // Try Ds pattern (Departementsserie)
-  const dsMatch = urlOrText.match(/ds[.\s-]?(\d{4})[.:\s-]?(\d+)/i);
+  // Try Ds pattern (Departementsserie) - STRICT
+  const dsMatch = text.match(/\bDs\s*(\d{4})\s*[:\-]\s*(\d+)/i);
   if (dsMatch) {
     return `Ds ${dsMatch[1]}:${dsMatch[2]}`;
+  }
+
+  // Try FPM pattern (Faktapromemoria) - common in EU-related docs
+  const fpmMatch = text.match(/\b(\d{4}\/\d{2})\s*[:\-]?\s*FPM\s*(\d+)/i);
+  if (fpmMatch) {
+    return `${fpmMatch[1]}:FPM${fpmMatch[2]}`;
   }
 
   return null;
