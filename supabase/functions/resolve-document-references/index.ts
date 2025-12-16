@@ -35,8 +35,15 @@ function decodeHtmlEntities(text: string): string {
 
 /**
  * Extract clean document number from text
- * P2 FIX: Improved regex patterns with HTML entity decoding
  * Returns only the canonical number (e.g., "Dir. 2023:171"), not full titles
+ * 
+ * Supported formats:
+ * - SOU YYYY:NN (Statens offentliga utredningar)
+ * - Dir. YYYY:NN (Kommittédirektiv)
+ * - Prop. YYYY/YY:NN (Propositioner)
+ * - Ds YYYY:NN (Departementsserie)
+ * - FPM YYYY/YY:NN (Faktapromemoria)
+ * - XX20YY/NNNNN (Ministry dossier numbers, e.g., Ju2025/00680)
  */
 function extractDocNumber(urlOrText: string): string | null {
   // Decode HTML entities first
@@ -70,6 +77,14 @@ function extractDocNumber(urlOrText: string): string | null {
   const fpmMatch = text.match(/\b(\d{4}\/\d{2})\s*[:\-]?\s*FPM\s*(\d+)/i);
   if (fpmMatch) {
     return `${fpmMatch[1]}:FPM${fpmMatch[2]}`;
+  }
+
+  // Try Ministry dossier number pattern (e.g., Ju2025/00680, Fi2025/00974, U2025/02147)
+  // Format: 1-3 letter ministry code + year + / + 4-5 digit number
+  const dossierMatch = text.match(/\b([A-Za-z]{1,3})(\d{4})\/(\d{4,5})\b/);
+  if (dossierMatch) {
+    const ministryCode = dossierMatch[1].charAt(0).toUpperCase() + dossierMatch[1].slice(1).toLowerCase();
+    return `${ministryCode}${dossierMatch[2]}/${dossierMatch[3]}`;
   }
 
   return null;
