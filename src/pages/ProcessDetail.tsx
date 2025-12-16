@@ -66,7 +66,7 @@ export default function ProcessDetail() {
     enabled: !!id,
   });
 
-  // Fetch all unique entities from process documents
+  // Fetch all unique entities from process documents via relations table
   const { data: entities, isLoading: entitiesLoading } = useQuery({
     queryKey: ['process-entities', id],
     queryFn: async () => {
@@ -74,14 +74,26 @@ export default function ProcessDetail() {
       
       if (documentIds.length === 0) return [];
 
-      const { data, error } = await supabase
-        .from('entities')
-        .select('id, name, entity_type, role, source_document_id')
-        .in('source_document_id', documentIds);
+      // Query entities via relations table (entity -> document relations)
+      const { data: relations, error } = await supabase
+        .from('relations')
+        .select(`
+          relation_type,
+          source_id,
+          entities!relations_source_id_fkey (
+            id,
+            name,
+            entity_type,
+            role
+          )
+        `)
+        .in('target_id', documentIds)
+        .eq('source_type', 'entity')
+        .eq('target_type', 'document');
 
       if (error) throw error;
 
-      // Deduplicate entities by name and type, keeping track of document count
+      // Deduplicate entities by name and type, keeping track of document count and roles
       const entityMap = new Map<string, {
         id: string;
         name: string;
@@ -90,7 +102,10 @@ export default function ProcessDetail() {
         documentCount: number;
       }>();
 
-      data?.forEach(entity => {
+      relations?.forEach(rel => {
+        const entity = rel.entities as any;
+        if (!entity) return;
+        
         const key = `${entity.name}-${entity.entity_type}`;
         if (entityMap.has(key)) {
           const existing = entityMap.get(key)!;
@@ -170,8 +185,9 @@ export default function ProcessDetail() {
     );
   }
 
-  const directives = documents?.filter(d => (d.documents as any)?.doc_type === 'dir') || [];
+  const directives = documents?.filter(d => (d.documents as any)?.doc_type === 'directive') || [];
   const investigations = documents?.filter(d => (d.documents as any)?.doc_type === 'sou') || [];
+  const propositions = documents?.filter(d => (d.documents as any)?.doc_type === 'proposition') || [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -229,7 +245,7 @@ export default function ProcessDetail() {
                   Dokument ({documents?.length || 0})
                 </CardTitle>
                 <CardDescription>
-                  Direktiv och utredningar i denna process
+                  Direktiv, utredningar och propositioner i denna process
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -314,6 +330,52 @@ export default function ProcessDetail() {
                                           Processed
                                         </Badge>
                                       )}
+                                    </div>
+                                    <h4 className="font-medium mb-1 line-clamp-2">{doc.title}</h4>
+                                    {doc.ministry && (
+                                      <p className="text-sm text-muted-foreground">{doc.ministry}</p>
+                                    )}
+                                  </div>
+                                  {doc.publication_date && (
+                                    <div className="text-xs text-muted-foreground whitespace-nowrap">
+                                      {format(new Date(doc.publication_date), 'yyyy-MM-dd')}
+                                    </div>
+                                  )}
+                                </div>
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Propositions Section */}
+                    {propositions.length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-semibold mb-3 text-muted-foreground">
+                          PROPOSITIONER ({propositions.length})
+                        </h3>
+                        <div className="space-y-3">
+                          {propositions.map((item) => {
+                            const doc = item.documents as any;
+                            if (!doc) return null;
+                            
+                            return (
+                              <Link
+                                key={doc.id}
+                                to={`/document/${doc.id}`}
+                                className="block p-4 rounded-lg border hover:bg-muted/50 transition-colors"
+                              >
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <Badge variant="outline" className="text-xs">
+                                        PROP
+                                      </Badge>
+                                      <span className="text-sm font-medium">{doc.doc_number}</span>
+                                      <Badge variant="secondary" className="text-xs">
+                                        {item.role}
+                                      </Badge>
                                     </div>
                                     <h4 className="font-medium mb-1 line-clamp-2">{doc.title}</h4>
                                     {doc.ministry && (
