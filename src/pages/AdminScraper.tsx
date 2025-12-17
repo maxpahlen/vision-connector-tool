@@ -14,8 +14,10 @@ import { PropositionTextExtractorTest } from '@/components/admin/PropositionText
 import { PropositionAgentTest } from '@/components/admin/PropositionAgentTest';
 import { PropositionBatchProcessor } from '@/components/admin/PropositionBatchProcessor';
 import { RemissScraperTest } from '@/components/admin/RemissScraperTest';
+import { RemissDiscoveryDashboard } from '@/components/admin/RemissDiscoveryDashboard';
 import { SouLagstiftningskedjaScraper } from '@/components/admin/SouLagstiftningskedjaScraper';
 import { SouUrlRepairTool } from '@/components/admin/SouUrlRepairTool';
+import { DirectiveMetadataScraper } from '@/components/admin/DirectiveMetadataScraper';
 import { ValidationDashboard } from '@/components/admin/ValidationDashboard';
 import { FileText, Bot, Database, Settings, Play, FileSearch, BarChart3 } from 'lucide-react';
 
@@ -77,6 +79,7 @@ export default function AdminScraper() {
             </CardHeader>
           </Card>
           
+          <RemissDiscoveryDashboard />
           <SouUrlRepairTool />
           <SouLagstiftningskedjaScraper />
           <RemissScraperTest />
@@ -126,6 +129,7 @@ export default function AdminScraper() {
           </Card>
           
           <div className="grid gap-6">
+            <DirectiveMetadataScraper />
             <div className="grid gap-6 md:grid-cols-2">
               <ScraperControls />
               <StateMachineTest />
