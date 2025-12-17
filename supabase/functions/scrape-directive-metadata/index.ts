@@ -299,38 +299,107 @@ serve(async (req) => {
             console.error(`Error updating ${doc.id}:`, updateError);
           }
           
-          // Also create entities for the people
+          // Create/update entities for the people using proper upsert logic
+          const createOrUpdateEntity = async (name: string, role: string) => {
+            // Check if entity already exists
+            const { data: existing, error: findErr } = await supabase
+              .from('entities')
+              .select('id, metadata')
+              .eq('entity_type', 'person')
+              .eq('name', name)
+              .maybeSingle();
+            
+            if (findErr) {
+              console.error(`Error finding entity ${name}:`, findErr);
+              return { success: false, error: findErr.message };
+            }
+            
+            const sourceEntry = { 
+              document_id: doc.id, 
+              source_type: 'html_accordion',
+              page_type,
+              scraped_at: new Date().toISOString()
+            };
+            
+            if (existing) {
+              // Update existing entity with additional source
+              const existingMeta = existing.metadata || {};
+              const sources = existingMeta.sources || [];
+              // Only add if not already present
+              if (!sources.some((s: any) => s.document_id === doc.id)) {
+                sources.push(sourceEntry);
+              }
+              
+              const { error: updateErr } = await supabase
+                .from('entities')
+                .update({ 
+                  metadata: { ...existingMeta, sources },
+                  // Update role if not set or if this is a "higher" role
+                  role: existingMeta.primary_role || role,
+                })
+                .eq('id', existing.id);
+              
+              if (updateErr) {
+                console.error(`Error updating entity ${name}:`, updateErr);
+                return { success: false, error: updateErr.message, action: 'update' };
+              }
+              console.log(`Updated existing entity: ${name} (${role})`);
+              return { success: true, action: 'updated', id: existing.id };
+            } else {
+              // Insert new entity
+              const { data: inserted, error: insertErr } = await supabase
+                .from('entities')
+                .insert({
+                  name,
+                  entity_type: 'person',
+                  role,
+                  source_document_id: doc.id,
+                  source_excerpt: `Kontaktuppgifter från sou.gov.se: ${role}: ${name}`,
+                  metadata: { 
+                    source_type: 'html_accordion', 
+                    page_type,
+                    primary_role: role,
+                    sources: [sourceEntry]
+                  }
+                })
+                .select('id')
+                .single();
+              
+              if (insertErr) {
+                console.error(`Error inserting entity ${name}:`, insertErr);
+                return { success: false, error: insertErr.message, action: 'insert' };
+              }
+              console.log(`Created new entity: ${name} (${role})`);
+              return { success: true, action: 'created', id: inserted?.id };
+            }
+          };
+          
+          // Process utredare
           if (directive.utredare) {
-            await supabase.from('entities').upsert({
-              name: directive.utredare,
-              entity_type: 'person',
-              role: 'särskild utredare',
-              source_document_id: doc.id,
-              source_excerpt: `Kontaktuppgifter från sou.gov.se: Särskild utredare: ${directive.utredare}`,
-              metadata: { source_type: 'html_accordion', page_type }
-            }, { onConflict: 'name,entity_type,source_document_id' });
+            const result = await createOrUpdateEntity(directive.utredare, 'särskild utredare');
+            detail.entityResults = detail.entityResults || [];
+            detail.entityResults.push({ name: directive.utredare, role: 'särskild utredare', ...result });
           }
           
+          // Process sekreterare
           for (const sekr of directive.sekreterare) {
-            await supabase.from('entities').upsert({
-              name: sekr,
-              entity_type: 'person',
-              role: 'sekreterare',
-              source_document_id: doc.id,
-              source_excerpt: `Kontaktuppgifter från sou.gov.se: Sekreterare: ${sekr}`,
-              metadata: { source_type: 'html_accordion', page_type }
-            }, { onConflict: 'name,entity_type,source_document_id' });
+            const result = await createOrUpdateEntity(sekr, 'sekreterare');
+            detail.entityResults = detail.entityResults || [];
+            detail.entityResults.push({ name: sekr, role: 'sekreterare', ...result });
           }
           
+          // Process huvudsekreterare
           if (directive.huvudsekreterare) {
-            await supabase.from('entities').upsert({
-              name: directive.huvudsekreterare,
-              entity_type: 'person',
-              role: 'huvudsekreterare',
-              source_document_id: doc.id,
-              source_excerpt: `Kontaktuppgifter från sou.gov.se: Huvudsekreterare: ${directive.huvudsekreterare}`,
-              metadata: { source_type: 'html_accordion', page_type }
-            }, { onConflict: 'name,entity_type,source_document_id' });
+            const result = await createOrUpdateEntity(directive.huvudsekreterare, 'huvudsekreterare');
+            detail.entityResults = detail.entityResults || [];
+            detail.entityResults.push({ name: directive.huvudsekreterare, role: 'huvudsekreterare', ...result });
+          }
+          
+          // Process experts
+          for (const exp of directive.expert) {
+            const result = await createOrUpdateEntity(exp, 'expert');
+            detail.entityResults = detail.entityResults || [];
+            detail.entityResults.push({ name: exp, role: 'expert', ...result });
           }
         }
       } else {
