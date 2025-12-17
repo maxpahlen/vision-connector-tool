@@ -36,7 +36,7 @@ interface RemissPageResult {
   extraction_log: string[];
 }
 
-type DiscoveryMethod = 'references' | 'page_scrape' | 'not_found';
+type DiscoveryMethod = 'lagstiftningskedja' | 'index_match' | 'page_scrape' | 'manual' | 'not_found';
 
 /**
  * Validate that a remiss URL is specific (not the generic index page)
@@ -69,7 +69,7 @@ async function findRemissFromReferences(
     for (const ref of urlRefs as Array<{ target_url: string | null; target_doc_number: string | null; source_excerpt: string | null }>) {
       if (ref.target_url && isValidRemissUrl(ref.target_url)) {
         console.log(`Phase A: Found remiss via target_url: ${ref.target_url}`);
-        return { url: ref.target_url, method: 'references' };
+        return { url: ref.target_url, method: 'lagstiftningskedja' as DiscoveryMethod };
       }
     }
   }
@@ -87,10 +87,9 @@ async function findRemissFromReferences(
 
   // Try to extract a URL from the references
   for (const ref of textRefs as Array<{ target_doc_number: string | null; source_excerpt: string | null; target_url: string | null }>) {
-    // First check target_url (may have been stored previously)
     if (ref.target_url && isValidRemissUrl(ref.target_url)) {
       console.log(`Phase A: Found remiss via target_url (fallback): ${ref.target_url}`);
-      return { url: ref.target_url, method: 'references' };
+      return { url: ref.target_url, method: 'lagstiftningskedja' as DiscoveryMethod };
     }
     
     const text = ref.target_doc_number || '';
@@ -99,7 +98,7 @@ async function findRemissFromReferences(
     // If source_excerpt contains a URL (legacy data)
     const urlMatch = (ref.source_excerpt || '').match(/https?:\/\/[^\s"'<>]+remisser\/\d{4}\/\d{2}\/[^\s"'<>]+/);
     if (urlMatch && isValidRemissUrl(urlMatch[0])) {
-      return { url: urlMatch[0], method: 'references' };
+      return { url: urlMatch[0], method: 'lagstiftningskedja' as DiscoveryMethod };
     }
   }
 
@@ -327,7 +326,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { document_id, limit = 10, skip_existing = true } = body;
+    const { document_id, limit = 10, skip_existing = true, remiss_url, discovery_method: providedMethod } = body;
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -530,8 +529,10 @@ Deno.serve(async (req) => {
       skipped: results.filter(r => r.status === 'skipped').length,
       total_remissvar: results.reduce((sum, r) => sum + (r.remissvar_count || 0), 0),
       by_discovery_method: {
-        references: results.filter(r => r.discovery_method === 'references').length,
+        lagstiftningskedja: results.filter(r => r.discovery_method === 'lagstiftningskedja').length,
+        index_match: results.filter(r => r.discovery_method === 'index_match').length,
         page_scrape: results.filter(r => r.discovery_method === 'page_scrape').length,
+        manual: results.filter(r => r.discovery_method === 'manual').length,
         not_found: results.filter(r => r.discovery_method === 'not_found').length,
       },
     };

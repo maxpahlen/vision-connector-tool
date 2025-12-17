@@ -24,6 +24,9 @@ verify_jwt = false
 [functions.scrape-sou-remiss]
 verify_jwt = false
 
+[functions.scrape-remiss-index]
+verify_jwt = false
+
 [functions.process-task-queue]
 verify_jwt = false
 

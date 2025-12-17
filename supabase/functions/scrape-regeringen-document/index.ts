@@ -113,77 +113,131 @@ function inferDocTypeFromUrl(url: string): string | undefined {
 
 /**
  * Extract Lagstiftningskedja (legislative chain) links from detail page
+ * 
+ * The Lagstiftningskedja section on regeringen.se appears in different HTML structures:
+ * 1. Accordion-based: #accordion--chain with .c-accordion content
+ * 2. Island container: .island--primary with h2 "Lagstiftningskedjan"
+ * 3. Related links section: .publication-shortcuts or similar
+ * 
+ * This function uses multiple selector strategies to maximize extraction.
  */
 function extractLagstiftningskedjaLinks(doc: any, baseUrl: string): LagstiftningskedjaLink[] {
   const links: LagstiftningskedjaLink[] = [];
   const seenUrls = new Set<string>();
   
-  // Look for lagstiftningskedja/genvägar sections
-  const sections = doc.querySelectorAll(
-    '[class*="lagstiftning"], [class*="legislative"], [class*="related"], ' +
-    '[class*="genvag"], [class*="shortcut"], .publication-shortcuts, .shortcuts'
+  // Helper to process a link and add to results
+  const processLink = (link: Element, source: string) => {
+    let url = link.getAttribute('href') || '';
+    const anchorText = link.textContent?.trim() || '';
+    
+    if (!url || url === '#' || !anchorText) return;
+    
+    if (!url.startsWith('http')) {
+      url = `https://www.regeringen.se${url.startsWith('/') ? '' : '/'}${url}`;
+    }
+    
+    // Skip invalid or duplicate URLs
+    if (!isValidDocumentUrl(url)) return;
+    if (seenUrls.has(url)) return;
+    seenUrls.add(url);
+    
+    const docType = inferDocTypeFromUrl(url);
+    if (docType) {
+      console.log(`[Lagstiftningskedja:${source}] Found ${docType}: ${anchorText.substring(0, 50)}...`);
+      links.push({ url, anchorText, docType });
+    }
+  };
+  
+  // Strategy 1: Look for accordion-based Lagstiftningskedja (#accordion--chain)
+  const accordionChain = doc.querySelector('#accordion--chain');
+  if (accordionChain) {
+    console.log('[Lagstiftningskedja] Found #accordion--chain');
+    const accordionLinks = accordionChain.querySelectorAll('a[href]');
+    for (let i = 0; i < accordionLinks.length; i++) {
+      processLink(accordionLinks[i] as Element, 'accordion');
+    }
+  }
+  
+  // Strategy 2: Look for island containers with Lagstiftningskedja header
+  const islands = doc.querySelectorAll('.island, .island--primary, .island--secondary');
+  for (let i = 0; i < islands.length; i++) {
+    const island = islands[i] as Element;
+    const header = island.querySelector('h2, h3');
+    const headerText = header?.textContent?.toLowerCase() || '';
+    
+    if (headerText.includes('lagstiftningskedja') || headerText.includes('genvägar')) {
+      console.log(`[Lagstiftningskedja] Found island with header: ${headerText}`);
+      const islandLinks = island.querySelectorAll('a[href]');
+      for (let j = 0; j < islandLinks.length; j++) {
+        processLink(islandLinks[j] as Element, 'island');
+      }
+    }
+  }
+  
+  // Strategy 3: Find H2/H3 elements containing "Lagstiftningskedja" and scan parent
+  const headings = doc.querySelectorAll('h2, h3');
+  for (let i = 0; i < headings.length; i++) {
+    const heading = headings[i] as Element;
+    const headingText = heading.textContent?.toLowerCase() || '';
+    
+    if (headingText.includes('lagstiftningskedja') || headingText.includes('genvägar')) {
+      // Get the parent container (likely a section, div, or aside)
+      const parent = heading.parentElement;
+      if (parent) {
+        console.log(`[Lagstiftningskedja] Found heading "${headingText}" - scanning parent`);
+        const parentLinks = parent.querySelectorAll('a[href]');
+        for (let j = 0; j < parentLinks.length; j++) {
+          processLink(parentLinks[j] as Element, 'heading-parent');
+        }
+        
+        // Also check next siblings (some layouts put links after the heading in separate divs)
+        let sibling = parent.nextElementSibling;
+        let siblingCount = 0;
+        while (sibling && siblingCount < 5) {
+          const siblingLinks = sibling.querySelectorAll('a[href]');
+          for (let k = 0; k < siblingLinks.length; k++) {
+            processLink(siblingLinks[k] as Element, 'heading-sibling');
+          }
+          sibling = sibling.nextElementSibling;
+          siblingCount++;
+        }
+      }
+    }
+  }
+  
+  // Strategy 4: Fallback - scan any element with class containing relevant keywords
+  const fallbackSections = doc.querySelectorAll(
+    '[class*="lagstiftning"], [class*="genvag"], [class*="shortcuts"], ' +
+    '.publication-shortcuts, .related-content, .related-documents'
   );
-  
-  console.log(`[Lagstiftningskedja] Found ${sections.length} potential sections`);
-  
-  for (let i = 0; i < sections.length; i++) {
-    const section = sections[i] as Element;
+  for (let i = 0; i < fallbackSections.length; i++) {
+    const section = fallbackSections[i] as Element;
     const sectionLinks = section.querySelectorAll('a[href]');
-    
     for (let j = 0; j < sectionLinks.length; j++) {
-      const link = sectionLinks[j] as Element;
-      let url = link.getAttribute('href') || '';
-      const anchorText = link.textContent?.trim() || '';
-      
-      if (!url || url === '#' || !anchorText) continue;
-      
-      if (!url.startsWith('http')) {
-        url = `https://www.regeringen.se${url.startsWith('/') ? '' : '/'}${url}`;
-      }
-      
-      // Skip invalid or duplicate URLs
-      if (!isValidDocumentUrl(url)) continue;
-      if (seenUrls.has(url)) continue;
-      seenUrls.add(url);
-      
-      const docType = inferDocTypeFromUrl(url);
-      // Only include links that are identifiable document types
-      if (docType) {
-        links.push({ url, anchorText, docType });
-      }
+      processLink(sectionLinks[j] as Element, 'fallback');
     }
   }
   
-  // Also check the main content area for linked documents
-  const mainContent = doc.querySelector('main#content, .l-main, article');
+  // Strategy 5: Main content area - look for document links in body
+  const mainContent = doc.querySelector('main#content, .l-main, article, .publication-content');
   if (mainContent) {
-    // Look for links to government documents specifically
-    const relatedLinks = mainContent.querySelectorAll('a[href*="/remisser/"], a[href*="/kommittedirektiv/"], a[href*="/statens-offentliga-utredningar/"], a[href*="/propositioner/"]');
+    // Look specifically for remiss links (high value for Phase 5.3)
+    const remissLinks = mainContent.querySelectorAll('a[href*="/remisser/"]');
+    for (let i = 0; i < remissLinks.length; i++) {
+      processLink(remissLinks[i] as Element, 'main-remiss');
+    }
     
-    for (let i = 0; i < relatedLinks.length; i++) {
-      const link = relatedLinks[i] as Element;
-      let url = link.getAttribute('href') || '';
-      const anchorText = link.textContent?.trim() || '';
-      
-      if (!url || url === '#' || !anchorText) continue;
-      
-      if (!url.startsWith('http')) {
-        url = `https://www.regeringen.se${url.startsWith('/') ? '' : '/'}${url}`;
-      }
-      
-      // Skip invalid or duplicate URLs  
-      if (!isValidDocumentUrl(url)) continue;
-      if (seenUrls.has(url)) continue;
-      seenUrls.add(url);
-      
-      const docType = inferDocTypeFromUrl(url);
-      if (docType) {
-        links.push({ url, anchorText, docType });
-      }
+    // Also get other document type links
+    const otherDocLinks = mainContent.querySelectorAll(
+      'a[href*="/kommittedirektiv/"], a[href*="/statens-offentliga-utredningar/"], ' +
+      'a[href*="/propositioner/"], a[href*="/proposition/"]'
+    );
+    for (let i = 0; i < otherDocLinks.length; i++) {
+      processLink(otherDocLinks[i] as Element, 'main-other');
     }
   }
   
-  console.log(`[Lagstiftningskedja] Extracted ${links.length} valid document links`);
+  console.log(`[Lagstiftningskedja] Total extracted: ${links.length} valid document links`);
   return links;
 }
 
