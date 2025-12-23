@@ -1,7 +1,7 @@
 # Product Roadmap — Legislative Intelligence Platform
 
-**Last Updated:** 2025-12-02  
-**Current Phase:** Phase 4.3 ✅ Complete | Phase 5 Planning
+**Last Updated:** 2025-12-23  
+**Current Phase:** Phase 5.2 ✅ Complete | Phase 5.3 In Progress
 
 ---
 
@@ -32,7 +32,7 @@
 | **Phase 4.1** | ✅ Complete | Search Walking Skeleton | Full-text search, filters, pagination, highlights |
 | **Phase 4.2** | ✅ Complete | Entity Features | Entity autocomplete, entity detail pages, relations FK |
 | **Phase 4.3** | ✅ Complete | Discovery MVP | Enhanced doc detail, process pages, related docs (deterministic) |
-| **Phase 5** | 📋 Planned | Legislative Graph Expansion | New doc types, Timeline Agent v2, Genvägar scraping |
+| **Phase 5** | 🚀 In Progress | Legislative Graph Expansion | New doc types, Timeline Agent v2, Genvägar scraping |
 | **Phase 6** | 📋 Planned | Relationship Inference | Blackboard agent, case reconstruction |
 | **Phase 7** | 📋 Planned | Advanced Insights | Stakeholder mapping, predictions |
 
@@ -66,7 +66,7 @@
 - Process creation linked to documents
 
 ### Success Criteria Met
-- ✅ 163+ SOUs ingested
+- ✅ 61 SOUs ingested (with text extracted)
 - ✅ PDF content extracted with page markers
 - ✅ Documents linked to processes
 
@@ -386,14 +386,26 @@ These were **NOT** implemented until MVP is validated:
 
 **Goal:** Expand beyond SOUs to build comprehensive legislative process graph.
 
+### Current Database Metrics (2025-12-23)
+
+| Table | Count | Notes |
+|-------|-------|-------|
+| **Documents** | 127 total | 61 SOUs, 56 directives, 10 propositions |
+| **Processes** | 127 | All with linked documents |
+| **Entities** | 284 | Persons, committees, ministries |
+| **Timeline Events** | 723 | Extracted with citations |
+| **Document References** | 494 | Cross-document citations |
+| **Remiss Documents** | 0 | Phase 5.3 target |
+| **Remiss Responses** | 0 | Phase 5.3 target |
+
 ### Core Strategy
 > One new document type at a time → fully end-to-end → tested → then move to the next.
 
 ### Implementation Order (following Swedish legislative lifecycle)
-1. **Propositions** — FIRST
-2. **Remisser + Remissvar** — SECOND
-3. **Committee Reports** — THIRD
-4. **Laws** — FOURTH
+1. **Propositions** — ✅ COMPLETE (Phase 5.2)
+2. **Remisser + Remissvar** — 🚀 IN PROGRESS (Phase 5.3)
+3. **Committee Reports** — PLANNED (Phase 5.4)
+4. **Laws** — PLANNED (Phase 5.4)
 
 ### Database Schema Changes
 - `lifecycle_stage` column on documents (directive, interim_analysis, remiss, proposition, parliament, law)
