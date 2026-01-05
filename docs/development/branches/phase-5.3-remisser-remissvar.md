@@ -8,7 +8,19 @@
 
 ## Overview
 
-Phase 5.3 implements the ingestion of Swedish government consultation documents (remisser) and their responses (remissvar). This phase follows the walking skeleton approach, starting with SOU-linked remisser and expanding to the full remiss index.
+Phase 5.3 implements the ingestion of Swedish government consultation documents (remisser) and their responses (remissvar). 
+
+### Primary Strategy: Scrape → Match
+
+The primary discovery strategy is to **scrape the remiss index directly** and then **match remisser to SOUs/Directives/Propositions by title/document number**. This approach was chosen because:
+
+1. **Only ~10% of SOUs have remiss links** in their Lagstiftningskedja sections
+2. **The remiss index is comprehensive** - all remisser are listed at regeringen.se/remisser
+3. **Title matching is reliable** - remiss titles typically include the document number (e.g., "Remiss av SOU 2025:44")
+
+### Secondary Strategy: SOU-Linked Discovery (Limited Use)
+
+Finding remiss links via SOU Lagstiftningskedja pages is a **secondary, fallback approach** with limited effectiveness. It only works for the minority of SOUs that happen to have remiss links on their pages.
 
 ---
 
@@ -16,60 +28,60 @@ Phase 5.3 implements the ingestion of Swedish government consultation documents 
 
 Initial analysis revealed:
 - **Total SOUs**: 71
-- **SOUs with remiss references in document_references**: 0 (references are from propositions, not SOUs)
+- **SOUs with remiss references in document_references**: Very few (~10%)
 - **Propositions with remiss references**: 65
 
-This means we must rely on page scraping with strict URL validation.
+This confirms we must rely on direct index scraping with title matching.
 
 ---
 
 ## Objectives
 
 ### Primary Goals
-1. **SOU-Linked Remiss Discovery**: For each SOU in our database, find associated remiss pages via Lagstiftningskedja/Genvägar links
-2. **Remissvar Extraction**: Parse remiss pages to extract all remissvar documents and their responding organizations
-3. **Data Linkage**: Create proper relationships between SOUs, remiss documents, and individual remissvar files
+1. **Remiss Index Scraping**: Scrape regeringen.se/remisser to discover all remiss documents
+2. **Title Matching**: Match remisser to SOUs/Dir./Prop. by parsing document numbers from titles
+3. **Remissvar Extraction**: Parse remiss pages to extract all remissvar documents and their responding organizations
+4. **Data Linkage**: Create proper relationships between documents, remiss pages, and remissvar files
 
-### Secondary Goals (After Phase 1 Validation)
-- Scrape the full remiss index at regeringen.se/remisser
-- Match remisser to SOUs by title/document number
+### Secondary Goals
 - Extract stakeholder organizations as entities
+- Handle orphan remisser (those that don't match any document in our database)
 
 ---
 
-## Discovery Strategy (Fixed 2025-12-10)
+## Discovery Strategy
 
-### Problem
-Initial implementation incorrectly matched generic `/remisser/` index page instead of specific remiss pages.
+### Primary: Remiss Index Scraping (Phase 2)
 
-### Solution: Two-Phase Resolution
+1. **Scrape `regeringen.se/remisser`** with pagination
+2. **Parse each listing** to extract:
+   - Title (contains document references like "SOU 2025:44", "Dir. 2024:12")
+   - Remiss page URL
+   - Publication date
+3. **Match to documents** in our database by doc_number
+4. **Store matched remisser** in `remiss_documents` table
+5. **Track orphans** for future document ingestion
 
-**Phase A: Check document_references**
-- Query `document_references` for links containing "remiss" in `target_doc_number`
-- Extract URL if present in `source_excerpt`
-- Set `discovery_method = 'references'`
+Edge function: `scrape-remiss-index`
 
-**Phase B: Page Scrape with Strict Validation**
-- Only accept URLs matching pattern: `/remisser/YYYY/MM/...`
-- Reject generic `/remisser/` or `/remisser` URLs
-- Search in Lagstiftningskedja/Genvägar sections first
-- Score candidate links by relevance
-- Set `discovery_method = 'page_scrape'`
+### Secondary: SOU Page Scraping (Phase 1 - Limited)
 
-### URL Validation Rule
-```typescript
-function isValidRemissUrl(url: string): boolean {
-  const datePathPattern = /\/remisser\/\d{4}\/\d{2}\//;
-  return datePathPattern.test(url);
-}
-```
+~~Primary~~ **Fallback** approach for when remiss index matching fails:
+
+1. Check `document_references` for links containing remiss URLs
+2. Scrape SOU pages for Lagstiftningskedja/Genvägar sections
+3. Only accept URLs matching pattern: `/remisser/YYYY/MM/...`
+
+Edge function: `scrape-sou-remiss`
+
+**Note**: This approach has low yield (~10% of SOUs) and should not be relied upon as the primary discovery method.
 
 ---
 
 ## Database Schema
 
 ### remiss_documents
-Tracks remiss pages linked to parent SOUs:
+Tracks remiss pages linked to parent documents:
 ```sql
 - id (uuid, PK)
 - parent_document_id (uuid, FK → documents)
@@ -106,45 +118,38 @@ Tracks individual remissvar files:
 - [x] Database migration for remiss_documents and remiss_responses tables
 - [x] Edge function `scrape-sou-remiss` to find remiss links from SOU pages
 - [x] Parse remiss pages to extract remissvar documents
-- [x] Admin UI component for testing
-- [x] **FIX**: Add strict URL validation to reject generic /remisser/ page
-- [x] **FIX**: Implement two-phase discovery (references → page scrape)
-- [x] **FIX**: Add Lagstiftningskedja extraction to `scrape-regeringen-document` (was only in proposition scraper)
-- [ ] Re-scrape existing SOUs to populate document_references
-- [ ] Validate on 10+ SOUs with working remiss chains
+- [x] Admin UI component for testing (`RemissScraperTest`)
+- [x] Strict URL validation to reject generic /remisser/ page
+- [x] Two-phase discovery (references → page scrape)
 
-### Lagstiftningskedja Extraction (Added 2025-12-10)
+**Note**: This phase has limited effectiveness (~10% of SOUs have remiss links).
 
-The `scrape-regeringen-document` function now extracts Lagstiftningskedja/Genvägar links for SOUs and Directives, not just propositions. This populates the `document_references` table with links to:
-- Related remisser
-- Related directives  
-- Related SOUs
-- Related propositions
+### Phase 2: Remiss Index Scraping ✅ → 🚧 In Progress
+- [x] Edge function `scrape-remiss-index` with pagination
+- [x] Title parsing to extract SOU/Dir. references
+- [x] Matching logic to link remisser to documents
+- [x] Deduplication against existing remiss_documents
+- [ ] **Admin UI component** (`RemissIndexScraperTest`) - IN PROGRESS
+- [ ] Execute initial scrape and validate results
 
-This enables the remiss scraper to find remiss pages via the document_references table instead of relying solely on page scraping.
-
-### Phase 2: Remiss Index Scraping (After Validation)
-- [ ] Scraper for regeringen.se/remisser with pagination
-- [ ] Title matching to link orphan remisser to SOUs
-- [ ] Deduplication against existing remiss_documents
-
-### Phase 3: Fallback Search (Optional, Approval Required)
-- [ ] Site search for unmatched SOUs
-- [ ] Manual review queue for low-confidence matches
+### Phase 3: Orphan Resolution (Future)
+- [ ] Handle unmatched remisser (document not in database)
+- [ ] Priority queue for ingesting missing documents
+- [ ] Manual review interface for ambiguous matches
 
 ---
 
 ## Edge Functions
 
-### scrape-sou-remiss
-**Purpose**: Scan SOU documents for remiss links and extract remissvar
+### scrape-remiss-index (Primary)
+**Purpose**: Scrape the remiss index and match to documents in database
 
 **Input**:
 ```json
 {
-  "document_id": "uuid (optional, process single SOU)",
-  "limit": 10,
-  "skip_existing": true
+  "page": 1,
+  "max_pages": 10,
+  "dry_run": true
 }
 ```
 
@@ -153,56 +158,61 @@ This enables the remiss scraper to find remiss pages via the document_references
 {
   "success": true,
   "summary": {
-    "total_processed": 10,
-    "success": 3,
-    "no_remiss": 5,
-    "errors": 1,
-    "skipped": 1,
-    "total_remissvar": 45
+    "pages_scraped": 10,
+    "total_listings": 120,
+    "matched": 45,
+    "orphaned": 75,
+    "errors": 0
   },
-  "results": [...]
+  "matched": [...],
+  "orphan": [...]
 }
 ```
 
-**Logic**:
-1. Query SOU documents with URLs from database
-2. For each SOU, fetch its regeringen.se page
-3. Search for remiss links in Lagstiftningskedja/Genvägar sections
-4. If found, fetch and parse the remiss page
-5. Extract all remissvar document links
-6. Store in remiss_documents and remiss_responses tables
+### scrape-sou-remiss (Secondary/Fallback)
+**Purpose**: Scan SOU documents for remiss links (limited effectiveness)
+
+**Input**:
+```json
+{
+  "document_id": "uuid (optional)",
+  "limit": 10,
+  "skip_existing": true
+}
+```
+
+**Note**: Only ~10% of SOUs have remiss links. Use `scrape-remiss-index` as primary discovery.
 
 ---
 
-## Known Patterns
+## Admin UI Components
 
-### Remiss Link Detection
-Remiss links typically appear in:
-- `.publication-shortcuts` containers
-- Links containing `/remisser/` in href
-- Links with text including "Remiss" (excluding "Remissvar")
+### RemissIndexScraperTest (Primary - Phase 2)
+- Location: `src/components/admin/RemissIndexScraperTest.tsx`
+- Purpose: Run and monitor `scrape-remiss-index` edge function
+- Controls: Start page, max pages, dry run toggle
+- Results: Summary stats, matched/orphan tables
 
-### Remissvar Document Patterns
-- PDFs with organization names in filenames
-- Links in download sections
-- Text containing "remissvar" or "yttrande"
+### RemissScraperTest (Secondary - Phase 1)
+- Location: `src/components/admin/RemissScraperTest.tsx`
+- Purpose: Run `scrape-sou-remiss` for SOU-linked discovery
+- Note: Limited effectiveness, use for fallback/debugging only
 
-### Remissinstanser
-Some remiss pages include a PDF listing all invited organizations:
-- Filename often contains "remissinstans" or "sändlista"
-- Stored separately for reference
+### RemissDiscoveryDashboard
+- Location: `src/components/admin/RemissDiscoveryDashboard.tsx`
+- Purpose: View current remiss coverage statistics
 
 ---
 
 ## Success Criteria
 
-Phase 5.3 Skeleton is complete when:
+Phase 5.3 is complete when:
 1. ✅ Database schema deployed
-2. ✅ Edge function operational
-3. ✅ Admin UI for testing
-4. [ ] 10+ SOUs with working remiss→remissvar chains stored
-5. [ ] All documents stored with correct types
-6. [ ] Logging confirms working pattern
+2. ✅ Both edge functions operational
+3. [ ] **Remiss Index scraper executed** with 50+ matched remisser
+4. [ ] Admin UI for both scrapers
+5. [ ] Orphan remisser documented for future ingestion
+6. [ ] Coverage validated: >50% of remisser matched to documents
 
 ---
 
@@ -219,26 +229,19 @@ FROM documents
 WHERE doc_type = 'sou';
 ```
 
-### Detailed Remiss Stats
+### Remiss by Discovery Method
 ```sql
 SELECT 
-  rd.status,
-  COUNT(*) as count,
-  SUM(rd.remissvar_count) as total_remissvar
-FROM remiss_documents rd
-GROUP BY rd.status;
+  metadata->>'discovery_method' as method,
+  COUNT(*) as count
+FROM remiss_documents
+GROUP BY metadata->>'discovery_method';
 ```
 
-### Top Organizations
+### Orphan Count (Unmatched Remisser)
 ```sql
-SELECT 
-  responding_organization,
-  COUNT(*) as response_count
-FROM remiss_responses
-WHERE responding_organization IS NOT NULL
-GROUP BY responding_organization
-ORDER BY response_count DESC
-LIMIT 20;
+-- This would be tracked in scrape results, not in DB
+-- Orphans are remisser that reference documents not in our database
 ```
 
 ---
@@ -247,14 +250,12 @@ LIMIT 20;
 
 - [Phase 5 Implementation Plan](../PHASE_5_IMPLEMENTATION_PLAN.md)
 - [Phase 5.2 Completion Summary](../PHASE_5.2_COMPLETION_SUMMARY.md)
-- [Scraper Known Issues](../SCRAPER_KNOWN_ISSUES.md)
+- [Phase 5.3 Remiss Fix Follow-up](../PHASE_5.3_REMISS_FIX_FOLLOWUP.md)
 
 ---
 
-## Next Steps After Validation
+## Changelog
 
-1. Expand to Dir. and Proposition documents
-2. Parse responding organizations more accurately
-3. Create entities for stakeholder organizations
-4. Add Timeline Agent v2.3 for remiss-specific events (remiss_period_start, remiss_period_end)
-5. UI integration for displaying remissvar on Document Detail pages
+- **2026-01-05**: Clarified primary strategy is Scrape→Match (remiss index), not Lagstiftningskedja links
+- **2025-12-11**: Added target_url column for better remiss link tracking
+- **2025-12-10**: Initial implementation with SOU-linked discovery

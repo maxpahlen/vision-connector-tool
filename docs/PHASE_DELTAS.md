@@ -26,6 +26,24 @@ None | #blocking-<reason>
 
 ## Log
 
+### 2026-01-05 – Phase 5.3 – Task 3: Remiss Index Scraper UI (COMPLETE)
+
+Changed:
+- Updated `docs/development/branches/phase-5.3-remisser-remissvar.md` to clarify Scrape→Match is primary strategy
+- Created `src/components/admin/RemissIndexScraperTest.tsx` for running `scrape-remiss-index`
+- Added component to AdminScraper Remisser tab (positioned as primary tool)
+- Updated tab description to reflect correct strategy
+
+DB Impact: None
+
+Pending:
+- Execute scraper to populate remiss_documents
+
+Blocked:
+None
+
+---
+
 ### 2026-01-05 – Phase 5.3 – Task 2: Entity Role Normalization (COMPLETE)
 
 Changed:

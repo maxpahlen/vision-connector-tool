@@ -14,6 +14,7 @@ import { PropositionTextExtractorTest } from '@/components/admin/PropositionText
 import { PropositionAgentTest } from '@/components/admin/PropositionAgentTest';
 import { PropositionBatchProcessor } from '@/components/admin/PropositionBatchProcessor';
 import { RemissScraperTest } from '@/components/admin/RemissScraperTest';
+import { RemissIndexScraperTest } from '@/components/admin/RemissIndexScraperTest';
 import { RemissDiscoveryDashboard } from '@/components/admin/RemissDiscoveryDashboard';
 import { SouLagstiftningskedjaScraper } from '@/components/admin/SouLagstiftningskedjaScraper';
 import { SouUrlRepairTool } from '@/components/admin/SouUrlRepairTool';
@@ -74,12 +75,14 @@ export default function AdminScraper() {
             <CardHeader>
               <CardTitle>Phase 5.3: Remisser + Remissvar</CardTitle>
               <CardDescription>
-                Scan SOU documents to find remiss pages and extract remissvar responses
+                Primary strategy: Scrape remiss index → Match to SOUs by title. 
+                Secondary (limited): Find remiss links via SOU Lagstiftningskedja.
               </CardDescription>
             </CardHeader>
           </Card>
           
           <RemissDiscoveryDashboard />
+          <RemissIndexScraperTest />
           <SouUrlRepairTool />
           <SouLagstiftningskedjaScraper />
           <RemissScraperTest />
