@@ -1,5 +1,16 @@
 # Phase Deltas
 
+## 2026-01-05: Remiss Index Scraper Contract Fix
+
+**Task 4: Edge Function Contract Alignment**
+- Fixed `scrape-remiss-index` response structure to flatten `matched`/`orphan` arrays at top level
+- Renamed summary fields from `total_matched`/`total_orphan` to `matched`/`orphaned` 
+- Converted property names from camelCase to snake_case (`remiss_url`, `publication_date`, etc.)
+- Added `sou_references` and `dir_references` arrays to both matched and orphan items
+- Added `inserted` and `skipped_duplicates` counters for non-dry-run feedback
+- Added matching robustness: case-insensitive fallback query with `ilike`
+- Added debug logging for extracted references and orphan SOU years
+
 Chronological log of changes between syncs. Keep entries brief and bullet-based.
 
 ---
