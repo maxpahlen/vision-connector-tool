@@ -18,11 +18,14 @@ interface RemissListing {
   extractedDirNumbers: string[];
 }
 
+// UI-aligned interfaces (snake_case)
 interface MatchedRemiss {
-  remissUrl: string;
-  remissTitle: string;
-  publicationDate: string | null;
-  matchedDocument: {
+  remiss_url: string;
+  title: string;
+  publication_date: string | null;
+  sou_references: string[];
+  dir_references: string[];
+  matched_document: {
     id: string;
     doc_number: string;
     doc_type: string;
@@ -32,20 +35,19 @@ interface MatchedRemiss {
 }
 
 interface OrphanRemiss {
-  remissUrl: string;
-  remissTitle: string;
-  publicationDate: string | null;
-  extractedReferences: string[];
+  remiss_url: string;
+  title: string;
+  publication_date: string | null;
+  sou_references: string[];
+  dir_references: string[];
   reason: 'no_document_match' | 'no_reference_found';
 }
 
-interface ScrapeResult {
-  success: boolean;
-  page: number;
-  totalListings: number;
-  matched: MatchedRemiss[];
-  orphan: OrphanRemiss[];
-  errors: string[];
+/**
+ * Normalize doc_number for matching (trim, consistent casing)
+ */
+function normalizeDocNumber(docNumber: string): string {
+  return docNumber.trim().toUpperCase().replace(/\s+/g, ' ');
 }
 
 /**
@@ -255,7 +257,13 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     
-    const results: ScrapeResult[] = [];
+    // Flattened arrays for UI contract
+    const allMatched: MatchedRemiss[] = [];
+    const allOrphan: OrphanRemiss[] = [];
+    const allErrors: string[] = [];
+    let totalListings = 0;
+    let inserted = 0;
+    let skippedDuplicates = 0;
     
     for (let currentPage = page; currentPage < page + maxPages; currentPage++) {
       console.log(`[RemissIndex] Fetching page ${currentPage}...`);
@@ -269,42 +277,49 @@ Deno.serve(async (req) => {
       });
       
       if (!response.ok) {
-        results.push({
-          success: false,
-          page: currentPage,
-          totalListings: 0,
-          matched: [],
-          orphan: [],
-          errors: [`HTTP ${response.status} from ${indexUrl}`],
-        });
+        allErrors.push(`HTTP ${response.status} from page ${currentPage}`);
         continue;
       }
       
       const html = await response.text();
       const listings = parseRemissIndexPage(html);
+      totalListings += listings.length;
       
-      const matched: MatchedRemiss[] = [];
-      const orphan: OrphanRemiss[] = [];
-      const errors: string[] = [];
+      // Log sample of extracted references for debugging
+      if (listings.length > 0 && currentPage === page) {
+        const firstFive = listings.slice(0, 5);
+        console.log(`[RemissIndex] Sample refs from page ${currentPage}:`, 
+          firstFive.map(l => ({
+            title: l.title.substring(0, 50),
+            sou: l.extractedSouNumbers,
+            dir: l.extractedDirNumbers,
+          }))
+        );
+      }
       
       for (const listing of listings) {
-        // Combine all extracted references
-        const allReferences = [...listing.extractedSouNumbers, ...listing.extractedDirNumbers];
+        const souRefs = listing.extractedSouNumbers;
+        const dirRefs = listing.extractedDirNumbers;
+        const allReferences = [...souRefs, ...dirRefs];
         
         if (allReferences.length === 0) {
-          orphan.push({
-            remissUrl: listing.url,
-            remissTitle: listing.title,
-            publicationDate: listing.publicationDate,
-            extractedReferences: [],
+          allOrphan.push({
+            remiss_url: listing.url,
+            title: listing.title,
+            publication_date: listing.publicationDate,
+            sou_references: [],
+            dir_references: [],
             reason: 'no_reference_found',
           });
           continue;
         }
         
-        // Try to match each reference to an existing document
+        // Try to match each reference to an existing document with normalization
         let foundMatch = false;
         for (const docNumber of allReferences) {
+          const normalizedDocNumber = normalizeDocNumber(docNumber);
+          
+          // Query with exact match first
           const { data: doc, error } = await supabase
             .from('documents')
             .select('id, doc_number, doc_type, title')
@@ -312,41 +327,66 @@ Deno.serve(async (req) => {
             .maybeSingle();
           
           if (error) {
-            errors.push(`Query error for ${docNumber}: ${error.message}`);
+            allErrors.push(`Query error for ${docNumber}: ${error.message}`);
             continue;
           }
           
-          if (doc) {
-            matched.push({
-              remissUrl: listing.url,
-              remissTitle: listing.title,
-              publicationDate: listing.publicationDate,
-              matchedDocument: doc,
+          // If no exact match, try normalized query (case-insensitive via ilike)
+          let matchedDoc = doc;
+          if (!matchedDoc) {
+            const { data: fuzzyDoc, error: fuzzyError } = await supabase
+              .from('documents')
+              .select('id, doc_number, doc_type, title')
+              .ilike('doc_number', normalizedDocNumber)
+              .maybeSingle();
+            
+            if (!fuzzyError && fuzzyDoc) {
+              console.log(`[RemissIndex] Fuzzy matched "${docNumber}" -> "${fuzzyDoc.doc_number}"`);
+              matchedDoc = fuzzyDoc;
+            }
+          }
+          
+          if (matchedDoc) {
+            allMatched.push({
+              remiss_url: listing.url,
+              title: listing.title,
+              publication_date: listing.publicationDate,
+              sou_references: souRefs,
+              dir_references: dirRefs,
+              matched_document: matchedDoc,
               discovery_method: 'index_match',
             });
             foundMatch = true;
             
             // If not dry run, create remiss_document entry
             if (!dryRun) {
-              const { error: insertError } = await supabase
+              const { error: insertError, data: insertData } = await supabase
                 .from('remiss_documents')
                 .upsert({
-                  parent_document_id: doc.id,
+                  parent_document_id: matchedDoc.id,
                   remiss_page_url: listing.url,
                   title: listing.title,
                   status: 'discovered',
                   metadata: {
                     discovery_method: 'index_match',
                     discovered_at: new Date().toISOString(),
-                    extracted_references: allReferences,
+                    sou_references: souRefs,
+                    dir_references: dirRefs,
                   },
                 }, {
                   onConflict: 'remiss_page_url',
                   ignoreDuplicates: false,
-                });
+                })
+                .select('id');
               
               if (insertError) {
-                errors.push(`Insert error for remiss ${listing.url}: ${insertError.message}`);
+                if (insertError.code === '23505') { // Duplicate key
+                  skippedDuplicates++;
+                } else {
+                  allErrors.push(`Insert error for remiss ${listing.url}: ${insertError.message}`);
+                }
+              } else if (insertData && insertData.length > 0) {
+                inserted++;
               }
             }
             
@@ -355,33 +395,39 @@ Deno.serve(async (req) => {
         }
         
         if (!foundMatch) {
-          orphan.push({
-            remissUrl: listing.url,
-            remissTitle: listing.title,
-            publicationDate: listing.publicationDate,
-            extractedReferences: allReferences,
+          allOrphan.push({
+            remiss_url: listing.url,
+            title: listing.title,
+            publication_date: listing.publicationDate,
+            sou_references: souRefs,
+            dir_references: dirRefs,
             reason: 'no_document_match',
           });
         }
       }
-      
-      results.push({
-        success: true,
-        page: currentPage,
-        totalListings: listings.length,
-        matched,
-        orphan,
-        errors,
-      });
     }
     
-    // Aggregate summary
+    // Log unique SOU years referenced by orphans for debugging
+    const orphanSouYears = new Set<string>();
+    for (const o of allOrphan) {
+      for (const ref of o.sou_references) {
+        const yearMatch = ref.match(/SOU\s+(\d{4})/i);
+        if (yearMatch) orphanSouYears.add(yearMatch[1]);
+      }
+    }
+    if (orphanSouYears.size > 0) {
+      console.log(`[RemissIndex] Orphan SOU years referenced:`, Array.from(orphanSouYears).sort());
+    }
+    
+    // Summary aligned with UI expectations
     const summary = {
-      pages_scraped: results.length,
-      total_listings: results.reduce((sum, r) => sum + r.totalListings, 0),
-      total_matched: results.reduce((sum, r) => sum + r.matched.length, 0),
-      total_orphan: results.reduce((sum, r) => sum + r.orphan.length, 0),
-      total_errors: results.reduce((sum, r) => sum + r.errors.length, 0),
+      pages_scraped: maxPages,
+      total_listings: totalListings,
+      matched: allMatched.length,
+      orphaned: allOrphan.length,
+      errors: allErrors.length,
+      inserted: inserted,
+      skipped_duplicates: skippedDuplicates,
       dry_run: dryRun,
     };
     
@@ -391,7 +437,9 @@ Deno.serve(async (req) => {
       JSON.stringify({
         success: true,
         summary,
-        results,
+        matched: allMatched,
+        orphan: allOrphan,
+        errors: allErrors,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
