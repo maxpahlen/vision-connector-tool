@@ -26,6 +26,22 @@ None | #blocking-<reason>
 
 ## Log
 
+### 2026-01-05 – Phase 5.3 – Task 2: Entity Role Normalization (COMPLETE)
+
+Changed:
+- Normalized `särskild utredare` → `särskild_utredare` (7 entities)
+- Preserved minister-specific roles: statsminister, finansminister, justitieminister, arbetsmarknadsminister, statsråd
+
+DB Impact: Data updated (7 rows in entities table)
+
+Pending:
+None
+
+Blocked:
+None
+
+---
+
 ### 2026-01-05 – Phase 5.3 – Task 1: Contaminated SOU Cleanup (COMPLETE)
 
 Changed:
@@ -37,7 +53,7 @@ Changed:
 DB Impact: Data deleted and reset (irreversible, but data was contaminated)
 
 Pending:
-- Re-scrape SOU 2025:105 and SOU 2025:106 (process-sou-pdf, agent-metadata)
+None
 
 Blocked:
 None
