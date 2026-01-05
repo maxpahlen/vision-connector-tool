@@ -268,7 +268,7 @@ Deno.serve(async (req) => {
     for (let currentPage = page; currentPage < page + maxPages; currentPage++) {
       console.log(`[RemissIndex] Fetching page ${currentPage}...`);
       
-      const indexUrl = `https://www.regeringen.se/remisser/?page=${currentPage}`;
+      const indexUrl = `https://www.regeringen.se/remisser/?p=${currentPage}`;
       
       const response = await fetch(indexUrl, {
         headers: {
