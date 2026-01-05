@@ -26,18 +26,18 @@ None | #blocking-<reason>
 
 ## Log
 
-### 2026-01-05 – Phase 5.3 – Task 1: Contaminated SOU Cleanup
+### 2026-01-05 – Phase 5.3 – Task 1: Contaminated SOU Cleanup (COMPLETE)
 
 Changed:
 - Deleted document_references from SOU 2025:2, SOU 2025:105, SOU 2025:106
 - Deleted entities linked to those 3 SOUs
-- Reset url, pdf_url, raw_content to NULL for those 3 SOUs
+- SOU 2025:2: DELETED (confirmed to be a directive, not an SOU)
+- SOU 2025:105, SOU 2025:106: URLs verified, metadata reset for re-scraping
 
 DB Impact: Data deleted and reset (irreversible, but data was contaminated)
 
 Pending:
-- Manual URL lookup for correct SOU pages on regeringen.se
-- Re-scrape after correct URLs are set
+- Re-scrape SOU 2025:105 and SOU 2025:106 (process-sou-pdf, agent-metadata)
 
 Blocked:
 None
