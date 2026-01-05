@@ -159,36 +159,36 @@ export function RemissIndexScraperTest() {
             {/* Summary */}
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
               <div className="bg-muted p-3 rounded-lg text-center">
-                <div className="text-2xl font-bold">{result.summary.pages_scraped}</div>
+                <div className="text-2xl font-bold">{result.summary?.pages_scraped ?? 0}</div>
                 <div className="text-xs text-muted-foreground">Pages Scraped</div>
               </div>
               <div className="bg-muted p-3 rounded-lg text-center">
-                <div className="text-2xl font-bold">{result.summary.total_listings}</div>
+                <div className="text-2xl font-bold">{result.summary?.total_listings ?? 0}</div>
                 <div className="text-xs text-muted-foreground">Total Listings</div>
               </div>
               <div className="bg-primary/10 p-3 rounded-lg text-center">
-                <div className="text-2xl font-bold text-primary">{result.summary.matched}</div>
+                <div className="text-2xl font-bold text-primary">{result.summary?.matched ?? 0}</div>
                 <div className="text-xs text-muted-foreground">Matched</div>
               </div>
               <div className="bg-muted p-3 rounded-lg text-center">
-                <div className="text-2xl font-bold">{result.summary.orphaned}</div>
+                <div className="text-2xl font-bold">{result.summary?.orphaned ?? 0}</div>
                 <div className="text-xs text-muted-foreground">Orphaned</div>
               </div>
               {!dryRun && (
                 <>
                   <div className="bg-primary/10 p-3 rounded-lg text-center">
-                    <div className="text-2xl font-bold text-primary">{result.summary.inserted}</div>
+                    <div className="text-2xl font-bold text-primary">{result.summary?.inserted ?? 0}</div>
                     <div className="text-xs text-muted-foreground">Inserted</div>
                   </div>
                   <div className="bg-muted p-3 rounded-lg text-center">
-                    <div className="text-2xl font-bold">{result.summary.skipped_duplicates}</div>
+                    <div className="text-2xl font-bold">{result.summary?.skipped_duplicates ?? 0}</div>
                     <div className="text-xs text-muted-foreground">Duplicates</div>
                   </div>
                 </>
               )}
-              {result.summary.errors > 0 && (
+              {(result.summary?.errors ?? 0) > 0 && (
                 <div className="bg-destructive/10 p-3 rounded-lg text-center">
-                  <div className="text-2xl font-bold text-destructive">{result.summary.errors}</div>
+                  <div className="text-2xl font-bold text-destructive">{result.summary?.errors ?? 0}</div>
                   <div className="text-xs text-muted-foreground">Errors</div>
                 </div>
               )}
@@ -207,22 +207,22 @@ export function RemissIndexScraperTest() {
               <TabsList>
                 <TabsTrigger value="matched" className="flex items-center gap-2">
                   <CheckCircle className="h-4 w-4" />
-                  Matched ({result.matched.length})
+                  Matched ({result.matched?.length ?? 0})
                 </TabsTrigger>
                 <TabsTrigger value="orphan" className="flex items-center gap-2">
                   <FileQuestion className="h-4 w-4" />
-                  Orphaned ({result.orphan.length})
+                  Orphaned ({result.orphan?.length ?? 0})
                 </TabsTrigger>
-                {result.errors.length > 0 && (
+                {(result.errors?.length ?? 0) > 0 && (
                   <TabsTrigger value="errors" className="flex items-center gap-2">
                     <AlertCircle className="h-4 w-4" />
-                    Errors ({result.errors.length})
+                    Errors ({result.errors?.length ?? 0})
                   </TabsTrigger>
                 )}
               </TabsList>
 
               <TabsContent value="matched" className="mt-4">
-                {result.matched.length === 0 ? (
+                {(result.matched?.length ?? 0) === 0 ? (
                   <p className="text-muted-foreground text-sm">No matched remisser found.</p>
                 ) : (
                   <div className="border rounded-lg overflow-hidden">
@@ -236,7 +236,7 @@ export function RemissIndexScraperTest() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {result.matched.slice(0, 50).map((item, idx) => (
+                        {(result.matched ?? []).slice(0, 50).map((item, idx) => (
                           <TableRow key={idx}>
                             <TableCell className="max-w-xs">
                               <a 
@@ -245,22 +245,22 @@ export function RemissIndexScraperTest() {
                                 rel="noopener noreferrer"
                                 className="text-primary hover:underline text-sm"
                               >
-                                {item.title.length > 60 ? item.title.slice(0, 60) + '...' : item.title}
+                                {(item.title?.length ?? 0) > 60 ? item.title.slice(0, 60) + '...' : item.title}
                               </a>
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline">
-                                {item.matched_document.doc_number}
+                                {item.matched_document?.doc_number ?? 'Unknown'}
                               </Badge>
                             </TableCell>
                             <TableCell>
                               <div className="flex gap-1 flex-wrap">
-                                {item.sou_references.map((ref, i) => (
+                                {(item.sou_references ?? []).map((ref, i) => (
                                   <Badge key={`sou-${i}`} variant="secondary" className="text-xs">
                                     {ref}
                                   </Badge>
                                 ))}
-                                {item.dir_references.map((ref, i) => (
+                                {(item.dir_references ?? []).map((ref, i) => (
                                   <Badge key={`dir-${i}`} variant="outline" className="text-xs">
                                     {ref}
                                   </Badge>
@@ -274,9 +274,9 @@ export function RemissIndexScraperTest() {
                         ))}
                       </TableBody>
                     </Table>
-                    {result.matched.length > 50 && (
+                    {(result.matched?.length ?? 0) > 50 && (
                       <div className="p-2 text-center text-sm text-muted-foreground bg-muted">
-                        Showing first 50 of {result.matched.length} matched remisser
+                        Showing first 50 of {result.matched?.length ?? 0} matched remisser
                       </div>
                     )}
                   </div>
@@ -284,7 +284,7 @@ export function RemissIndexScraperTest() {
               </TabsContent>
 
               <TabsContent value="orphan" className="mt-4">
-                {result.orphan.length === 0 ? (
+                {(result.orphan?.length ?? 0) === 0 ? (
                   <p className="text-muted-foreground text-sm">No orphaned remisser found.</p>
                 ) : (
                   <div className="border rounded-lg overflow-hidden">
@@ -298,7 +298,7 @@ export function RemissIndexScraperTest() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {result.orphan.slice(0, 50).map((item, idx) => (
+                        {(result.orphan ?? []).slice(0, 50).map((item, idx) => (
                           <TableRow key={idx}>
                             <TableCell className="max-w-xs">
                               <a 
@@ -307,22 +307,22 @@ export function RemissIndexScraperTest() {
                                 rel="noopener noreferrer"
                                 className="text-primary hover:underline text-sm"
                               >
-                                {item.title.length > 60 ? item.title.slice(0, 60) + '...' : item.title}
+                                {(item.title?.length ?? 0) > 60 ? item.title.slice(0, 60) + '...' : item.title}
                               </a>
                             </TableCell>
                             <TableCell>
                               <div className="flex gap-1 flex-wrap">
-                                {item.sou_references.map((ref, i) => (
+                                {(item.sou_references ?? []).map((ref, i) => (
                                   <Badge key={`sou-${i}`} variant="secondary" className="text-xs">
                                     {ref}
                                   </Badge>
                                 ))}
-                                {item.dir_references.map((ref, i) => (
+                                {(item.dir_references ?? []).map((ref, i) => (
                                   <Badge key={`dir-${i}`} variant="outline" className="text-xs">
                                     {ref}
                                   </Badge>
                                 ))}
-                                {item.sou_references.length === 0 && item.dir_references.length === 0 && (
+                                {(item.sou_references?.length ?? 0) === 0 && (item.dir_references?.length ?? 0) === 0 && (
                                   <span className="text-muted-foreground text-xs">None</span>
                                 )}
                               </div>
@@ -337,19 +337,19 @@ export function RemissIndexScraperTest() {
                         ))}
                       </TableBody>
                     </Table>
-                    {result.orphan.length > 50 && (
+                    {(result.orphan?.length ?? 0) > 50 && (
                       <div className="p-2 text-center text-sm text-muted-foreground bg-muted">
-                        Showing first 50 of {result.orphan.length} orphaned remisser
+                        Showing first 50 of {result.orphan?.length ?? 0} orphaned remisser
                       </div>
                     )}
                   </div>
                 )}
               </TabsContent>
 
-              {result.errors.length > 0 && (
+              {(result.errors?.length ?? 0) > 0 && (
                 <TabsContent value="errors" className="mt-4">
                   <div className="space-y-2">
-                    {result.errors.map((err, idx) => (
+                    {(result.errors ?? []).map((err, idx) => (
                       <div key={idx} className="bg-destructive/10 p-2 rounded text-sm text-destructive">
                         {err}
                       </div>
