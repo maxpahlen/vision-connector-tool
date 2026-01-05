@@ -22,7 +22,7 @@ Running log of approved decisions for the Legislative Intelligence Platform.
 
 | Date | Change Title | PR/Issue | Data Risk | Max | Lovable | Codex |
 |------|--------------|----------|-----------|-----|---------|-------|
-| 2026-01-05 | Operating agreement adopted | N/A | NONE | AGREE | AGREE | *Pending* |
+| 2026-01-05 | Operating agreement adopted | N/A | NONE | AGREE | AGREE | AGREE |
 
 ---
 
@@ -43,4 +43,4 @@ Running log of approved decisions for the Legislative Intelligence Platform.
 **Approvals:**
 - AGREE – Max ✓
 - AGREE – Lovable ✓
-- AGREE – Codex: *Awaiting confirmation of file access*
+- AGREE – Codex ✓
