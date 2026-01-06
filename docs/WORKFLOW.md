@@ -112,6 +112,40 @@ Verification complete for PR #42:
 
 ---
 
+## Context Inclusion Rule (MANDATORY)
+
+When Lovable sends a message with:
+- `Message Type: PROPOSAL`
+- `Phase: PROPOSAL`
+- AND the proposal is in response to a prompt from Maximilian
+
+Lovable **MUST** include Max's original prompt text **verbatim** inside the proposal message.
+
+### Implementation
+
+1. Include a clearly labeled section:
+   ```
+   ## Original Prompt (verbatim)
+   <paste Max's exact text here>
+   ```
+2. Do NOT paraphrase, summarize, or reinterpret the prompt
+3. The original text must be copied exactly
+
+### Purpose
+
+- Prevent context drift between Codex and Lovable
+- Allow proposals to be forwarded without loss of intent
+- Reduce need to restate instructions
+- Preserve clear instruction → proposal lineage
+
+### Does NOT Apply To
+
+- APPROVAL, EXECUTION, or VERIFICATION messages
+- Clarifying questions
+- Unprompted suggestions
+
+---
+
 ## Blocking Rules
 
 When blocked, use:
