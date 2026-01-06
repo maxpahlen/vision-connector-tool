@@ -44,6 +44,33 @@ interface OrphanRemiss {
 }
 
 /**
+ * Build the Filter API URL for remiss index pagination.
+ * 
+ * IMPORTANT: regeringen.se uses an internal AJAX endpoint for pagination.
+ * The ?p= or ?page= query parameters on /remisser/ do NOT work for server-side scraping.
+ * 
+ * Category ID 2099 = "Remiss" in regeringen.se taxonomy
+ */
+function buildRemissFilterApiUrl(page: number): string {
+  return `https://www.regeringen.se/Filter/GetFilteredItems?` +
+    `lang=sv&` +
+    `filterType=Taxonomy&` +
+    `filterByType=FilterablePageBase&` +
+    `preFilteredCategories=2099&` +
+    `rootPageReference=0&` +
+    `page=${page}&` +
+    `displayLimited=True&` +
+    `displaySortedByRelevance=False`;
+}
+
+/**
+ * Sleep helper for rate limiting
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
  * Normalize doc_number for matching (trim, consistent casing)
  */
 function normalizeDocNumber(docNumber: string): string {
@@ -137,10 +164,12 @@ function parseRemissListing(item: Element): RemissListing | null {
 }
 
 /**
- * Parse the remiss index page HTML to extract listings
+ * Parse the remiss index HTML fragment (from Filter API) to extract listings
  */
 function parseRemissIndexPage(html: string): RemissListing[] {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
+  // Wrap fragment in minimal HTML shell for reliable DOM parsing
+  const wrappedHtml = `<!DOCTYPE html><html><body>${html}</body></html>`;
+  const doc = new DOMParser().parseFromString(wrappedHtml, 'text/html');
   if (!doc) {
     console.error('[RemissIndex] Failed to parse HTML');
     return [];
@@ -182,7 +211,7 @@ function parseRemissIndexPage(html: string): RemissListing[] {
   
   // Strategy 4: Direct anchor links in main content
   if (listings.length === 0) {
-    const mainContent = doc.querySelector('main, .main-content, #content, article');
+    const mainContent = doc.querySelector('main, .main-content, #content, article, body');
     if (mainContent) {
       const remissLinks = mainContent.querySelectorAll('a[href*="/remisser/"]');
       console.log(`[RemissIndex] Trying direct link strategy: ${remissLinks.length} links`);
@@ -242,6 +271,35 @@ function parseRemissIndexPage(html: string): RemissListing[] {
   return uniqueListings;
 }
 
+/**
+ * Extract HTML content from Filter API JSON response
+ */
+function extractHtmlFromFilterResponse(json: unknown): string | null {
+  if (!json || typeof json !== 'object') return null;
+  
+  const obj = json as Record<string, unknown>;
+  
+  // Try various possible keys for HTML content
+  const possibleKeys = ['Message', 'Html', 'html', 'Content', 'content', 'Body', 'body'];
+  for (const key of possibleKeys) {
+    if (typeof obj[key] === 'string' && obj[key]) {
+      return obj[key] as string;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Compute a simple signature for a page to detect duplicates
+ */
+function computePageSignature(listings: RemissListing[]): string {
+  if (listings.length === 0) return 'empty';
+  const firstUrl = listings[0].url;
+  const lastUrl = listings[listings.length - 1].url;
+  return `${listings.length}|${firstUrl}|${lastUrl}`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -249,7 +307,7 @@ Deno.serve(async (req) => {
   
   try {
     const body = await req.json();
-    const page = body.page || 1;
+    const startPage = body.page || body.start_page || 1;
     const maxPages = body.max_pages || 1;
     const dryRun = body.dry_run || false;
     
@@ -265,36 +323,79 @@ Deno.serve(async (req) => {
     let inserted = 0;
     let skippedDuplicates = 0;
     
-    for (let currentPage = page; currentPage < page + maxPages; currentPage++) {
-      console.log(`[RemissIndex] Fetching page ${currentPage}...`);
+    // Track page signatures to detect if pagination returns duplicates
+    let lastPageSignature = '';
+    
+    for (let currentPage = startPage; currentPage < startPage + maxPages; currentPage++) {
+      console.log(`[RemissIndex] Fetching page ${currentPage} via Filter API...`);
       
-      const indexUrl = `https://www.regeringen.se/remisser/?p=${currentPage}`;
+      // Use the internal Filter API endpoint (same approach as proposition scraper)
+      const filterUrl = buildRemissFilterApiUrl(currentPage);
       
-      const response = await fetch(indexUrl, {
+      const response = await fetch(filterUrl, {
         headers: {
-          'User-Agent': 'Vision-Connector-Tool/1.0 (Educational Research Tool)',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/json, text/html, */*',
+          'Accept-Language': 'sv-SE,sv;q=0.9,en;q=0.8',
+          'X-Requested-With': 'XMLHttpRequest',
+          'Referer': 'https://www.regeringen.se/remisser/',
         },
       });
       
       if (!response.ok) {
-        allErrors.push(`HTTP ${response.status} from page ${currentPage}`);
+        allErrors.push(`HTTP ${response.status} from Filter API page ${currentPage}`);
+        console.error(`[RemissIndex] Filter API returned ${response.status} for page ${currentPage}`);
         continue;
       }
       
-      const html = await response.text();
+      // Parse the Filter API response
+      let html = '';
+      const contentType = response.headers.get('content-type') || '';
+      
+      if (contentType.includes('application/json')) {
+        // JSON response - extract HTML from it
+        const json = await response.json();
+        const extractedHtml = extractHtmlFromFilterResponse(json);
+        if (extractedHtml) {
+          html = extractedHtml;
+          console.log(`[RemissIndex] Extracted HTML from JSON response (${html.length} chars)`);
+        } else {
+          console.error(`[RemissIndex] Could not extract HTML from JSON. Keys:`, Object.keys(json));
+          allErrors.push(`Failed to extract HTML from JSON response on page ${currentPage}`);
+          continue;
+        }
+      } else {
+        // Raw HTML response
+        html = await response.text();
+        console.log(`[RemissIndex] Got raw HTML response (${html.length} chars)`);
+      }
+      
       const listings = parseRemissIndexPage(html);
+      
+      // Pagination sanity check: detect if same page returned again
+      const pageSignature = computePageSignature(listings);
+      if (currentPage > startPage && pageSignature === lastPageSignature && listings.length > 0) {
+        const warningMsg = `Page ${currentPage} returned same content as previous page (signature: ${pageSignature}). Pagination may be broken.`;
+        console.warn(`[RemissIndex] WARNING: ${warningMsg}`);
+        allErrors.push(warningMsg);
+      }
+      lastPageSignature = pageSignature;
+      
       totalListings += listings.length;
       
       // Log sample of extracted references for debugging
-      if (listings.length > 0 && currentPage === page) {
-        const firstFive = listings.slice(0, 5);
-        console.log(`[RemissIndex] Sample refs from page ${currentPage}:`, 
-          firstFive.map(l => ({
-            title: l.title.substring(0, 50),
+      if (listings.length > 0) {
+        const firstThree = listings.slice(0, 3);
+        console.log(`[RemissIndex] Page ${currentPage} sample:`, 
+          firstThree.map(l => ({
+            title: l.title.substring(0, 60),
+            url: l.url.substring(l.url.lastIndexOf('/') - 10),
             sou: l.extractedSouNumbers,
             dir: l.extractedDirNumbers,
           }))
         );
+      } else {
+        console.warn(`[RemissIndex] Page ${currentPage} returned 0 listings. HTML preview: ${html.substring(0, 300)}...`);
       }
       
       for (const listing of listings) {
@@ -405,6 +506,11 @@ Deno.serve(async (req) => {
           });
         }
       }
+      
+      // Small delay between pages to avoid rate limiting
+      if (currentPage < startPage + maxPages - 1) {
+        await sleep(300);
+      }
     }
     
     // Log unique SOU years referenced by orphans for debugging
@@ -421,6 +527,7 @@ Deno.serve(async (req) => {
     
     // Summary aligned with UI expectations
     const summary = {
+      start_page: startPage,
       pages_scraped: maxPages,
       total_listings: totalListings,
       matched: allMatched.length,
