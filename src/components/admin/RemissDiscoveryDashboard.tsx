@@ -38,8 +38,31 @@ export function RemissDiscoveryDashboard() {
         .select('*', { count: 'exact', head: true })
         .eq('doc_type', 'sou');
 
-      // Get SOUs with remiss documents
-      const { data: remissDocs } = await supabase
+      // Get total remiss documents count (accurate)
+      const { count: totalRemisser } = await supabase
+        .from('remiss_documents')
+        .select('*', { count: 'exact', head: true });
+
+      // Get all parent_document_ids to count unique SOUs with remiss
+      const { data: allParentIds } = await supabase
+        .from('remiss_documents')
+        .select('parent_document_id');
+      
+      const sousWithRemissIds = new Set(allParentIds?.map(r => r.parent_document_id) || []);
+
+      // Get all metadata for discovery method breakdown
+      const { data: allMetadata } = await supabase
+        .from('remiss_documents')
+        .select('metadata');
+
+      const byDiscoveryMethod: Record<string, number> = {};
+      allMetadata?.forEach(r => {
+        const method = (r.metadata as any)?.discovery_method || 'unknown';
+        byDiscoveryMethod[method] = (byDiscoveryMethod[method] || 0) + 1;
+      });
+
+      // Get recent remiss documents for display (limited)
+      const { data: recentDocs } = await supabase
         .from('remiss_documents')
         .select(`
           id,
@@ -55,21 +78,11 @@ export function RemissDiscoveryDashboard() {
         `)
         .order('created_at', { ascending: false })
         .limit(20);
-
-      // Get unique SOUs with remiss
-      const sousWithRemissIds = new Set(remissDocs?.map(r => r.parent_document_id) || []);
       
       // Get total remissvar
       const { count: totalRemissvar } = await supabase
         .from('remiss_responses')
         .select('*', { count: 'exact', head: true });
-
-      // Count by discovery method
-      const byDiscoveryMethod: Record<string, number> = {};
-      remissDocs?.forEach(r => {
-        const method = (r.metadata as any)?.discovery_method || 'unknown';
-        byDiscoveryMethod[method] = (byDiscoveryMethod[method] || 0) + 1;
-      });
 
       // Get SOUs without remiss
       const { data: allSous } = await supabase
@@ -81,8 +94,8 @@ export function RemissDiscoveryDashboard() {
 
       const sousWithoutRemiss = allSous?.filter(s => !sousWithRemissIds.has(s.id)).slice(0, 15) || [];
 
-      // Format recent remisser
-      const recentRemisser = remissDocs?.map(r => ({
+      // Format recent remisser for display
+      const recentRemisser = recentDocs?.map(r => ({
         id: r.id,
         remiss_page_url: r.remiss_page_url,
         title: r.title,
@@ -95,7 +108,7 @@ export function RemissDiscoveryDashboard() {
       return {
         totalSous: totalSous || 0,
         sousWithRemiss: sousWithRemissIds.size,
-        totalRemisser: remissDocs?.length || 0,
+        totalRemisser: totalRemisser || 0,
         totalRemissvar: totalRemissvar || 0,
         byDiscoveryMethod,
         recentRemisser,
