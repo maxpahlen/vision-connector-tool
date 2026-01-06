@@ -53,7 +53,7 @@ This confirms we must rely on direct index scraping with title matching.
 
 ### Primary: Remiss Index Scraping (Phase 2)
 
-1. **Scrape `regeringen.se/remisser`** with pagination
+1. **Scrape `regeringen.se/remisser`** via Filter API with pagination
 2. **Parse each listing** to extract:
    - Title (contains document references like "SOU 2025:44", "Dir. 2024:12")
    - Remiss page URL
@@ -63,6 +63,8 @@ This confirms we must rely on direct index scraping with title matching.
 5. **Track orphans** for future document ingestion
 
 Edge function: `scrape-remiss-index`
+
+**⚠️ PAGINATION NOTE**: URL-based pagination (e.g., `?p=` or `?page=`) does NOT work for server-side scraping. The remiss index scraper uses regeringen.se's internal `/Filter/GetFilteredItems` endpoint with `preFilteredCategories=2099` (Remiss category). See `SCRAPER_KNOWN_ISSUES.md` for details.
 
 ### Secondary: SOU Page Scraping (Phase 1 - Limited)
 

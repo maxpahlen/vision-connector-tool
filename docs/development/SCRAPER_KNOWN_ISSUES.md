@@ -72,7 +72,9 @@ Sample logged examples for each skip category are captured (first 2 per category
 
 ### Description
 
-The proposition scraper uses regeringen.se's internal JSON API (`/Filter/GetFilteredItems`) for pagination instead of HTML scraping. This API is undocumented and could change.
+Both the proposition scraper (`scrape-proposition-index`) and remiss scraper (`scrape-remiss-index`) use regeringen.se's internal JSON API (`/Filter/GetFilteredItems`) for pagination instead of HTML scraping. This API is undocumented and could change.
+
+**Important:** URL-based pagination (e.g., `?p=` or `?page=`) does NOT work for server-side scraping. The pages are locked behind client-side JavaScript that triggers the Filter API.
 
 ### Risk Assessment
 
@@ -82,13 +84,37 @@ The proposition scraper uses regeringen.se's internal JSON API (`/Filter/GetFilt
 | Rate limiting | Medium | Low | Already implemented delays between pages |
 | Cloudflare blocking | Low | Medium | User-agent headers in place |
 
-### Current Implementation
+### Scrapers Using This API
+
+| Scraper | Endpoint | Category ID | Notes |
+|---------|----------|-------------|-------|
+| `scrape-proposition-index` | `/Filter/GetFilteredItems` | `1329` | Propositioner |
+| `scrape-remiss-index` | `/Filter/GetFilteredItems` | `2099` | Remisser |
+
+### Proposition Scraper Implementation
 
 ```typescript
 const jsonUrl = `https://www.regeringen.se/Filter/GetFilteredItems?` +
   `lang=sv&filterType=Taxonomy&filterByType=FilterablePageBase&` +
   `preFilteredCategories=1329&rootPageReference=0&page=${page}`;
 ```
+
+### Remiss Scraper Implementation
+
+```typescript
+const jsonUrl = `https://www.regeringen.se/Filter/GetFilteredItems?` +
+  `lang=sv&filterType=Taxonomy&filterByType=FilterablePageBase&` +
+  `preFilteredCategories=2099&rootPageReference=0&page=${page}&` +
+  `displayLimited=True&displaySortedByRelevance=False`;
+```
+
+### Required Headers
+
+Both scrapers use these headers to emulate browser AJAX calls:
+- `X-Requested-With: XMLHttpRequest`
+- `Referer: https://www.regeringen.se/<section>/`
+- `Accept: application/json, text/html, */*`
+- Browser-like `User-Agent`
 
 ---
 
