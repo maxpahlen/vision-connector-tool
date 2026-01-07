@@ -1,5 +1,14 @@
 # Phase Deltas
 
+## 2026-01-07: Context Priority Doc Created
+
+**Governance Enhancement**
+- Created `docs/CONTEXT_PRIORITY.md` — canonical "read first" list for Codex context sync
+- Lists 7 priority docs + 3 secondary context files
+- Lovable-maintained, updated on governance/phase changes
+
+---
+
 ## 2026-01-07: Phase 2.5 Implementation (EXECUTION)
 
 **Task: Process Remiss Pages Infrastructure**
