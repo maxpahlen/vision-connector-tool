@@ -35,6 +35,7 @@ export function ProcessRemissPagesTest() {
   const [limit, setLimit] = useState(5);
   const [remissId, setRemissId] = useState('');
   const [retryFailed, setRetryFailed] = useState(false);
+  const [reprocessScraped, setReprocessScraped] = useState(false);
   const [dryRun, setDryRun] = useState(true);
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<ProcessResponse | null>(null);
@@ -71,6 +72,7 @@ export function ProcessRemissPagesTest() {
           limit,
           remiss_id: remissId || undefined,
           retry_failed: retryFailed,
+          reprocess_scraped: reprocessScraped,
           dry_run: dryRun,
         },
       });
@@ -145,7 +147,7 @@ export function ProcessRemissPagesTest() {
           </div>
         </div>
 
-        <div className="flex gap-6">
+        <div className="flex flex-wrap gap-6">
           <div className="flex items-center gap-2">
             <Switch
               id="dryRun"
@@ -158,9 +160,23 @@ export function ProcessRemissPagesTest() {
             <Switch
               id="retryFailed"
               checked={retryFailed}
-              onCheckedChange={setRetryFailed}
+              onCheckedChange={(checked) => {
+                setRetryFailed(checked);
+                if (checked) setReprocessScraped(false);
+              }}
             />
-            <Label htmlFor="retryFailed">Retry Failed Records</Label>
+            <Label htmlFor="retryFailed">Retry Failed</Label>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch
+              id="reprocessScraped"
+              checked={reprocessScraped}
+              onCheckedChange={(checked) => {
+                setReprocessScraped(checked);
+                if (checked) setRetryFailed(false);
+              }}
+            />
+            <Label htmlFor="reprocessScraped">Reprocess Scraped (re-scrape with improved parser)</Label>
           </div>
         </div>
 

@@ -10,7 +10,8 @@
  * Idempotency:
  * - Re-runs skip records with status IN ('scraped', 'failed') by default
  * - remiss_responses uses upsert with onConflict: 'remiss_id,file_url'
- * - force=true reprocesses failed records
+ * - retry_failed=true processes status='failed' records
+ * - reprocess_scraped=true re-processes status='scraped' records (for parser improvements)
  * 
  * Error Handling:
  * - Individual failures don't stop batch
@@ -45,6 +46,7 @@ Deno.serve(async (req) => {
       limit = 20, 
       remiss_id,
       retry_failed = false,
+      reprocess_scraped = false,
       dry_run = false 
     } = body;
 
@@ -58,8 +60,11 @@ Deno.serve(async (req) => {
       .select('id, remiss_page_url, parent_document_id, title, metadata');
 
     if (remiss_id) {
-      // Process specific remiss
+      // Process specific remiss (regardless of status)
       query = query.eq('id', remiss_id);
+    } else if (reprocess_scraped) {
+      // Re-process already scraped records (for parser improvements)
+      query = query.eq('status', 'scraped').limit(limit);
     } else if (retry_failed) {
       // Retry failed records
       query = query.eq('status', 'failed').limit(limit);

@@ -110,17 +110,19 @@ export function parseRemissPage(html: string, remissUrl: string): RemissPageResu
   const log: string[] = [];
   const remissvarDocs: RemissvarDocument[] = [];
   let remissinstanser: { url: string; filename: string } | undefined;
+  const remissinstanserUrls = new Set<string>();
 
   // Extract title
   const h1 = doc.querySelector('h1');
   const remissTitle = h1?.textContent?.trim();
   log.push(`Remiss title: ${remissTitle || 'not found'}`);
 
-  // Look for deadline
+  // Look for deadline with enhanced patterns
   let remissDeadline: string | undefined;
   const deadlinePatterns = [
     /sista\s+svarsdatum[:\s]+(\d{1,2}\s+\w+\s+\d{4})/i,
     /senast\s+(\d{1,2}\s+\w+\s+\d{4})/i,
+    /sista\s+dag\s+att\s+svara[^0-9]*(\d{1,2}\s+\w+\s+\d{4})/i,
     /(\d{4}-\d{2}-\d{2})/,
   ];
   const pageText = doc.body?.textContent || '';
@@ -133,11 +135,72 @@ export function parseRemissPage(html: string, remissUrl: string): RemissPageResu
     }
   }
 
-  // Find all download links
+  // ============================================
+  // SECTION-BASED REMISSINSTANSER DETECTION (PRIMARY)
+  // Look for headers like "Remissinstanser:" and get the next PDF link
+  // ============================================
+  const sectionHeaders = doc.querySelectorAll('strong, b, h2, h3, h4');
+  
+  for (const header of sectionHeaders) {
+    if (remissinstanser) break; // Already found
+    
+    const headerText = (header as Element).textContent?.toLowerCase().trim() || '';
+    
+    // Match "Remissinstanser:" or "Remissinstanser" but NOT "remissvar"
+    if (headerText.includes('remissinstanser') && !headerText.includes('remissvar')) {
+      log.push(`Found remissinstanser section header: "${headerText}"`);
+      
+      // Strategy 1: Check parent's next list for links (ul.link-list pattern)
+      const parent = (header as Element).parentElement;
+      if (parent) {
+        const list = parent.querySelector('ul.link-list, ul, ol');
+        if (list) {
+          const firstLink = list.querySelector('a[href*=".pdf"], a[href*="/contentassets/"]');
+          if (firstLink) {
+            const href = (firstLink as Element).getAttribute('href');
+            if (href) {
+              const fullUrl = href.startsWith('http') ? href : `https://www.regeringen.se${href}`;
+              const filename = fullUrl.split('/').pop()?.split('?')[0] || '';
+              remissinstanser = { url: fullUrl, filename };
+              remissinstanserUrls.add(fullUrl);
+              log.push(`Found remissinstanser PDF (section-list): ${filename}`);
+              break;
+            }
+          }
+        }
+      }
+      
+      // Strategy 2: Walk sibling elements to find the link
+      if (!remissinstanser && parent) {
+        let sibling = parent.nextElementSibling;
+        let attempts = 0;
+        while (sibling && !remissinstanser && attempts < 5) {
+          const links = sibling.querySelectorAll?.('a[href*=".pdf"], a[href*="/contentassets/"]');
+          if (links && links.length > 0) {
+            const href = (links[0] as Element).getAttribute('href');
+            if (href) {
+              const fullUrl = href.startsWith('http') ? href : `https://www.regeringen.se${href}`;
+              const filename = fullUrl.split('/').pop()?.split('?')[0] || '';
+              remissinstanser = { url: fullUrl, filename };
+              remissinstanserUrls.add(fullUrl);
+              log.push(`Found remissinstanser PDF (sibling-walk): ${filename}`);
+              break;
+            }
+          }
+          sibling = sibling.nextElementSibling;
+          attempts++;
+        }
+      }
+    }
+  }
+
+  // Find all download links (expanded selector)
   const downloadSections = doc.querySelectorAll('.download-document, .document-list, [class*="download"], [class*="remissvar"]');
   log.push(`Found ${downloadSections.length} download sections`);
 
-  const allLinks = doc.querySelectorAll('a[href*=".pdf"], a[href*="contentdisposition=attachment"], a[href*="/download/"]');
+  const allLinks = doc.querySelectorAll(
+    'a[href*=".pdf"], a[href*="contentdisposition=attachment"], a[href*="/download/"], a[href*="/contentassets/"]'
+  );
   log.push(`Found ${allLinks.length} potential document links`);
 
   const seenUrls = new Set<string>();
@@ -151,16 +214,24 @@ export function parseRemissPage(html: string, remissUrl: string): RemissPageResu
     if (seenUrls.has(fullUrl)) continue;
     seenUrls.add(fullUrl);
 
+    // Skip if already identified as remissinstanser
+    if (remissinstanserUrls.has(fullUrl)) {
+      log.push(`Skipping remissinstanser URL from remissvar list: ${fullUrl.split('/').pop()}`);
+      continue;
+    }
+
     const linkText = (link as Element).textContent?.trim() || '';
     const filename = fullUrl.split('/').pop()?.split('?')[0] || '';
     const fileType = classifyFileType(fullUrl, linkText);
 
-    // Check if this is the remissinstanser list
-    if (linkText.toLowerCase().includes('remissinstans') || 
+    // FALLBACK: Check if this is the remissinstanser list (keyword-based)
+    if (!remissinstanser && (
+        linkText.toLowerCase().includes('remissinstans') || 
         filename.toLowerCase().includes('remissinstans') ||
-        linkText.toLowerCase().includes('sändlista')) {
+        linkText.toLowerCase().includes('sändlista'))) {
       remissinstanser = { url: fullUrl, filename };
-      log.push(`Found remissinstanser PDF: ${filename}`);
+      remissinstanserUrls.add(fullUrl);
+      log.push(`Found remissinstanser PDF (keyword fallback): ${filename}`);
       continue;
     }
 
