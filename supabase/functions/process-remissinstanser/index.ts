@@ -107,11 +107,12 @@ Deno.serve(async (req) => {
         console.log(`[process-remissinstanser] Processing remiss ${remiss.id}: ${remiss.title}`);
 
         // Extract text from PDF
-        const extractResponse = await fetch(pdfExtractorUrl, {
+        console.log(`[process-remissinstanser] Calling PDF extractor: ${pdfExtractorUrl}/extract for ${remiss.remissinstanser_pdf_url}`);
+        const extractResponse = await fetch(`${pdfExtractorUrl}/extract`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${pdfExtractorApiKey}`
+            'x-api-key': pdfExtractorApiKey
           },
           body: JSON.stringify({ pdfUrl: remiss.remissinstanser_pdf_url })
         });
