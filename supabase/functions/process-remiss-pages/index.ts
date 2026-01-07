@@ -20,7 +20,7 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { parseRemissPage, type RemissPageResult } from '../_shared/remiss-parser.ts';
+import { parseRemissPage, parseSwedishDate, type RemissPageResult } from '../_shared/remiss-parser.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -127,11 +127,17 @@ Deno.serve(async (req) => {
 
         // Update remiss_documents with extracted data
         const existingMetadata = (remiss.metadata as Record<string, unknown>) || {};
+        
+        // Convert Swedish date to ISO format for database
+        const isoDeadline = parsed.remiss_deadline 
+          ? parseSwedishDate(parsed.remiss_deadline) 
+          : null;
+        
         const { error: updateError } = await supabase
           .from('remiss_documents')
           .update({
             title: parsed.remiss_title || remiss.title,
-            remiss_deadline: parsed.remiss_deadline || null,
+            remiss_deadline: isoDeadline,
             remissinstanser_pdf_url: parsed.remissinstanser_pdf?.url || null,
             remissvar_count: parsed.remissvar_documents.length,
             status: 'scraped',
@@ -140,6 +146,7 @@ Deno.serve(async (req) => {
               ...existingMetadata,
               extraction_log: parsed.extraction_log,
               remissinstanser_filename: parsed.remissinstanser_pdf?.filename,
+              raw_deadline: parsed.remiss_deadline, // Keep original for debugging
               scraped_at: new Date().toISOString(),
             },
           })
