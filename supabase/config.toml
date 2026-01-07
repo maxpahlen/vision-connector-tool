@@ -53,3 +53,9 @@ verify_jwt = false
 
 [functions.scrape-directive-metadata]
 verify_jwt = false
+
+[functions.process-remissinstanser]
+verify_jwt = false
+
+[functions.link-remissvar-entities]
+verify_jwt = false
