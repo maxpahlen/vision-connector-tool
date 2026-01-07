@@ -126,13 +126,21 @@ Tracks individual remissvar files:
 
 **Note**: This phase has limited effectiveness (~10% of SOUs have remiss links).
 
-### Phase 2: Remiss Index Scraping ✅ → 🚧 In Progress
-- [x] Edge function `scrape-remiss-index` with pagination
+### Phase 2: Remiss Index Scraping ✅ COMPLETE
+- [x] Edge function `scrape-remiss-index` with Filter API pagination
 - [x] Title parsing to extract SOU/Dir. references
 - [x] Matching logic to link remisser to documents
 - [x] Deduplication against existing remiss_documents
-- [ ] **Admin UI component** (`RemissIndexScraperTest`) - IN PROGRESS
-- [ ] Execute initial scrape and validate results
+- [x] Admin UI component (`RemissIndexScraperTest`)
+- [x] Execute initial scrape: **54 remisser matched to 52 unique SOUs**
+
+### Phase 2.5: Process Remiss Pages 🚧 IN PROGRESS
+- [x] Shared parser: `_shared/remiss-parser.ts` (extracted from scrape-sou-remiss)
+- [x] Edge function `process-remiss-pages` with idempotent upserts
+- [x] Status transitions: `discovered` → `scraped` | `failed`
+- [x] Admin UI component (`ProcessRemissPagesTest`)
+- [ ] Execute batch processing of 54 discovered remiss pages
+- [ ] Verify remiss_responses populated
 
 ### Phase 3: Orphan Resolution (Future)
 - [ ] Handle unmatched remisser (document not in database)
@@ -143,7 +151,7 @@ Tracks individual remissvar files:
 
 ## Edge Functions
 
-### scrape-remiss-index (Primary)
+### scrape-remiss-index (Primary - Phase 2) ✅
 **Purpose**: Scrape the remiss index and match to documents in database
 
 **Input**:
@@ -171,6 +179,40 @@ Tracks individual remissvar files:
 }
 ```
 
+### process-remiss-pages (Phase 2.5) 🆕
+**Purpose**: Fetch discovered remiss pages to extract remissvar
+
+**Input**:
+```json
+{
+  "limit": 20,
+  "remiss_id": "uuid (optional)",
+  "retry_failed": false,
+  "dry_run": true
+}
+```
+
+**Output**:
+```json
+{
+  "success": true,
+  "summary": {
+    "total": 20,
+    "scraped": 18,
+    "failed": 2,
+    "skipped": 0,
+    "total_remissvar_inserted": 234,
+    "dry_run": false
+  },
+  "results": [...]
+}
+```
+
+**Status Transitions**:
+- `discovered` → `scraped` (success)
+- `discovered` → `failed` (error, with metadata.error)
+- `failed` → `scraped` (via retry_failed=true)
+
 ### scrape-sou-remiss (Secondary/Fallback)
 **Purpose**: Scan SOU documents for remiss links (limited effectiveness)
 
@@ -189,20 +231,26 @@ Tracks individual remissvar files:
 
 ## Admin UI Components
 
+### RemissDiscoveryDashboard
+- Location: `src/components/admin/RemissDiscoveryDashboard.tsx`
+- Purpose: View current remiss coverage statistics
+
 ### RemissIndexScraperTest (Primary - Phase 2)
 - Location: `src/components/admin/RemissIndexScraperTest.tsx`
 - Purpose: Run and monitor `scrape-remiss-index` edge function
 - Controls: Start page, max pages, dry run toggle
 - Results: Summary stats, matched/orphan tables
 
+### ProcessRemissPagesTest (Phase 2.5) 🆕
+- Location: `src/components/admin/ProcessRemissPagesTest.tsx`
+- Purpose: Process discovered remiss pages to extract remissvar
+- Controls: Batch size, specific remiss ID, retry failed, dry run
+- Shows: Status counts (discovered/scraped/failed), results table
+
 ### RemissScraperTest (Secondary - Phase 1)
 - Location: `src/components/admin/RemissScraperTest.tsx`
 - Purpose: Run `scrape-sou-remiss` for SOU-linked discovery
 - Note: Limited effectiveness, use for fallback/debugging only
-
-### RemissDiscoveryDashboard
-- Location: `src/components/admin/RemissDiscoveryDashboard.tsx`
-- Purpose: View current remiss coverage statistics
 
 ---
 
@@ -210,11 +258,12 @@ Tracks individual remissvar files:
 
 Phase 5.3 is complete when:
 1. ✅ Database schema deployed
-2. ✅ Both edge functions operational
-3. [ ] **Remiss Index scraper executed** with 50+ matched remisser
-4. [ ] Admin UI for both scrapers
-5. [ ] Orphan remisser documented for future ingestion
-6. [ ] Coverage validated: >50% of remisser matched to documents
+2. ✅ Edge functions operational (scrape-remiss-index, process-remiss-pages, scrape-sou-remiss)
+3. ✅ Remiss Index scraper executed: **54 matched remisser**
+4. ✅ Admin UI for all scrapers
+5. [ ] **Process remiss pages executed**: remiss_responses populated
+6. [ ] Orphan remisser documented for future ingestion
+7. [ ] Coverage validated: >50% of remisser matched to documents
 
 ---
 
@@ -258,6 +307,8 @@ GROUP BY metadata->>'discovery_method';
 
 ## Changelog
 
+- **2026-01-07**: Phase 2.5 implementation — shared parser, process-remiss-pages function, UI
+- **2026-01-06**: Phase 2 complete — Filter API pagination fixed, 54 remisser matched
 - **2026-01-05**: Clarified primary strategy is Scrape→Match (remiss index), not Lagstiftningskedja links
 - **2025-12-11**: Added target_url column for better remiss link tracking
 - **2025-12-10**: Initial implementation with SOU-linked discovery

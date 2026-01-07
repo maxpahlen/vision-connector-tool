@@ -1,5 +1,23 @@
 # Phase Deltas
 
+## 2026-01-07: Phase 2.5 Implementation (EXECUTION)
+
+**Task: Process Remiss Pages Infrastructure**
+- Created `supabase/functions/_shared/remiss-parser.ts` with exported `parseRemissPage()`, `classifyFileType()`, `extractOrganization()`
+- Created `supabase/functions/process-remiss-pages/index.ts` edge function
+- Created `src/components/admin/ProcessRemissPagesTest.tsx` UI component
+- Updated `scrape-sou-remiss/index.ts` to import from shared module
+- Updated `supabase/config.toml` with new function entry
+- Added `ProcessRemissPagesTest` to AdminScraper Remisser tab
+
+**Verification Notes:**
+- `extraction_log` format preserved exactly from original `parseRemissPage()`
+- `scrape-sou-remiss` behavior unchanged (uses same parsing logic via import)
+- Idempotency via `upsert` with `onConflict: 'remiss_id,file_url'`
+- Status transitions: `discovered` → `scraped` | `failed`
+
+---
+
 ## 2026-01-05: Remiss Index Scraper Contract Fix
 
 **Task 4: Edge Function Contract Alignment**
