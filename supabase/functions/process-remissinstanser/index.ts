@@ -11,6 +11,10 @@ import {
   normalizeOrganizationName, 
   parseRemissinstanserText 
 } from '../_shared/organization-matcher.ts';
+import {
+  getPdfExtractorConfig,
+  extractTextFromPdf,
+} from '../_shared/pdf-extractor.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -87,12 +91,8 @@ Deno.serve(async (req) => {
 
     console.log(`[process-remissinstanser] Found ${remisser.length} remisser to process`);
 
-    const pdfExtractorUrl = Deno.env.get('PDF_EXTRACTOR_URL');
-    const pdfExtractorApiKey = Deno.env.get('PDF_EXTRACTOR_API_KEY');
-
-    if (!pdfExtractorUrl || !pdfExtractorApiKey) {
-      throw new Error('PDF_EXTRACTOR_URL or PDF_EXTRACTOR_API_KEY not configured');
-    }
+    // Get PDF extractor config using shared utility
+    const pdfConfig = getPdfExtractorConfig();
 
     const result: ProcessResult = {
       processed: 0,
@@ -106,26 +106,16 @@ Deno.serve(async (req) => {
       try {
         console.log(`[process-remissinstanser] Processing remiss ${remiss.id}: ${remiss.title}`);
 
-        // Extract text from PDF
-        console.log(`[process-remissinstanser] Calling PDF extractor: ${pdfExtractorUrl}/extract for ${remiss.remissinstanser_pdf_url}`);
-        const extractResponse = await fetch(`${pdfExtractorUrl}/extract`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': pdfExtractorApiKey
-          },
-          body: JSON.stringify({ pdfUrl: remiss.remissinstanser_pdf_url })
-        });
+        // Extract text from PDF using shared utility
+        const extractionResult = await extractTextFromPdf(pdfConfig, remiss.remissinstanser_pdf_url);
 
-        if (!extractResponse.ok) {
-          const errorText = await extractResponse.text();
-          console.error(`[process-remissinstanser] PDF extraction failed for ${remiss.id}: ${errorText}`);
-          result.errors.push({ remiss_id: remiss.id, error: `PDF extraction failed: ${extractResponse.status}` });
+        if (!extractionResult.success) {
+          console.error(`[process-remissinstanser] PDF extraction failed for ${remiss.id}: ${extractionResult.message}`);
+          result.errors.push({ remiss_id: remiss.id, error: extractionResult.message || 'PDF extraction failed' });
           continue;
         }
 
-        const extractResult = await extractResponse.json();
-        const pdfText = extractResult.text || '';
+        const pdfText = extractionResult.text || '';
 
         if (!pdfText) {
           console.warn(`[process-remissinstanser] No text extracted from PDF for ${remiss.id}`);

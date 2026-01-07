@@ -7,6 +7,11 @@ import {
   createSuccessResponse,
 } from '../_shared/http-utils.ts';
 import { sanitizeText } from '../_shared/text-utils.ts';
+import {
+  getPdfExtractorConfig,
+  extractTextFromPdf,
+  type PdfExtractionResult,
+} from '../_shared/pdf-extractor.ts';
 
 // ============================================
 // Request Validation
@@ -20,80 +25,6 @@ const RequestSchema = z.object({
   (data) => data.documentId || data.pdfUrl,
   { message: 'Either documentId or pdfUrl must be provided' }
 );
-
-// ============================================
-// PDF Extraction Service Interface
-// ============================================
-
-interface PdfExtractionResult {
-  success: boolean;
-  text?: string;
-  metadata?: { 
-    pageCount: number; 
-    byteSize: number;
-  };
-  error?: string;
-  message?: string;
-}
-
-async function extractTextFromPdfService(
-  serviceUrl: string,
-  apiKey: string,
-  pdfUrl: string,
-  documentId?: string,
-  docNumber?: string
-): Promise<PdfExtractionResult> {
-  try {
-    const response = await fetch(`${serviceUrl}/extract`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        pdfUrl,
-        documentId,
-        docNumber,
-      }),
-    });
-
-    const result = await response.json();
-
-    // Check HTTP response status
-    if (!response.ok) {
-      console.error(`PDF service HTTP error (${response.status}):`, result.error, result.message);
-      return {
-        success: false,
-        error: result.error || 'service_error',
-        message: result.message || `PDF extraction service returned ${response.status}`,
-      };
-    }
-
-    // Check service response structure (must have "ok" field)
-    if (!result.ok) {
-      console.error('PDF extraction failed:', result.error, result.message);
-      return {
-        success: false,
-        error: result.error || 'extraction_failed',
-        message: result.message || 'PDF text extraction failed',
-      };
-    }
-
-    return {
-      success: true,
-      text: result.text,
-      metadata: result.metadata,
-    };
-
-  } catch (error) {
-    console.error('Error calling PDF extraction service:', error);
-    return {
-      success: false,
-      error: 'service_unreachable',
-      message: error instanceof Error ? error.message : 'Failed to reach PDF extraction service',
-    };
-  }
-}
 
 // ============================================
 // Main Handler
@@ -119,14 +50,6 @@ serve(async (req) => {
     const { documentId, pdfUrl, task_id } = validationResult.data;
 
     console.log(`Processing PDF for document: ${documentId || pdfUrl}`);
-
-    // Validate configuration
-    const pdfExtractorUrl = Deno.env.get('PDF_EXTRACTOR_URL');
-    const pdfExtractorApiKey = Deno.env.get('PDF_EXTRACTOR_API_KEY');
-
-    if (!pdfExtractorUrl || !pdfExtractorApiKey) {
-      throw new Error('PDF extraction service not configured');
-    }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -261,16 +184,12 @@ serve(async (req) => {
       throw new Error('No PDF URL provided');
     }
 
-    console.log(`Calling PDF extraction service for: ${targetPdfUrl}`);
-
-    // Call external PDF extraction service
-    const extractionResult = await extractTextFromPdfService(
-      pdfExtractorUrl,
-      pdfExtractorApiKey,
-      targetPdfUrl,
+    // Call external PDF extraction service using shared utility
+    const pdfConfig = getPdfExtractorConfig();
+    const extractionResult = await extractTextFromPdf(pdfConfig, targetPdfUrl, {
       documentId,
-      docNumber
-    );
+      docNumber,
+    });
 
     if (!extractionResult.success) {
       console.error(`PDF extraction failed: ${extractionResult.error}`, extractionResult.message);

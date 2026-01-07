@@ -4,12 +4,102 @@ This directory contains reusable utility modules for the edge functions. These m
 
 ## Table of Contents
 
+- [pdf-extractor.ts](#pdf-extractorts) ⭐ NEW
 - [html-parser.ts](#html-parserts)
 - [pdf-scorer.ts](#pdf-scorerts)
 - [http-utils.ts](#http-utilsts)
 - [text-utils.ts](#text-utilsts)
 - [Architecture Principles](#architecture-principles)
 - [Extending the Modules](#extending-the-modules)
+
+---
+
+## pdf-extractor.ts
+
+### Purpose
+
+Shared client for the external PDF extraction service. Ensures consistent endpoint, authentication, and error handling patterns across all edge functions that need to extract text from PDFs.
+
+**Extracted from:** `process-sou-pdf/index.ts` to prevent pattern drift (e.g., wrong endpoint, wrong auth header).
+
+### Core Types
+
+```typescript
+interface PdfExtractionResult {
+  success: boolean;
+  text?: string;
+  metadata?: { pageCount: number; byteSize: number };
+  error?: string;
+  message?: string;
+}
+
+interface PdfExtractorConfig {
+  serviceUrl: string;
+  apiKey: string;
+}
+
+interface ExtractOptions {
+  documentId?: string;
+  docNumber?: string;
+}
+```
+
+### Core Functions
+
+#### `getPdfExtractorConfig()`
+
+Retrieves PDF extractor configuration from environment variables.
+
+**Returns:** `PdfExtractorConfig`
+
+**Throws:** Error if `PDF_EXTRACTOR_URL` or `PDF_EXTRACTOR_API_KEY` not configured.
+
+**Usage:**
+```typescript
+const config = getPdfExtractorConfig();
+```
+
+#### `extractTextFromPdf(config, pdfUrl, options?)`
+
+Extracts text from a PDF URL using the external extraction service.
+
+**Parameters:**
+- `config: PdfExtractorConfig` - Service configuration
+- `pdfUrl: string` - URL of the PDF to extract
+- `options?: ExtractOptions` - Optional metadata for logging
+
+**Returns:** `Promise<PdfExtractionResult>`
+
+**Usage:**
+```typescript
+import { getPdfExtractorConfig, extractTextFromPdf } from '../_shared/pdf-extractor.ts';
+
+const config = getPdfExtractorConfig();
+const result = await extractTextFromPdf(config, pdfUrl, { documentId, docNumber });
+
+if (!result.success) {
+  console.error(`Extraction failed: ${result.message}`);
+  return;
+}
+
+const text = result.text;
+const pageCount = result.metadata?.pageCount;
+```
+
+### Error Handling
+
+The function returns structured errors instead of throwing:
+
+| Error Code | Description |
+|------------|-------------|
+| `service_error` | HTTP error from PDF extraction service |
+| `extraction_failed` | Service returned ok=false |
+| `service_unreachable` | Network/connection error |
+
+### Consumers
+
+- `process-sou-pdf` - SOU document text extraction
+- `process-remissinstanser` - Remissinstanser PDF parsing
 
 ---
 
