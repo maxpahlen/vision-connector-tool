@@ -134,13 +134,18 @@ Tracks individual remissvar files:
 - [x] Admin UI component (`RemissIndexScraperTest`)
 - [x] Execute initial scrape: **54 remisser matched to 52 unique SOUs**
 
-### Phase 2.5: Process Remiss Pages 🚧 IN PROGRESS
+### Phase 2.5: Process Remiss Pages ✅ COMPLETE
 - [x] Shared parser: `_shared/remiss-parser.ts` (extracted from scrape-sou-remiss)
 - [x] Edge function `process-remiss-pages` with idempotent upserts
 - [x] Status transitions: `discovered` → `scraped` | `failed`
 - [x] Admin UI component (`ProcessRemissPagesTest`)
-- [ ] Execute batch processing of 54 discovered remiss pages
-- [ ] Verify remiss_responses populated
+- [x] Execute batch processing: **54 remiss pages scraped**
+- [x] Verify remiss_responses: **3,424 remissvar extracted**
+
+### Phase 2.7: Remissinstanser & Remissvar Processing 📋 PLANNED
+- [ ] Parse remissinstanser PDFs → extract invited organizations list
+- [ ] Link remissvar to entities → match `responding_organization` to `entities` table
+- [ ] Create remissvar → document links → populate `remiss_responses.document_id`
 
 ### Phase 3: Orphan Resolution (Future)
 - [ ] Handle unmatched remisser (document not in database)
@@ -261,9 +266,10 @@ Phase 5.3 is complete when:
 2. ✅ Edge functions operational (scrape-remiss-index, process-remiss-pages, scrape-sou-remiss)
 3. ✅ Remiss Index scraper executed: **54 matched remisser**
 4. ✅ Admin UI for all scrapers
-5. [ ] **Process remiss pages executed**: remiss_responses populated
-6. [ ] Orphan remisser documented for future ingestion
-7. [ ] Coverage validated: >50% of remisser matched to documents
+5. ✅ Process remiss pages executed: **3,424 remissvar extracted**
+6. [ ] Remissinstanser PDFs parsed → invited organizations extracted
+7. [ ] Remissvar linked to entities and documents
+8. [ ] Orphan remisser documented for future ingestion
 
 ---
 
@@ -307,6 +313,7 @@ GROUP BY metadata->>'discovery_method';
 
 ## Changelog
 
+- **2026-01-07**: Phase 2.5 complete — 54 remisser scraped, 3,424 remissvar extracted
 - **2026-01-07**: Phase 2.5 implementation — shared parser, process-remiss-pages function, UI
 - **2026-01-06**: Phase 2 complete — Filter API pagination fixed, 54 remisser matched
 - **2026-01-05**: Clarified primary strategy is Scrape→Match (remiss index), not Lagstiftningskedja links

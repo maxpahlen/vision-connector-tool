@@ -395,8 +395,8 @@ These were **NOT** implemented until MVP is validated:
 | **Entities** | 284 | Persons, committees, ministries |
 | **Timeline Events** | 723 | Extracted with citations |
 | **Document References** | 494 | Cross-document citations |
-| **Remiss Documents** | 54 | 52 unique SOUs linked (status: discovered) |
-| **Remiss Responses** | 0 | Phase 2.5 target: ~500-2000 after processing |
+| **Remiss Documents** | 54 | 54 scraped, all with remissinstanser PDFs |
+| **Remiss Responses** | 3,424 | Extracted from remiss pages |
 
 ### Core Strategy
 > One new document type at a time → fully end-to-end → tested → then move to the next.
@@ -405,7 +405,8 @@ These were **NOT** implemented until MVP is validated:
 1. **Propositions** — ✅ COMPLETE (Phase 5.2)
 2. **Remisser + Remissvar** — 🚀 IN PROGRESS (Phase 5.3)
    - Phase 2: Remiss Index Scraping ✅ COMPLETE (54 matched)
-   - Phase 2.5: Process Remiss Pages 🚧 IN PROGRESS
+   - Phase 2.5: Process Remiss Pages ✅ COMPLETE (3,424 remissvar extracted)
+   - Phase 2.7: Remissinstanser & Remissvar Processing 🚧 NEXT
 3. **Committee Reports** — PLANNED (Phase 5.4)
 4. **Laws** — PLANNED (Phase 5.4)
 
