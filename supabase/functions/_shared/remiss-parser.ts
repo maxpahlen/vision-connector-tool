@@ -41,6 +41,36 @@ export interface RemissPageResult {
 // ============================================
 
 /**
+ * Convert Swedish date to ISO format
+ * "17 oktober 2025" → "2025-10-17"
+ */
+export function parseSwedishDate(swedishDate: string): string | null {
+  const months: Record<string, string> = {
+    'januari': '01', 'februari': '02', 'mars': '03', 'april': '04',
+    'maj': '05', 'juni': '06', 'juli': '07', 'augusti': '08',
+    'september': '09', 'oktober': '10', 'november': '11', 'december': '12'
+  };
+  
+  // Already ISO format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(swedishDate)) {
+    return swedishDate;
+  }
+  
+  // Parse "17 oktober 2025" or "9 januari 2026"
+  const match = swedishDate.match(/^(\d{1,2})\s+(\w+)\s+(\d{4})$/i);
+  if (match) {
+    const day = match[1].padStart(2, '0');
+    const month = months[match[2].toLowerCase()];
+    const year = match[3];
+    if (month) {
+      return `${year}-${month}-${day}`;
+    }
+  }
+  
+  return null;
+}
+
+/**
  * Classify file type from URL and link text
  */
 export function classifyFileType(url: string, linkText: string): 'pdf' | 'word' | 'excel' | 'other' {

@@ -1,5 +1,16 @@
 # Phase Deltas
 
+## 2026-01-07: Phase 2.5.2 Swedish Date Parsing Fix (EXECUTION)
+
+**Task: Fix Swedish Date → ISO Conversion**
+- Added `parseSwedishDate()` export function to `remiss-parser.ts`
+- Converts "17 oktober 2025" → "2025-10-17"
+- Handles all Swedish month names, already-ISO dates pass through
+- Updated `process-remiss-pages/index.ts` to use `parseSwedishDate()` before DB update
+- Added `raw_deadline` to metadata for debugging
+
+---
+
 ## 2026-01-07: Phase 2.5.1 Remissinstanser Detection Fix (EXECUTION)
 
 **Task: Fix Remissinstanser PDF Detection**
