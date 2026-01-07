@@ -1,5 +1,29 @@
 # Phase Deltas
 
+## 2026-01-07: Phase 2.7 Normalization & Bootstrap Fixes (EXECUTION)
+
+**Task: Fix organization matching pipeline**
+
+Root Cause Analysis:
+- Zero organization entities in DB → all matches fail
+- `.PDF`/`.docx` suffixes not stripped from org names
+- Document titles incorrectly parsed as organizations
+- Boilerplate text extracted from remissinstanser PDFs
+
+Fixed in `_shared/organization-matcher.ts`:
+- Added `FILE_EXTENSION_PATTERN` to strip `.pdf`, `.docx`, etc.
+- Added `DOCUMENT_TITLE_PATTERNS` with `isDocumentTitle()` check
+- Added `BLOCKED_PHRASES` list with logging for boilerplate filtering
+- Applied normalization consistently to both invitees and responses
+
+Created:
+- `bootstrap-org-entities/index.ts` — Seeds entities from cleaned `remiss_invitees`
+
+Updated:
+- `RemissEntityLinkerTest.tsx` — Added 3-tab workflow: Parse → Bootstrap → Link
+
+---
+
 ## 2026-01-07: Shared PDF Extractor Utility (EXECUTION)
 
 **Task: Refactor PDF extraction into shared utility to prevent pattern drift**
