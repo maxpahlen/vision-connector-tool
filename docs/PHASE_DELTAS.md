@@ -1,5 +1,33 @@
 # Phase Deltas
 
+## 2026-01-07: Shared PDF Extractor Utility (EXECUTION)
+
+**Task: Refactor PDF extraction into shared utility to prevent pattern drift**
+
+Root Cause:
+- `process-remissinstanser` had incorrect PDF extractor API call (wrong endpoint, wrong auth header)
+- Caused 404 errors during Phase 2.7 testing
+
+Created:
+- `supabase/functions/_shared/pdf-extractor.ts`:
+  - `PdfExtractionResult` interface (success, text, metadata, error, message)
+  - `PdfExtractorConfig` interface (serviceUrl, apiKey)
+  - `getPdfExtractorConfig()` — reads env vars, throws if missing
+  - `extractTextFromPdf(config, pdfUrl, options?)` — consistent API call with structured error handling
+
+Refactored:
+- `process-sou-pdf/index.ts` — removed 70-line inline function, now imports shared utility
+- `process-remissinstanser/index.ts` — replaced inline fetch with shared utility
+
+Updated:
+- `supabase/functions/_shared/README.md` — documented new `pdf-extractor.ts` module
+
+Verified:
+- ✅ `process-remissinstanser` with `dry_run=true` — 200 OK
+- ✅ `process-sou-pdf` with real PDF URL — extracted 1,304,349 chars from 552 pages
+
+---
+
 ## 2026-01-07: Phase 2.7 Remissinstanser & Entity Linking (EXECUTION)
 
 **Task: Parse remissinstanser PDFs + link remissvar to entities**
