@@ -16,6 +16,7 @@ import { PropositionBatchProcessor } from '@/components/admin/PropositionBatchPr
 import { RemissScraperTest } from '@/components/admin/RemissScraperTest';
 import { RemissIndexScraperTest } from '@/components/admin/RemissIndexScraperTest';
 import { RemissDiscoveryDashboard } from '@/components/admin/RemissDiscoveryDashboard';
+import { ProcessRemissPagesTest } from '@/components/admin/ProcessRemissPagesTest';
 import { SouLagstiftningskedjaScraper } from '@/components/admin/SouLagstiftningskedjaScraper';
 import { SouUrlRepairTool } from '@/components/admin/SouUrlRepairTool';
 import { DirectiveMetadataScraper } from '@/components/admin/DirectiveMetadataScraper';
@@ -83,6 +84,7 @@ export default function AdminScraper() {
           
           <RemissDiscoveryDashboard />
           <RemissIndexScraperTest />
+          <ProcessRemissPagesTest />
           <SouUrlRepairTool />
           <SouLagstiftningskedjaScraper />
           <RemissScraperTest />

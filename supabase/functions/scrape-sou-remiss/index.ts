@@ -1,5 +1,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { DOMParser, Element } from 'https://deno.land/x/deno_dom@v0.1.43/deno-dom-wasm.ts';
+import { 
+  parseRemissPage, 
+  classifyFileType, 
+  extractOrganization,
+  type RemissPageResult,
+  type RemissvarDocument 
+} from '../_shared/remiss-parser.ts';
 
 /**
  * Phase 5.3: Remiss Scraper for SOU Documents (Fixed Strategy)
@@ -9,32 +16,15 @@ import { DOMParser, Element } from 'https://deno.land/x/deno_dom@v0.1.43/deno-do
  * 2. Phase B: Scrape SOU page for specific remiss links (not generic index)
  * 
  * Critical: Must NOT match generic /remisser/ index page
+ * 
+ * NOTE: Parsing logic moved to _shared/remiss-parser.ts for reuse.
+ * This function now imports parseRemissPage, classifyFileType, extractOrganization.
  */
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
-
-interface RemissvarDocument {
-  url: string;
-  filename: string;
-  title?: string;
-  responding_organization?: string;
-  file_type: 'pdf' | 'word' | 'excel' | 'other';
-}
-
-interface RemissPageResult {
-  remiss_page_url: string;
-  remiss_title?: string;
-  remiss_deadline?: string;
-  remissinstanser_pdf?: {
-    url: string;
-    filename: string;
-  };
-  remissvar_documents: RemissvarDocument[];
-  extraction_log: string[];
-}
 
 type DiscoveryMethod = 'lagstiftningskedja' | 'index_match' | 'page_scrape' | 'manual' | 'not_found';
 
@@ -179,145 +169,14 @@ function findRemissLinkFromPage(html: string, baseUrl: string): string | null {
   return candidateLinks[0].url;
 }
 
-/**
- * Classify file type from URL and link text
- */
-function classifyFileType(url: string, linkText: string): 'pdf' | 'word' | 'excel' | 'other' {
-  const lowerUrl = url.toLowerCase();
-  const lowerText = linkText.toLowerCase();
-  
-  if (lowerUrl.endsWith('.pdf') || lowerText.includes('pdf')) return 'pdf';
-  if (lowerUrl.match(/\.(docx?|rtf)$/) || lowerText.includes('word')) return 'word';
-  if (lowerUrl.match(/\.(xlsx?|csv)$/) || lowerText.includes('excel')) return 'excel';
-  
-  if (lowerUrl.includes('contentdisposition=attachment')) {
-    if (lowerUrl.includes('.pdf')) return 'pdf';
-    return 'pdf'; // Default for government downloads
-  }
-  
-  return 'other';
-}
-
-/**
- * Extract organization name from filename or link text
- */
-function extractOrganization(filename: string, linkText: string): string | null {
-  const text = linkText || filename;
-  if (!text) return null;
-  
-  let org = text
-    .replace(/^remissvar[-_\s]*/i, '')
-    .replace(/\.pdf$/i, '')
-    .replace(/\.docx?$/i, '')
-    .replace(/[-_]/g, ' ')
-    .trim();
-  
-  if (org.length < 3) return null;
-  return org;
-}
-
-/**
- * Parse a remiss page to extract remissvar documents
- */
-function parseRemissPage(html: string, remissUrl: string): RemissPageResult {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  if (!doc) {
-    return {
-      remiss_page_url: remissUrl,
-      remissvar_documents: [],
-      extraction_log: ['Failed to parse HTML'],
-    };
-  }
-
-  const log: string[] = [];
-  const remissvarDocs: RemissvarDocument[] = [];
-  let remissinstanser: { url: string; filename: string } | undefined;
-
-  // Extract title
-  const h1 = doc.querySelector('h1');
-  const remissTitle = h1?.textContent?.trim();
-  log.push(`Remiss title: ${remissTitle || 'not found'}`);
-
-  // Look for deadline
-  let remissDeadline: string | undefined;
-  const deadlinePatterns = [
-    /sista\s+svarsdatum[:\s]+(\d{1,2}\s+\w+\s+\d{4})/i,
-    /senast\s+(\d{1,2}\s+\w+\s+\d{4})/i,
-    /(\d{4}-\d{2}-\d{2})/,
-  ];
-  const pageText = doc.body?.textContent || '';
-  for (const pattern of deadlinePatterns) {
-    const match = pageText.match(pattern);
-    if (match) {
-      remissDeadline = match[1];
-      log.push(`Found deadline: ${remissDeadline}`);
-      break;
-    }
-  }
-
-  // Find all download links
-  const downloadSections = doc.querySelectorAll('.download-document, .document-list, [class*="download"], [class*="remissvar"]');
-  log.push(`Found ${downloadSections.length} download sections`);
-
-  const allLinks = doc.querySelectorAll('a[href*=".pdf"], a[href*="contentdisposition=attachment"], a[href*="/download/"]');
-  log.push(`Found ${allLinks.length} potential document links`);
-
-  const seenUrls = new Set<string>();
-
-  for (const link of allLinks) {
-    const href = (link as Element).getAttribute('href');
-    if (!href) continue;
-
-    const fullUrl = href.startsWith('http') ? href : `https://www.regeringen.se${href}`;
-    
-    if (seenUrls.has(fullUrl)) continue;
-    seenUrls.add(fullUrl);
-
-    const linkText = (link as Element).textContent?.trim() || '';
-    const filename = fullUrl.split('/').pop()?.split('?')[0] || '';
-    const fileType = classifyFileType(fullUrl, linkText);
-
-    // Check if this is the remissinstanser list
-    if (linkText.toLowerCase().includes('remissinstans') || 
-        filename.toLowerCase().includes('remissinstans') ||
-        linkText.toLowerCase().includes('sändlista')) {
-      remissinstanser = { url: fullUrl, filename };
-      log.push(`Found remissinstanser PDF: ${filename}`);
-      continue;
-    }
-
-    // Check if this looks like a remissvar
-    const isRemissvar = 
-      linkText.toLowerCase().includes('remissvar') ||
-      linkText.toLowerCase().includes('yttrande') ||
-      filename.toLowerCase().includes('remissvar') ||
-      (link as Element).closest('[class*="remissvar"]') !== null;
-
-    if (isRemissvar || fileType === 'pdf') {
-      const organization = extractOrganization(filename, linkText);
-      
-      remissvarDocs.push({
-        url: fullUrl,
-        filename,
-        title: linkText || undefined,
-        responding_organization: organization || undefined,
-        file_type: fileType,
-      });
-      log.push(`Found remissvar: ${filename} from ${organization || 'unknown org'}`);
-    }
-  }
-
-  log.push(`Total remissvar documents found: ${remissvarDocs.length}`);
-
-  return {
-    remiss_page_url: remissUrl,
-    remiss_title: remissTitle,
-    remiss_deadline: remissDeadline,
-    remissinstanser_pdf: remissinstanser,
-    remissvar_documents: remissvarDocs,
-    extraction_log: log,
-  };
-}
+// NOTE: classifyFileType, extractOrganization, parseRemissPage
+// are now imported from _shared/remiss-parser.ts
+// The following functions were removed from this file:
+// - classifyFileType() → imported
+// - extractOrganization() → imported  
+// - parseRemissPage() → imported
+//
+// VERIFICATION: Log format preserved - extraction_log output unchanged.
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {

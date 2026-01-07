@@ -1,7 +1,7 @@
 # Product Roadmap — Legislative Intelligence Platform
 
-**Last Updated:** 2025-12-23  
-**Current Phase:** Phase 5.2 ✅ Complete | Phase 5.3 In Progress
+**Last Updated:** 2026-01-07  
+**Current Phase:** Phase 5.2 ✅ Complete | Phase 5.3 In Progress (Phase 2.5 executing)
 
 ---
 
@@ -386,7 +386,7 @@ These were **NOT** implemented until MVP is validated:
 
 **Goal:** Expand beyond SOUs to build comprehensive legislative process graph.
 
-### Current Database Metrics (2025-12-23)
+### Current Database Metrics (2026-01-07)
 
 | Table | Count | Notes |
 |-------|-------|-------|
@@ -395,8 +395,8 @@ These were **NOT** implemented until MVP is validated:
 | **Entities** | 284 | Persons, committees, ministries |
 | **Timeline Events** | 723 | Extracted with citations |
 | **Document References** | 494 | Cross-document citations |
-| **Remiss Documents** | 0 | Phase 5.3 target |
-| **Remiss Responses** | 0 | Phase 5.3 target |
+| **Remiss Documents** | 54 | 52 unique SOUs linked (status: discovered) |
+| **Remiss Responses** | 0 | Phase 2.5 target: ~500-2000 after processing |
 
 ### Core Strategy
 > One new document type at a time → fully end-to-end → tested → then move to the next.
@@ -404,6 +404,8 @@ These were **NOT** implemented until MVP is validated:
 ### Implementation Order (following Swedish legislative lifecycle)
 1. **Propositions** — ✅ COMPLETE (Phase 5.2)
 2. **Remisser + Remissvar** — 🚀 IN PROGRESS (Phase 5.3)
+   - Phase 2: Remiss Index Scraping ✅ COMPLETE (54 matched)
+   - Phase 2.5: Process Remiss Pages 🚧 IN PROGRESS
 3. **Committee Reports** — PLANNED (Phase 5.4)
 4. **Laws** — PLANNED (Phase 5.4)
 
