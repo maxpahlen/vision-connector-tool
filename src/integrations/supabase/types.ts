@@ -456,15 +456,60 @@ export type Database = {
           },
         ]
       }
+      remiss_invitees: {
+        Row: {
+          entity_id: string | null
+          id: string
+          invited_at: string | null
+          metadata: Json | null
+          organization_name: string
+          remiss_id: string
+        }
+        Insert: {
+          entity_id?: string | null
+          id?: string
+          invited_at?: string | null
+          metadata?: Json | null
+          organization_name: string
+          remiss_id: string
+        }
+        Update: {
+          entity_id?: string | null
+          id?: string
+          invited_at?: string | null
+          metadata?: Json | null
+          organization_name?: string
+          remiss_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "remiss_invitees_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "remiss_invitees_remiss_id_fkey"
+            columns: ["remiss_id"]
+            isOneToOne: false
+            referencedRelation: "remiss_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       remiss_responses: {
         Row: {
           created_at: string | null
           document_id: string | null
+          entity_id: string | null
           file_type: string | null
           file_url: string
           filename: string | null
           id: string
+          match_confidence: string | null
           metadata: Json | null
+          normalized_org_name: string | null
           remiss_id: string
           responding_organization: string | null
           status: string | null
@@ -472,11 +517,14 @@ export type Database = {
         Insert: {
           created_at?: string | null
           document_id?: string | null
+          entity_id?: string | null
           file_type?: string | null
           file_url: string
           filename?: string | null
           id?: string
+          match_confidence?: string | null
           metadata?: Json | null
+          normalized_org_name?: string | null
           remiss_id: string
           responding_organization?: string | null
           status?: string | null
@@ -484,11 +532,14 @@ export type Database = {
         Update: {
           created_at?: string | null
           document_id?: string | null
+          entity_id?: string | null
           file_type?: string | null
           file_url?: string
           filename?: string | null
           id?: string
+          match_confidence?: string | null
           metadata?: Json | null
+          normalized_org_name?: string | null
           remiss_id?: string
           responding_organization?: string | null
           status?: string | null
@@ -499,6 +550,13 @@ export type Database = {
             columns: ["document_id"]
             isOneToOne: false
             referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "remiss_responses_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
             referencedColumns: ["id"]
           },
           {

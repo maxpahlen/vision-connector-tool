@@ -1,5 +1,26 @@
 # Phase Deltas
 
+## 2026-01-07: Phase 2.7 Remissinstanser & Entity Linking (EXECUTION)
+
+**Task: Parse remissinstanser PDFs + link remissvar to entities**
+
+Database Changes:
+- Created `remiss_invitees` table (id, remiss_id, organization_name, entity_id, metadata)
+- Added columns to `remiss_responses`: `entity_id`, `match_confidence`, `normalized_org_name`
+- Added indexes for analytics queries
+
+New Shared Utilities:
+- `_shared/organization-matcher.ts`: `normalizeOrganizationName()`, `matchOrganization()`, `parseRemissinstanserText()`
+
+New Edge Functions:
+- `process-remissinstanser`: Parses remissinstanser PDFs → extracts invited organizations → inserts to `remiss_invitees`
+- `link-remissvar-entities`: Matches `responding_organization` to entities with confidence scoring, optional entity creation
+
+Admin UI:
+- `RemissEntityLinkerTest.tsx`: Two-tab UI for (1) parsing remissinstanser, (2) linking entities with dry-run, confidence breakdown, and low-match review
+
+---
+
 ## 2026-01-07: Phase 2.5.2 Swedish Date Parsing Fix (EXECUTION)
 
 **Task: Fix Swedish Date → ISO Conversion**
