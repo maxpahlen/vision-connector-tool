@@ -1,7 +1,7 @@
 # Context Priority
 
 **Last Updated:** 2026-01-07  
-**Current Phase:** 5.3 (Remisser + Remissvar) — Phase 2.5 executing
+**Current Phase:** 5.3 (Remisser + Remissvar) — Phase 2.7 executing
 
 ---
 
@@ -23,7 +23,15 @@ Maintained by: **Lovable (Architectural Authority)**
 | 4 | `docs/CHECKLISTS.md` | Verification requirements before sign-off |
 | 5 | `docs/DECISION_LOG.md` | Approved decisions with triple sign-off |
 | 6 | `docs/development/PRODUCT_ROADMAP.md` | Overall progress and metrics |
-| 7 | `supabase/functions/_shared/README.md` | Shared edge function utilities |
+| 7 | `supabase/functions/_shared/README.md` | Shared edge function utilities (incl. new `pdf-extractor.ts`) |
+
+---
+
+## Recent Changes (2026-01-07)
+
+- **NEW:** `_shared/pdf-extractor.ts` — Shared PDF extraction client, prevents endpoint/auth drift
+- **REFACTORED:** `process-sou-pdf` and `process-remissinstanser` now use shared utility
+- **FIXED:** Phase 2.7 PDF extraction 404 errors resolved
 
 ---
 
