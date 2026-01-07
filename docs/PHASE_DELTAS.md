@@ -1,5 +1,27 @@
 # Phase Deltas
 
+## 2026-01-07: Phase 2.5.1 Remissinstanser Detection Fix (EXECUTION)
+
+**Task: Fix Remissinstanser PDF Detection**
+- Enhanced `supabase/functions/_shared/remiss-parser.ts` with section-based detection
+- Added header scanning for "Remissinstanser:" followed by PDF link (primary strategy)
+- Added sibling-walk strategy as fallback for varied HTML structures
+- Expanded URL selector to include `/contentassets/` pattern
+- Added `remissinstanserUrls` set to prevent duplicate classification as remissvar
+- Enhanced deadline patterns with "sista dag att svara" variant
+- Added logging for section-based detection ("Found remissinstanser section header")
+
+**UI Enhancement:**
+- Added `reprocess_scraped` toggle in `ProcessRemissPagesTest.tsx`
+- Allows re-scraping already-scraped remisser with improved parser
+- Mutually exclusive with `retry_failed` toggle
+
+**Edge Function Update:**
+- Added `reprocess_scraped` parameter to `process-remiss-pages/index.ts`
+- Queries `status='scraped'` when enabled (for parser improvements)
+
+---
+
 ## 2026-01-07: Context Priority Doc Created
 
 **Governance Enhancement**
