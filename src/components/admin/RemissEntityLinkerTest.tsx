@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Users, Link2, AlertCircle, CheckCircle2, HelpCircle } from 'lucide-react';
+import { Loader2, Users, Link2, AlertCircle, CheckCircle2, HelpCircle, Database } from 'lucide-react';
 
 interface ProcessRemissinstansersResult {
   processed: number;
@@ -44,6 +44,18 @@ interface LinkRemissvarResult {
   message?: string;
 }
 
+interface BootstrapResult {
+  created: number;
+  skipped_existing: number;
+  skipped_invalid: number;
+  skipped_low_occurrence: number;
+  total_candidates: number;
+  dry_run: boolean;
+  sample_created: string[];
+  sample_skipped_invalid: string[];
+  message?: string;
+}
+
 export function RemissEntityLinkerTest() {
   const [activeTab, setActiveTab] = useState('invitees');
   
@@ -59,6 +71,13 @@ export function RemissEntityLinkerTest() {
   const [linkingDryRun, setLinkingDryRun] = useState(true);
   const [createEntities, setCreateEntities] = useState(false);
   const [linkingLimit, setLinkingLimit] = useState(50);
+
+  // Bootstrap state
+  const [bootstrapLoading, setBootstrapLoading] = useState(false);
+  const [bootstrapResult, setBootstrapResult] = useState<BootstrapResult | null>(null);
+  const [bootstrapDryRun, setBootstrapDryRun] = useState(true);
+  const [bootstrapLimit, setBootstrapLimit] = useState(200);
+  const [minOccurrences, setMinOccurrences] = useState(1);
 
   const handleProcessRemissinstanser = async () => {
     setInviteesLoading(true);
@@ -121,6 +140,38 @@ export function RemissEntityLinkerTest() {
     }
   };
 
+  const handleBootstrapEntities = async () => {
+    setBootstrapLoading(true);
+    setBootstrapResult(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('bootstrap-org-entities', {
+        body: {
+          limit: bootstrapLimit,
+          dry_run: bootstrapDryRun,
+          min_occurrences: minOccurrences
+        }
+      });
+
+      if (error) throw error;
+      setBootstrapResult(data);
+    } catch (err) {
+      console.error('Error bootstrapping entities:', err);
+      setBootstrapResult({
+        created: 0,
+        skipped_existing: 0,
+        skipped_invalid: 0,
+        skipped_low_occurrence: 0,
+        total_candidates: 0,
+        dry_run: bootstrapDryRun,
+        sample_created: [],
+        sample_skipped_invalid: [err instanceof Error ? err.message : String(err)]
+      });
+    } finally {
+      setBootstrapLoading(false);
+    }
+  };
+
   const getConfidenceBadge = (confidence: string) => {
     switch (confidence) {
       case 'high':
@@ -147,9 +198,10 @@ export function RemissEntityLinkerTest() {
       </CardHeader>
       <CardContent>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="invitees">1. Parse Remissinstanser</TabsTrigger>
-            <TabsTrigger value="linking">2. Link Entities</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="invitees">1. Parse</TabsTrigger>
+            <TabsTrigger value="bootstrap">2. Bootstrap</TabsTrigger>
+            <TabsTrigger value="linking">3. Link</TabsTrigger>
           </TabsList>
 
           {/* Remissinstanser Tab */}
@@ -253,6 +305,118 @@ export function RemissEntityLinkerTest() {
                         </li>
                       ))}
                     </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Bootstrap Entities Tab */}
+          <TabsContent value="bootstrap" className="space-y-4 mt-4">
+            <div className="p-3 bg-muted/50 rounded-lg mb-4">
+              <p className="text-sm text-muted-foreground">
+                <Database className="h-4 w-4 inline mr-1" />
+                Creates organization entities from parsed remiss invitees. Run this after parsing to seed the entities table for matching.
+              </p>
+            </div>
+            
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="bootstrap-dry-run">Dry Run (preview only)</Label>
+                  <Switch 
+                    id="bootstrap-dry-run"
+                    checked={bootstrapDryRun} 
+                    onCheckedChange={setBootstrapDryRun} 
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>Limit: {bootstrapLimit} entities</Label>
+                  <Slider
+                    value={[bootstrapLimit]}
+                    onValueChange={(v) => setBootstrapLimit(v[0])}
+                    min={10}
+                    max={500}
+                    step={10}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Min Occurrences: {minOccurrences}</Label>
+                  <Slider
+                    value={[minOccurrences]}
+                    onValueChange={(v) => setMinOccurrences(v[0])}
+                    min={1}
+                    max={5}
+                    step={1}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Only create entities that appear in {minOccurrences}+ invitee lists
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex items-end">
+                <Button 
+                  onClick={handleBootstrapEntities} 
+                  disabled={bootstrapLoading}
+                  className="w-full"
+                >
+                  {bootstrapLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {bootstrapDryRun ? 'Preview Bootstrap' : 'Create Entities'}
+                </Button>
+              </div>
+            </div>
+
+            {bootstrapResult && (
+              <div className="space-y-4 mt-4">
+                <div className="grid gap-4 md:grid-cols-5">
+                  <div className="text-center p-3 bg-muted rounded-lg">
+                    <div className="text-2xl font-bold">{bootstrapResult.total_candidates}</div>
+                    <div className="text-xs text-muted-foreground">Candidates</div>
+                  </div>
+                  <div className="text-center p-3 bg-muted rounded-lg">
+                    <div className="text-2xl font-bold text-green-400">{bootstrapResult.created}</div>
+                    <div className="text-xs text-muted-foreground">{bootstrapResult.dry_run ? 'Would Create' : 'Created'}</div>
+                  </div>
+                  <div className="text-center p-3 bg-muted rounded-lg">
+                    <div className="text-2xl font-bold text-yellow-400">{bootstrapResult.skipped_existing}</div>
+                    <div className="text-xs text-muted-foreground">Already Exist</div>
+                  </div>
+                  <div className="text-center p-3 bg-muted rounded-lg">
+                    <div className="text-2xl font-bold text-orange-400">{bootstrapResult.skipped_invalid}</div>
+                    <div className="text-xs text-muted-foreground">Invalid Names</div>
+                  </div>
+                  <div className="text-center p-3 bg-muted rounded-lg">
+                    <div className="text-2xl font-bold text-muted-foreground">{bootstrapResult.skipped_low_occurrence}</div>
+                    <div className="text-xs text-muted-foreground">Low Occurrence</div>
+                  </div>
+                </div>
+
+                {bootstrapResult.sample_created.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium text-green-400">Sample Entities to Create</div>
+                    <div className="flex flex-wrap gap-1">
+                      {bootstrapResult.sample_created.map((name, i) => (
+                        <Badge key={i} variant="outline" className="text-xs bg-green-500/10 border-green-500/30">
+                          {name}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {bootstrapResult.sample_skipped_invalid.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium text-orange-400">Sample Rejected Names</div>
+                    <div className="flex flex-wrap gap-1">
+                      {bootstrapResult.sample_skipped_invalid.map((name, i) => (
+                        <Badge key={i} variant="outline" className="text-xs bg-orange-500/10 border-orange-500/30">
+                          {name}
+                        </Badge>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>

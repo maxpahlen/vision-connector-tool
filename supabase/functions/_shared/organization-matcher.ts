@@ -1,16 +1,51 @@
 /**
  * Organization name normalization and matching utilities
  * Phase 2.7: Remissinstanser & Remissvar Processing
+ * 
+ * Applies to both remiss_invitees and remiss_responses for consistent matching.
  */
 
 /**
- * Normalizes organization name by removing file size suffixes and extra whitespace
- * "Riksdagens ombudsmän (JO) (pdf 140 kB)" → "Riksdagens ombudsmän (JO)"
+ * Patterns that indicate the string is a document title, not an organization name.
+ * Used to reject invalid organization names.
+ */
+const DOCUMENT_TITLE_PATTERNS = [
+  /^remiss\s+(av|om)/i,                    // "Remiss av betänkande..."
+  /^betänkande/i,                          // "Betänkande SOU..."
+  /^SOU\s+\d{4}/i,                         // "SOU 2025:103"
+  /^Ds\s+\d{4}/i,                          // "Ds 2025:1"
+  /^Prop\.\s*\d{4}/i,                      // "Prop. 2025/26:1"
+  /^Dir\.\s*\d{4}/i,                       // "Dir. 2024:123"
+  /\d{4}[\s:]\d+.*lag(en|stiftning)?/i,    // "2025:103 En ny produktansvarslag"
+];
+
+/**
+ * File extension patterns to remove from organization names
+ */
+const FILE_EXTENSION_PATTERN = /\.(pdf|docx?|xlsx?|pptx?|odt|rtf)$/i;
+
+/**
+ * Checks if a string looks like a document title rather than an organization name
+ */
+export function isDocumentTitle(name: string): boolean {
+  return DOCUMENT_TITLE_PATTERNS.some(pattern => pattern.test(name));
+}
+
+/**
+ * Normalizes organization name by removing file extensions, file size suffixes, 
+ * and extra whitespace. Returns empty string for invalid inputs (e.g., document titles).
+ * 
+ * Examples:
+ * - "Riksdagens ombudsmän (JO) (pdf 140 kB)" → "Riksdagens ombudsmän (JO)"
+ * - "Blekinge Tekniska Högskola.PDF" → "Blekinge Tekniska Högskola"
+ * - "Remiss av betänkande SOU 2025:103" → "" (rejected as document title)
  */
 export function normalizeOrganizationName(raw: string): string {
   if (!raw) return '';
   
-  return raw
+  let normalized = raw
+    // Remove file extensions like ".PDF", ".docx"
+    .replace(FILE_EXTENSION_PATTERN, '')
     // Remove file size indicators like "(pdf 140 kB)" or "(word 2 MB)"
     .replace(/\s*\((pdf|word|doc|docx)\s+\d+(\.\d+)?\s*(kB|KB|MB|mb|b|B)\)\s*$/i, '')
     // Remove standalone file size like "140 kB" at end
@@ -18,6 +53,14 @@ export function normalizeOrganizationName(raw: string): string {
     // Normalize whitespace
     .replace(/\s+/g, ' ')
     .trim();
+
+  // Reject document titles
+  if (isDocumentTitle(normalized)) {
+    console.log(`[org-matcher] Rejected document title: "${normalized.substring(0, 50)}..."`);
+    return '';
+  }
+
+  return normalized;
 }
 
 /**
@@ -172,8 +215,63 @@ function getBigrams(str: string): Set<string> {
 }
 
 /**
+ * Blocked phrases that indicate boilerplate/non-organization text.
+ * Logged when matched to allow monitoring for false positives.
+ */
+const BLOCKED_PHRASES = [
+  // Document metadata
+  /^regeringskansliet$/i,
+  /^finansdepartementet$/i,             // Usually header, not invitee
+  /^justitiedepartementet$/i,
+  /^socialdepartementet$/i,
+  /^utbildningsdepartementet$/i,
+  /^näringsdepartementet$/i,
+  /^miljödepartementet$/i,
+  // Page numbers and formatting
+  /^sida\s*\d+/i,
+  /^sid\s*\d+/i,
+  /^page\s*\d+/i,
+  /^\d+\s*\(\s*\d+\s*\)$/,               // "1 (5)" format
+  /^\d+$/,                                // Standalone numbers
+  // Common PDF artifacts
+  /^remissinstanser$/i,
+  /^sändlista$/i,
+  /^remisslista$/i,
+  /^bilaga\s*\d*/i,
+  /^dnr/i,
+  /^datum/i,
+  // Section headers
+  /^sammanfattning/i,
+  /^innehåll/i,
+  /^inledning/i,
+  /^bakgrund/i,
+  // Misc boilerplate
+  /^remiss\s+av/i,
+  /^betänkande/i,
+  /^till\s+regeringen/i,
+  /^se\s+bifogad/i,
+];
+
+/**
+ * Checks if text matches any blocked phrase (boilerplate)
+ * Logs matches for monitoring
+ */
+function isBlockedPhrase(text: string): boolean {
+  const normalizedText = text.trim();
+  for (const pattern of BLOCKED_PHRASES) {
+    if (pattern.test(normalizedText)) {
+      console.log(`[org-matcher] Blocked boilerplate: "${normalizedText.substring(0, 40)}..."`);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Parse remissinstanser PDF text to extract organization list
  * The format is typically a bullet list or numbered list of organization names
+ * 
+ * Applies blocked phrase filtering and normalization to both invitees and responses.
  */
 export function parseRemissinstanserText(text: string): string[] {
   if (!text) return [];
@@ -196,6 +294,9 @@ export function parseRemissinstanserText(text: string): string[] {
     // Skip empty lines
     if (!trimmed) continue;
     
+    // Skip blocked phrases (boilerplate)
+    if (isBlockedPhrase(trimmed)) continue;
+    
     // Detect section headers that indicate start of org list
     if (/remissinstanser|remisslista|sändlista/i.test(trimmed)) {
       inOrgSection = true;
@@ -211,7 +312,10 @@ export function parseRemissinstanserText(text: string): string[] {
     for (const pattern of bulletPatterns) {
       const match = trimmed.match(pattern);
       if (match && match[1]) {
-        const orgName = normalizeOrganizationName(match[1]);
+        const candidate = match[1].trim();
+        if (isBlockedPhrase(candidate)) continue;
+        
+        const orgName = normalizeOrganizationName(candidate);
         if (orgName && orgName.length > 2) {
           organizations.push(orgName);
         }
@@ -225,8 +329,7 @@ export function parseRemissinstanserText(text: string): string[] {
       if (
         trimmed.length > 3 &&
         trimmed.length < 150 &&
-        /^[A-ZÅÄÖ]/.test(trimmed) &&
-        !/^(sida|sid|page|\d+$)/i.test(trimmed)
+        /^[A-ZÅÄÖ]/.test(trimmed)
       ) {
         const orgName = normalizeOrganizationName(trimmed);
         if (orgName) {

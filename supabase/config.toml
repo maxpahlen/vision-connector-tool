@@ -59,3 +59,6 @@ verify_jwt = false
 
 [functions.link-remissvar-entities]
 verify_jwt = false
+
+[functions.bootstrap-org-entities]
+verify_jwt = false
