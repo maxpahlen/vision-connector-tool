@@ -295,7 +295,7 @@ const BLOCKED_PHRASES = [
  * Checks if text matches any blocked phrase (boilerplate)
  * Logs matches for monitoring
  */
-function isBlockedPhrase(text: string): boolean {
+export function isBlockedPhrase(text: string): boolean {
   const normalizedText = text.trim();
   for (const pattern of BLOCKED_PHRASES) {
     if (pattern.test(normalizedText)) {
@@ -308,9 +308,16 @@ function isBlockedPhrase(text: string): boolean {
 
 /**
  * Parse remissinstanser PDF text to extract organization list
- * The format is typically a bullet list or numbered list of organization names
  * 
- * Applies blocked phrase filtering and normalization to both invitees and responses.
+ * WHITELIST APPROACH: Only extracts lines matching numbered pattern (e.g., "1. Almega")
+ * This is the most reliable way to extract organizations since all legitimate invitees
+ * in Swedish remissinstanser PDFs are prefixed with a number.
+ * 
+ * Pattern: /^\s*(\d+)\.\s+(.+)$/
+ * Examples:
+ *   "1. Almega" → "Almega"
+ *   "86. Östersunds kommun" → "Östersunds kommun"
+ *   "Remissvaren ska ha kommit in..." → rejected (no number prefix)
  */
 export function parseRemissinstanserText(text: string): string[] {
   if (!text) return [];
@@ -318,65 +325,33 @@ export function parseRemissinstanserText(text: string): string[] {
   const organizations: string[] = [];
   const lines = text.split('\n');
   
-  // Common patterns in remissinstanser PDFs
-  const bulletPatterns = [
-    /^[\s]*[-–•●○]\s*(.+)$/,           // Bullet points
-    /^[\s]*\d+[.)]\s*(.+)$/,            // Numbered list
-    /^[\s]*[a-zåäö][.)]\s*(.+)$/i,      // Lettered list
-  ];
+  // WHITELIST: Only numbered entries are valid organizations
+  // Pattern matches: "1. Almega", "86. Östersunds kommun", etc.
+  const numberedPattern = /^\s*(\d+)\.\s+(.+)$/;
 
-  let inOrgSection = false;
-  
   for (const line of lines) {
     const trimmed = line.trim();
     
     // Skip empty lines
     if (!trimmed) continue;
     
-    // Skip blocked phrases (boilerplate)
-    if (isBlockedPhrase(trimmed)) continue;
+    // Only match numbered entries (whitelist approach)
+    const match = trimmed.match(numberedPattern);
+    if (!match || !match[2]) continue;
     
-    // Detect section headers that indicate start of org list
-    if (/remissinstanser|remisslista|sändlista/i.test(trimmed)) {
-      inOrgSection = true;
-      continue;
-    }
+    const candidate = match[2].trim();
     
-    // Detect end of org list (new section headers)
-    if (inOrgSection && /^(bilagor|innehåll|sammanfattning)/i.test(trimmed)) {
-      break;
-    }
+    // Skip blocked phrases (safety check)
+    if (isBlockedPhrase(candidate)) continue;
     
-    // Try to match bullet patterns
-    for (const pattern of bulletPatterns) {
-      const match = trimmed.match(pattern);
-      if (match && match[1]) {
-        const candidate = match[1].trim();
-        if (isBlockedPhrase(candidate)) continue;
-        
-        const orgName = normalizeOrganizationName(candidate);
-        if (orgName && orgName.length > 2) {
-          organizations.push(orgName);
-        }
-        break;
-      }
-    }
-    
-    // If we're in the org section and line looks like an org name
-    // (capitalized, reasonable length, no obvious non-org patterns)
-    if (inOrgSection && !bulletPatterns.some(p => p.test(trimmed))) {
-      if (
-        trimmed.length > 3 &&
-        trimmed.length < 150 &&
-        /^[A-ZÅÄÖ]/.test(trimmed)
-      ) {
-        const orgName = normalizeOrganizationName(trimmed);
-        if (orgName) {
-          organizations.push(orgName);
-        }
-      }
+    // Normalize the organization name
+    const orgName = normalizeOrganizationName(candidate);
+    if (orgName && orgName.length > 2) {
+      organizations.push(orgName);
     }
   }
+
+  console.log(`[org-matcher] Extracted ${organizations.length} numbered organizations`);
 
   // Deduplicate
   return [...new Set(organizations)];
