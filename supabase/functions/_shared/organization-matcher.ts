@@ -219,20 +219,28 @@ function getBigrams(str: string): Set<string> {
  * Logged when matched to allow monitoring for false positives.
  */
 const BLOCKED_PHRASES = [
-  // Document metadata
+  // Document metadata - department headers (not invitees)
   /^regeringskansliet$/i,
-  /^finansdepartementet$/i,             // Usually header, not invitee
+  /^finansdepartementet$/i,
   /^justitiedepartementet$/i,
   /^socialdepartementet$/i,
   /^utbildningsdepartementet$/i,
   /^näringsdepartementet$/i,
   /^miljödepartementet$/i,
+  /^klimat-?\s*och\s*näringslivsdepartementet$/i,
+  /^utrikesdepartementet$/i,
+  /^försvarsdepartementet$/i,
+  /^kulturdepartementet$/i,
+  /^arbetsmarknadsdepartementet$/i,
+  /^landsbygds-?\s*och\s*infrastrukturdepartementet$/i,
+  
   // Page numbers and formatting
   /^sida\s*\d+/i,
   /^sid\s*\d+/i,
   /^page\s*\d+/i,
   /^\d+\s*\(\s*\d+\s*\)$/,               // "1 (5)" format
   /^\d+$/,                                // Standalone numbers
+  
   // Common PDF artifacts
   /^remissinstanser$/i,
   /^sändlista$/i,
@@ -240,16 +248,47 @@ const BLOCKED_PHRASES = [
   /^bilaga\s*\d*/i,
   /^dnr/i,
   /^datum/i,
+  
   // Section headers
   /^sammanfattning/i,
   /^innehåll/i,
   /^inledning/i,
   /^bakgrund/i,
-  // Misc boilerplate
+  
+  // Document references
   /^remiss\s+av/i,
   /^betänkande/i,
   /^till\s+regeringen/i,
   /^se\s+bifogad/i,
+  
+  // Instruction/boilerplate text (commonly leaked from remiss PDFs)
+  /myndigheter\s+under\s+regeringen/i,
+  /remissvaren\s+ska\s+ha\s+kommit\s+in/i,
+  /remissvaren\s+kommer\s+att\s+publiceras/i,
+  /svaret\s+bör\s+lämnas/i,
+  /i\s+ett\s+bearbetningsbart\s+format/i,
+  /betankande@/i,
+  /e-post(adress)?:\s*\S+@/i,
+  /www\.regeringen\.se/i,
+  /remissinstansens\s+namn\s+ska\s+anges/i,
+  /statsrådsberedningens\s+promemoria/i,
+  /filnamnen\s+ska\s+motsvara/i,
+  /ange\s+diarienummer/i,
+  /^kopia\s+till$/i,
+  /betänkandet\s+kan\s+laddas/i,
+  /råd\s+om\s+hur\s+remissyttranden/i,
+  /en\s+sammanfattning\s+av\s+remissvaren/i,
+  /remissvar\s+lämnas\s+digitalt/i,
+  /remissvar\s+ska\s+lämnas/i,
+  
+  // Title patterns (single person names as headers)
+  /^rättschef$/i,
+  /^kansliråd$/i,
+  /^departementsråd$/i,
+  /^ämnesråd$/i,
+  
+  // Email format patterns
+  /^\S+@\S+\.\S+$/,                       // Standalone email
 ];
 
 /**

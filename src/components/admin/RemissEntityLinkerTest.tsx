@@ -70,13 +70,13 @@ export function RemissEntityLinkerTest() {
   const [linkingResult, setLinkingResult] = useState<LinkRemissvarResult | null>(null);
   const [linkingDryRun, setLinkingDryRun] = useState(true);
   const [createEntities, setCreateEntities] = useState(false);
-  const [linkingLimit, setLinkingLimit] = useState(50);
+  const [linkingLimit, setLinkingLimit] = useState(5000);  // Increased from 50 to process all responses
 
   // Bootstrap state
   const [bootstrapLoading, setBootstrapLoading] = useState(false);
   const [bootstrapResult, setBootstrapResult] = useState<BootstrapResult | null>(null);
   const [bootstrapDryRun, setBootstrapDryRun] = useState(true);
-  const [bootstrapLimit, setBootstrapLimit] = useState(200);
+  const [bootstrapLimit, setBootstrapLimit] = useState(2000);  // Increased from 200 to capture all orgs
   const [minOccurrences, setMinOccurrences] = useState(1);
 
   const handleProcessRemissinstanser = async () => {
@@ -336,8 +336,8 @@ export function RemissEntityLinkerTest() {
                   <Slider
                     value={[bootstrapLimit]}
                     onValueChange={(v) => setBootstrapLimit(v[0])}
-                    min={10}
-                    max={500}
+                    min={100}
+                    max={3000}
                     step={10}
                   />
                 </div>

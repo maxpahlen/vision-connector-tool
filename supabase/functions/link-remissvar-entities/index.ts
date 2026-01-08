@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
       limit = 100, 
       create_entities = false, 
       dry_run = false,
-      min_confidence = 'low'
+      min_confidence = 'high'  // Default to HIGH confidence only - correctness over recall
     } = body;
 
     console.log(`[link-remissvar-entities] Starting - remiss_id: ${remiss_id}, limit: ${limit}, create_entities: ${create_entities}, dry_run: ${dry_run}`);
@@ -157,12 +157,20 @@ Deno.serve(async (req) => {
         }
 
         // Determine if we should use this match
+        // Only HIGH confidence matches are linked by default to prioritize correctness
+        // Medium/Low matches are logged but entity_id is set to null
         const confidenceOrder: MatchConfidence[] = ['high', 'medium', 'low', 'unmatched'];
         const minConfidenceIndex = confidenceOrder.indexOf(min_confidence);
         const matchConfidenceIndex = confidenceOrder.indexOf(matchResult.confidence);
         const shouldUseMatch = matchResult.entity_id && matchConfidenceIndex <= minConfidenceIndex;
 
+        // Only persist entity_id for matches meeting the confidence threshold
         let entityId = shouldUseMatch ? matchResult.entity_id : null;
+        
+        // Log when we skip a potential match due to low confidence
+        if (matchResult.entity_id && !shouldUseMatch) {
+          console.log(`[link-remissvar-entities] Skipping ${matchResult.confidence} match for "${normalizedName}" -> "${matchResult.matched_name}" (score: ${matchResult.similarity_score?.toFixed(2)})`);
+        }
 
         // Create new entity if unmatched and create_entities is enabled
         if (!entityId && matchResult.confidence === 'unmatched' && create_entities && !dry_run) {
