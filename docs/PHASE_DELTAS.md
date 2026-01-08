@@ -1,6 +1,32 @@
 # Phase Deltas
 
-## 2026-01-08: Phase 2.7.1 Entity Linking Quality Fixes (EXECUTION)
+## 2026-01-08: Phase 2.7.2 Entity Pipeline Nuclear Reset (EXECUTION)
+
+**Problem**: Entity bootstrapping contaminated with boilerplate (677 invalid invitees, 31 bad entities). Root causes:
+1. Supabase 1000-row query limit silently truncating results
+2. `isBlockedPhrase()` not exported/applied in bootstrap
+3. Fallback parser bypassing all filtering
+
+**Fixes Applied**:
+1. **Database Reset**: Unlinked entities from `remiss_responses`, deleted bootstrap entities, deleted all `remiss_invitees`, reset `remiss_documents` processing flags
+2. **Numbered Pattern Whitelist**: Rewrote `parseRemissinstanserText()` to ONLY extract numbered entries (`/^\s*(\d+)\.\s+(.+)$/`)
+3. **Removed Fallback Parser**: Deleted permissive fallback in `process-remissinstanser/index.ts` lines 130-139
+4. **Exported `isBlockedPhrase()`**: Now applied in `bootstrap-org-entities` before normalization
+5. **Fixed Query Limits**: Added `.range(0, 9999)` to all invitee/entity queries
+
+**Files Changed**:
+- `supabase/functions/_shared/organization-matcher.ts` - exported `isBlockedPhrase()`, whitelist parser
+- `supabase/functions/process-remissinstanser/index.ts` - removed fallback, skip if no numbered orgs
+- `supabase/functions/bootstrap-org-entities/index.ts` - import `isBlockedPhrase`, apply before normalize, fix query limits
+
+**Expected Outcomes**:
+- Zero boilerplate in invitees/entities
+- ~1500+ valid organization entities
+- 99% parse accuracy
+
+---
+
+
 
 **Task: Fix entity bootstrap limits, boilerplate leakage, and confidence strategy**
 

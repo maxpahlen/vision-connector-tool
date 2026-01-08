@@ -12,7 +12,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { 
   normalizeOrganizationName,
-  isDocumentTitle
+  isDocumentTitle,
+  isBlockedPhrase
 } from '../_shared/organization-matcher.ts';
 
 const corsHeaders = {
@@ -57,11 +58,12 @@ Deno.serve(async (req) => {
 
     console.log(`[bootstrap-org-entities] Starting - limit: ${limit}, dry_run: ${dry_run}, min_occurrences: ${min_occurrences}`);
 
-    // Fetch all invitee organization names with occurrence counts
+    // Fetch ALL invitee organization names (bypass 1000-row default limit)
     const { data: invitees, error: fetchError } = await supabase
       .from('remiss_invitees')
       .select('organization_name')
-      .is('entity_id', null);  // Only unlinked invitees
+      .is('entity_id', null)  // Only unlinked invitees
+      .range(0, 9999);        // Fetch up to 10,000 rows
 
     if (fetchError) {
       console.error('[bootstrap-org-entities] Fetch error:', fetchError);
@@ -91,6 +93,12 @@ Deno.serve(async (req) => {
     const invalidNames: string[] = [];
 
     for (const invitee of invitees) {
+      // Apply blocked phrase filter FIRST (before normalization)
+      if (isBlockedPhrase(invitee.organization_name)) {
+        invalidNames.push(invitee.organization_name);
+        continue;
+      }
+      
       const normalized = normalizeOrganizationName(invitee.organization_name);
       
       if (!normalized || normalized.length < 3) {
@@ -108,11 +116,12 @@ Deno.serve(async (req) => {
 
     console.log(`[bootstrap-org-entities] ${occurrenceCounts.size} unique valid names, ${invalidNames.length} invalid`);
 
-    // Get existing entities to avoid duplicates
+    // Get existing entities to avoid duplicates (bypass 1000-row limit)
     const { data: existingEntities } = await supabase
       .from('entities')
       .select('name')
-      .eq('entity_type', 'organization');
+      .eq('entity_type', 'organization')
+      .range(0, 9999);
 
     const existingNames = new Set(
       (existingEntities || []).map(e => e.name.toLowerCase())

@@ -123,19 +123,16 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Parse organizations from PDF text
+        // Parse organizations from PDF text using numbered pattern (whitelist approach)
         const organizations = parseRemissinstanserText(pdfText);
-        console.log(`[process-remissinstanser] Extracted ${organizations.length} organizations from ${remiss.id}`);
+        console.log(`[process-remissinstanser] Extracted ${organizations.length} numbered organizations from ${remiss.id}`);
 
+        // NO FALLBACK: If numbered pattern fails, return 0 organizations
+        // This prevents boilerplate contamination. Specific failing PDFs can be investigated separately.
         if (organizations.length === 0) {
-          // Try simpler line-by-line parsing as fallback
-          const lines = pdfText.split('\n')
-            .map((l: string) => l.trim())
-            .filter((l: string) => l.length > 3 && l.length < 150 && /^[A-ZÅÄÖ]/.test(l));
-          
-          if (lines.length > 0) {
-            organizations.push(...lines.slice(0, 100).map(normalizeOrganizationName));
-          }
+          console.warn(`[process-remissinstanser] No numbered organizations found in ${remiss.id} - skipping (no fallback)`);
+          result.skipped++;
+          continue;
         }
 
         if (!dry_run && organizations.length > 0) {
