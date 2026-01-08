@@ -1,28 +1,42 @@
 # Phase Deltas
 
-## 2026-01-07: Phase 2.7 Normalization & Bootstrap Fixes (EXECUTION)
+## 2026-01-08: Phase 2.7.1 Entity Linking Quality Fixes (EXECUTION)
 
-**Task: Fix organization matching pipeline**
+**Task: Fix entity bootstrap limits, boilerplate leakage, and confidence strategy**
 
-Root Cause Analysis:
-- Zero organization entities in DB → all matches fail
-- `.PDF`/`.docx` suffixes not stripped from org names
-- Document titles incorrectly parsed as organizations
-- Boilerplate text extracted from remissinstanser PDFs
+Root Cause Analysis (from DB audit 2026-01-07):
+- Bootstrap limited to 500 entities (UI slider max) → missing 1,000+ legitimate orgs
+- Linking limited to 50 responses → only 14% processed
+- 25+ boilerplate entries leaked into entities table
+- Low/medium confidence matches had high false positive rates
+- `extractOrganization()` in remiss-parser.ts not applying title filtering
 
-Fixed in `_shared/organization-matcher.ts`:
-- Added `FILE_EXTENSION_PATTERN` to strip `.pdf`, `.docx`, etc.
-- Added `DOCUMENT_TITLE_PATTERNS` with `isDocumentTitle()` check
-- Added `BLOCKED_PHRASES` list with logging for boilerplate filtering
-- Applied normalization consistently to both invitees and responses
+Fixes Applied:
 
-Created:
-- `bootstrap-org-entities/index.ts` — Seeds entities from cleaned `remiss_invitees`
+**Database Cleanup:**
+- Deleted boilerplate entities matching instruction patterns (e.g., "Myndigheter under regeringen...")
 
-Updated:
-- `RemissEntityLinkerTest.tsx` — Added 3-tab workflow: Parse → Bootstrap → Link
+**Expanded BLOCKED_PHRASES** in `_shared/organization-matcher.ts`:
+- Added 30+ new boilerplate patterns (instruction text, email patterns, title roles)
+- Added all government department variants as headers (not invitees)
+
+**Fixed extractOrganization()** in `_shared/remiss-parser.ts`:
+- Added `isDocumentTitle()` check before processing link text
+- Applied `normalizeOrganizationName()` for consistent cleaning
+- Added file size suffix removal (e.g., "(pdf 294 kB)")
+
+**Changed default confidence strategy** in `link-remissvar-entities`:
+- Default `min_confidence` changed from 'low' to 'high'
+- Medium/low matches now logged but `entity_id` set to null
+- Prioritizes correctness over recall (uninvited orgs can respond - this is valid)
+
+**Updated UI limits** in `RemissEntityLinkerTest.tsx`:
+- Bootstrap slider: 10-500 → 100-3000 (default 2000)
+- Linking limit: 50 → 5000
 
 ---
+
+## 2026-01-07: Phase 2.7 Normalization & Bootstrap Fixes (EXECUTION)
 
 ## 2026-01-07: Shared PDF Extractor Utility (EXECUTION)
 

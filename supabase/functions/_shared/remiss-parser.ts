@@ -11,6 +11,7 @@
  */
 
 import { DOMParser, Element } from 'https://deno.land/x/deno_dom@v0.1.43/deno-dom-wasm.ts';
+import { normalizeOrganizationName, isDocumentTitle } from './organization-matcher.ts';
 
 // ============================================
 // Interfaces (exported for type safety)
@@ -91,20 +92,34 @@ export function classifyFileType(url: string, linkText: string): 'pdf' | 'word' 
 
 /**
  * Extract organization name from filename or link text
+ * Applies normalization and document title filtering to reject invalid names
  */
 export function extractOrganization(filename: string, linkText: string): string | null {
   const text = linkText || filename;
   if (!text) return null;
+  
+  // Check if the text looks like a document title before processing
+  if (isDocumentTitle(text)) {
+    console.log(`[remiss-parser] Rejected document title in extractOrganization: "${text.substring(0, 50)}..."`);
+    return null;
+  }
   
   let org = text
     .replace(/^remissvar[-_\s]*/i, '')
     .replace(/\.pdf$/i, '')
     .replace(/\.docx?$/i, '')
     .replace(/[-_]/g, ' ')
+    // Remove file size patterns like "(pdf 294 kB)"
+    .replace(/\s*\((pdf|word|doc|docx)\s+\d+(\.\d+)?\s*(kB|KB|MB|mb|b|B)\)\s*$/i, '')
+    // Remove standalone file size at end
+    .replace(/\s+\d+(\.\d+)?\s*(kB|KB|MB|mb|b|B)\s*$/i, '')
     .trim();
   
   if (org.length < 3) return null;
-  return org;
+  
+  // Apply full normalization for consistency
+  const normalized = normalizeOrganizationName(org);
+  return normalized || null;
 }
 
 // ============================================
