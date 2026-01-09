@@ -32,6 +32,21 @@ export function isDocumentTitle(name: string): boolean {
 }
 
 /**
+ * Hard rejection patterns - these are always invalid regardless of context
+ * Contact info, URLs, very long strings
+ */
+function hasContactInfo(text: string): boolean {
+  const contactPatterns = [
+    /@/,                                  // Email indicator
+    /www\./i,                             // Website
+    /https?:\/\//i,                       // Full URL
+    /\.se\//,                             // Swedish domain path
+    /\.gov\./,                            // Government domain
+  ];
+  return contactPatterns.some(pattern => pattern.test(text));
+}
+
+/**
  * Normalizes organization name by removing file extensions, file size suffixes, 
  * and extra whitespace. Returns empty string for invalid inputs (e.g., document titles).
  * 
@@ -42,6 +57,18 @@ export function isDocumentTitle(name: string): boolean {
  */
 export function normalizeOrganizationName(raw: string): string {
   if (!raw) return '';
+  
+  // Hard rejection: contact info
+  if (hasContactInfo(raw)) {
+    console.log(`[org-matcher] Rejected contact info: "${raw.substring(0, 50)}..."`);
+    return '';
+  }
+  
+  // Hard rejection: very long strings (likely boilerplate paragraphs)
+  if (raw.length > 120) {
+    console.log(`[org-matcher] Rejected too long (${raw.length} chars): "${raw.substring(0, 50)}..."`);
+    return '';
+  }
   
   let normalized = raw
     // Remove file extensions like ".PDF", ".docx"
@@ -266,6 +293,9 @@ const BLOCKED_PHRASES = [
   /remissvaren\s+ska\s+ha\s+kommit\s+in/i,
   /remissvaren\s+kommer\s+att\s+publiceras/i,
   /svaret\s+bör\s+lämnas/i,
+  /svaren\s+bör\s+lämnas/i,                // Plural variant
+  /remissvaren\s+ska/i,                    // Plural instruction
+  /synpunkter\s+på\s+remissen/i,
   /i\s+ett\s+bearbetningsbart\s+format/i,
   /betankande@/i,
   /e-post(adress)?:\s*\S+@/i,
@@ -297,6 +327,13 @@ const BLOCKED_PHRASES = [
  */
 export function isBlockedPhrase(text: string): boolean {
   const normalizedText = text.trim();
+  
+  // Hard rejections: contact info
+  if (hasContactInfo(normalizedText)) {
+    console.log(`[org-matcher] Blocked contact info: "${normalizedText.substring(0, 40)}..."`);
+    return true;
+  }
+  
   for (const pattern of BLOCKED_PHRASES) {
     if (pattern.test(normalizedText)) {
       console.log(`[org-matcher] Blocked boilerplate: "${normalizedText.substring(0, 40)}..."`);
@@ -307,52 +344,156 @@ export function isBlockedPhrase(text: string): boolean {
 }
 
 /**
+ * Parse status for diagnostic tracking
+ */
+export type ParseStatus = 'success' | 'no_numbered_entries' | 'extraction_failed';
+
+/**
+ * Parse result with diagnostics
+ */
+export interface ParseResult {
+  organizations: string[];
+  status: ParseStatus;
+  reason: string;
+  sample_lines: string[];
+  total_lines: number;
+  numbered_lines_found: number;
+}
+
+/**
  * Parse remissinstanser PDF text to extract organization list
  * 
- * WHITELIST APPROACH: Only extracts lines matching numbered pattern (e.g., "1. Almega")
+ * WHITELIST APPROACH: Only extracts lines matching numbered pattern
  * This is the most reliable way to extract organizations since all legitimate invitees
  * in Swedish remissinstanser PDFs are prefixed with a number.
  * 
- * Pattern: /^\s*(\d+)\.\s+(.+)$/
- * Examples:
- *   "1. Almega" → "Almega"
- *   "86. Östersunds kommun" → "Östersunds kommun"
- *   "Remissvaren ska ha kommit in..." → rejected (no number prefix)
+ * Pattern variants supported:
+ *   "1. Almega" (dot)
+ *   "1) Almega" (parenthesis)
+ *   "1: Almega" (colon)
+ *   "1- Almega" (hyphen)
+ *   "1 – Almega" (en-dash)
+ *   "1 - Almega" (spaced hyphen)
+ *   
+ * Also handles continuation lines when number and org are on separate lines.
  */
 export function parseRemissinstanserText(text: string): string[] {
-  if (!text) return [];
+  const result = parseRemissinstanserTextWithDiagnostics(text);
+  return result.organizations;
+}
+
+/**
+ * Full diagnostic parse for debugging skipped PDFs
+ */
+export function parseRemissinstanserTextWithDiagnostics(text: string): ParseResult {
+  if (!text) {
+    return {
+      organizations: [],
+      status: 'extraction_failed',
+      reason: 'No text provided',
+      sample_lines: [],
+      total_lines: 0,
+      numbered_lines_found: 0
+    };
+  }
 
   const organizations: string[] = [];
   const lines = text.split('\n');
+  const sampleLines: string[] = [];
+  let numberedLinesFound = 0;
   
-  // WHITELIST: Only numbered entries are valid organizations
-  // Pattern matches: "1. Almega", "86. Östersunds kommun", etc.
-  const numberedPattern = /^\s*(\d+)\.\s+(.+)$/;
+  // Collect first 30 lines for diagnostics
+  for (let i = 0; i < Math.min(30, lines.length); i++) {
+    const trimmed = lines[i].trim();
+    if (trimmed) {
+      sampleLines.push(trimmed.substring(0, 100));
+    }
+  }
+  
+  // EXPANDED WHITELIST: Multiple numbered entry patterns
+  // Matches: "1." "1)" "1:" "1-" "1 –" "1 -"
+  const numberedPattern = /^\s*(\d+)[\.\)\:\-–]\s*(.+)$/;
+  const numberOnlyPattern = /^\s*(\d+)[\.\)\:\-–]?\s*$/;
+  
+  let pendingNumber: string | null = null;
 
-  for (const line of lines) {
-    const trimmed = line.trim();
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
     
     // Skip empty lines
-    if (!trimmed) continue;
+    if (!trimmed) {
+      pendingNumber = null; // Reset continuation tracking
+      continue;
+    }
     
-    // Only match numbered entries (whitelist approach)
+    // Check for number-only line (continuation case)
+    const numberOnlyMatch = trimmed.match(numberOnlyPattern);
+    if (numberOnlyMatch) {
+      pendingNumber = numberOnlyMatch[1];
+      numberedLinesFound++;
+      continue;
+    }
+    
+    // Check if this is a continuation of a number-only line
+    if (pendingNumber !== null) {
+      // This line follows a number-only line - treat it as the org name
+      const candidate = trimmed;
+      pendingNumber = null;
+      
+      // Skip blocked phrases
+      if (isBlockedPhrase(candidate)) continue;
+      
+      // Normalize
+      const orgName = normalizeOrganizationName(candidate);
+      if (orgName && orgName.length > 2) {
+        organizations.push(orgName);
+      }
+      continue;
+    }
+    
+    // Standard numbered entry on single line
     const match = trimmed.match(numberedPattern);
-    if (!match || !match[2]) continue;
-    
-    const candidate = match[2].trim();
-    
-    // Skip blocked phrases (safety check)
-    if (isBlockedPhrase(candidate)) continue;
-    
-    // Normalize the organization name
-    const orgName = normalizeOrganizationName(candidate);
-    if (orgName && orgName.length > 2) {
-      organizations.push(orgName);
+    if (match && match[2]) {
+      numberedLinesFound++;
+      const candidate = match[2].trim();
+      
+      // Skip blocked phrases (safety check)
+      if (isBlockedPhrase(candidate)) continue;
+      
+      // Normalize the organization name
+      const orgName = normalizeOrganizationName(candidate);
+      if (orgName && orgName.length > 2) {
+        organizations.push(orgName);
+      }
     }
   }
 
-  console.log(`[org-matcher] Extracted ${organizations.length} numbered organizations`);
+  console.log(`[org-matcher] Parsed ${lines.length} lines, found ${numberedLinesFound} numbered entries, extracted ${organizations.length} orgs`);
 
   // Deduplicate
-  return [...new Set(organizations)];
+  const uniqueOrgs = [...new Set(organizations)];
+  
+  // Determine status
+  let status: ParseStatus;
+  let reason: string;
+  
+  if (uniqueOrgs.length > 0) {
+    status = 'success';
+    reason = `Extracted ${uniqueOrgs.length} organizations from ${numberedLinesFound} numbered entries`;
+  } else if (numberedLinesFound > 0) {
+    status = 'no_numbered_entries';
+    reason = `Found ${numberedLinesFound} numbered lines but all were filtered (blocked/invalid)`;
+  } else {
+    status = 'no_numbered_entries';
+    reason = 'No numbered entries found in PDF text';
+  }
+
+  return {
+    organizations: uniqueOrgs,
+    status,
+    reason,
+    sample_lines: sampleLines,
+    total_lines: lines.length,
+    numbered_lines_found: numberedLinesFound
+  };
 }
