@@ -6,9 +6,12 @@
  * - Uses PAGINATION to fetch all invitees (no 1000-row limit)
  * - Returns rich metrics for verification
  * - Tightened validation rules
+ * - Case-insensitive deduplication (fixes duplicate entities)
+ * - Allow/block list for short names
+ * - Flagging for human review
  * 
  * Input: { limit?: number, dry_run?: boolean, min_occurrences?: number }
- * Output: { created, skipped_existing, skipped_invalid, total_candidates, unique_names, ... }
+ * Output: { created, skipped_existing, skipped_invalid, flagged_for_review, ... }
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -29,6 +32,13 @@ interface BootstrapRequest {
   min_occurrences?: number;
 }
 
+interface FlaggedName {
+  name: string;
+  occurrences: number;
+  reason: string;
+  source_documents: string[];
+}
+
 interface BootstrapResult {
   // Input metrics
   invitee_rows_fetched: number;
@@ -45,7 +55,11 @@ interface BootstrapResult {
   rejected_too_long: number;
   rejected_contact_info: number;
   rejected_blocked_phrase: number;
+  blocked_by_rule: number;
   skipped_low_occurrence: number;
+  
+  // Human review
+  flagged_for_review: FlaggedName[];
   
   // Legacy compatibility
   created: number;
@@ -57,6 +71,42 @@ interface BootstrapResult {
   // Samples
   sample_created: string[];
   sample_skipped_invalid: string[];
+}
+
+/**
+ * Batch-load all name rules (allow/block) into memory
+ * Performance optimization: single query instead of per-row lookups
+ */
+async function fetchNameRules(supabase: any): Promise<{
+  allowSet: Set<string>;
+  blockSet: Set<string>;
+  blockReasons: Map<string, string>;
+}> {
+  const { data, error } = await supabase
+    .from('entity_name_rules')
+    .select('name_lower, rule_type, reason');
+  
+  if (error) {
+    console.error('[bootstrap-org-entities] Failed to fetch name rules:', error);
+    // Return empty sets - no rules means no blocking/allowing
+    return { allowSet: new Set(), blockSet: new Set(), blockReasons: new Map() };
+  }
+  
+  const allowSet = new Set<string>();
+  const blockSet = new Set<string>();
+  const blockReasons = new Map<string, string>();
+  
+  for (const rule of (data || [])) {
+    if (rule.rule_type === 'allow') {
+      allowSet.add(rule.name_lower);
+    } else {
+      blockSet.add(rule.name_lower);
+      if (rule.reason) blockReasons.set(rule.name_lower, rule.reason);
+    }
+  }
+  
+  console.log(`[bootstrap-org-entities] Loaded ${allowSet.size} allow rules, ${blockSet.size} block rules`);
+  return { allowSet, blockSet, blockReasons };
 }
 
 /**
@@ -183,6 +233,9 @@ Deno.serve(async (req) => {
 
     console.log(`[bootstrap-org-entities] Starting - limit: ${limit}, dry_run: ${dry_run}, min_occurrences: ${min_occurrences}`);
 
+    // Batch-load allow/block rules at start (performance optimization)
+    const { allowSet, blockSet, blockReasons } = await fetchNameRules(supabase);
+
     // GATE 2: Paginated fetch of ALL invitees (no truncation)
     const invitees = await fetchAllInvitees(supabase);
     
@@ -198,7 +251,9 @@ Deno.serve(async (req) => {
         rejected_too_long: 0,
         rejected_contact_info: 0,
         rejected_blocked_phrase: 0,
+        blocked_by_rule: 0,
         skipped_low_occurrence: 0,
+        flagged_for_review: [],
         created: 0,
         skipped_existing: 0,
         skipped_invalid: 0,
@@ -221,12 +276,17 @@ Deno.serve(async (req) => {
     }
 
     // GATE 3: Validate and normalize with detailed breakdown
-    const occurrenceCounts = new Map<string, { count: number; original: string }>();
+    // FIX: Use lowercase key for deduplication, preserve display name for storage
+    const occurrenceCounts = new Map<string, { count: number; original: string; displayName: string }>();
     const invalidNames: string[] = [];
     let rejectedTooShort = 0;
     let rejectedTooLong = 0;
     let rejectedContactInfo = 0;
     let rejectedBlockedPhrase = 0;
+    let blockedByRule = 0;
+    
+    // Track flagged names for human review
+    const flaggedForReview = new Map<string, FlaggedName>();
 
     for (const invitee of invitees) {
       // Validate first
@@ -252,15 +312,54 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const existing = occurrenceCounts.get(normalized);
+      // FIX: Use lowercase key for deduplication
+      const dedupeKey = normalized.toLowerCase();
+      
+      // Check allow/block rules for short names (<=4 chars)
+      if (normalized.length <= 4) {
+        // Check block list first
+        if (blockSet.has(dedupeKey)) {
+          console.log(`[bootstrap-org-entities] Blocked by rule: "${normalized}" - ${blockReasons.get(dedupeKey) || 'no reason'}`);
+          invalidNames.push(invitee.organization_name);
+          blockedByRule++;
+          continue;
+        }
+        
+        // If not in allow list and not ALL CAPS, flag for review
+        if (!allowSet.has(dedupeKey)) {
+          const isAllCaps = /^[A-ZÅÄÖ0-9]+$/.test(normalized);
+          if (!isAllCaps) {
+            // Flag for human review
+            const existing = flaggedForReview.get(dedupeKey);
+            if (existing) {
+              existing.occurrences++;
+            } else {
+              flaggedForReview.set(dedupeKey, {
+                name: normalized,
+                occurrences: 1,
+                reason: 'Short mixed-case name (<=4 chars) - needs human review',
+                source_documents: []
+              });
+            }
+            // Still process it for now, just flag it
+          }
+        }
+      }
+
+      // FIX: Use dedupeKey for counting, preserve displayName for storage
+      const existing = occurrenceCounts.get(dedupeKey);
       if (existing) {
         existing.count++;
       } else {
-        occurrenceCounts.set(normalized, { count: 1, original: invitee.organization_name });
+        occurrenceCounts.set(dedupeKey, { 
+          count: 1, 
+          original: invitee.organization_name,
+          displayName: normalized  // Preserve original casing for display
+        });
       }
     }
 
-    console.log(`[bootstrap-org-entities] ${occurrenceCounts.size} unique normalized names, ${invalidNames.length} invalid`);
+    console.log(`[bootstrap-org-entities] ${occurrenceCounts.size} unique normalized names, ${invalidNames.length} invalid, ${flaggedForReview.size} flagged for review`);
 
     // GATE 2: Paginated fetch of existing entities
     const existingNames = await fetchExistingEntities(supabase);
@@ -282,7 +381,11 @@ Deno.serve(async (req) => {
       rejected_too_long: rejectedTooLong,
       rejected_contact_info: rejectedContactInfo,
       rejected_blocked_phrase: rejectedBlockedPhrase,
+      blocked_by_rule: blockedByRule,
       skipped_low_occurrence: 0,
+      
+      // Human review
+      flagged_for_review: Array.from(flaggedForReview.values()),
       
       // Legacy compatibility
       created: 0,
@@ -304,23 +407,23 @@ Deno.serve(async (req) => {
       metadata: Record<string, unknown>;
     }> = [];
 
-    for (const [normalized, data] of occurrenceCounts) {
+    for (const [dedupeKey, data] of occurrenceCounts) {
       // Skip if below occurrence threshold
       if (data.count < min_occurrences) {
         result.skipped_low_occurrence++;
         continue;
       }
 
-      // Skip if already exists
-      if (existingNames.has(normalized.toLowerCase())) {
+      // FIX: Skip if already exists (case-insensitive check using dedupeKey)
+      if (existingNames.has(dedupeKey)) {
         result.entities_already_exist++;
         result.skipped_existing++;
         continue;
       }
 
-      // Add to creation list
+      // Add to creation list using preserved displayName
       entitiesToCreate.push({
-        name: normalized,
+        name: data.displayName,  // Use preserved casing for storage
         entity_type: 'organization',
         role: 'remissinstans',
         metadata: {
@@ -331,7 +434,7 @@ Deno.serve(async (req) => {
       });
 
       if (result.sample_created.length < 10) {
-        result.sample_created.push(`${normalized} (${data.count})`);
+        result.sample_created.push(`${data.displayName} (${data.count})`);
       }
     }
 
@@ -363,7 +466,7 @@ Deno.serve(async (req) => {
       result.created = toCreate.length;
     }
 
-    console.log(`[bootstrap-org-entities] Complete - created: ${result.entities_created}, already_exist: ${result.entities_already_exist}, invalid: ${result.invalid_rejected}`);
+    console.log(`[bootstrap-org-entities] Complete - created: ${result.entities_created}, already_exist: ${result.entities_already_exist}, invalid: ${result.invalid_rejected}, blocked_by_rule: ${blockedByRule}, flagged: ${flaggedForReview.size}`);
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
