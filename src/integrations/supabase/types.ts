@@ -232,6 +232,54 @@ export type Database = {
           },
         ]
       }
+      entity_name_rules: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          id: string
+          name: string
+          name_lower: string | null
+          reason: string | null
+          rule_type: string
+          source_document_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          name: string
+          name_lower?: string | null
+          reason?: string | null
+          rule_type: string
+          source_document_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          name?: string
+          name_lower?: string | null
+          reason?: string | null
+          rule_type?: string
+          source_document_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entity_name_rules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entity_name_rules_source_document_id_fkey"
+            columns: ["source_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       process_documents: {
         Row: {
           created_at: string | null

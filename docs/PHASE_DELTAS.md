@@ -1,5 +1,38 @@
 # Phase Deltas
 
+## 2026-01-09: Phase 2.7.3 Allow/Block List + Case Deduplication Fix (EXECUTION)
+
+**Problem**: Gate 2 testing revealed:
+1. Case-sensitive duplicates created during bootstrap (43 groups, 87 records, 6.2%)
+2. Invalid short fragments ("Tre", "Sve") passing validation  
+3. No mechanism for human review of ambiguous short names ("Krav")
+
+**Fixes Applied**:
+1. **New `entity_name_rules` table**: Allow/block list for short names with RLS policies
+2. **Case-insensitive deduplication**: Changed `occurrenceCounts` map key from `normalized` to `normalized.toLowerCase()` while preserving `displayName` for storage
+3. **Batch-loaded rules**: Single query at bootstrap start loads all allow/block rules into memory (performance optimization)
+4. **Short-name validation**: Names ≤4 chars checked against allow/block list; mixed-case names not in allow list flagged for human review
+5. **UI for human review**: Added flagged names table with Allow/Block buttons in Bootstrap tab
+
+**Files Changed**:
+- `supabase/migrations/XXXXXX_create_entity_name_rules.sql` - new table + RLS + seed data (Krav=allow, Tre=block, Sve=block)
+- `supabase/functions/bootstrap-org-entities/index.ts` - case dedup fix, batch-load rules, flagging logic
+- `src/components/admin/RemissEntityLinkerTest.tsx` - flagged names UI with approve/block actions
+
+**Expected Outcomes**:
+- Zero case duplicates in future bootstrap runs
+- Blocked names rejected automatically
+- Flagged short names displayed for human review
+- Allow/block list persisted in DB for consistent future behavior
+
+**Next Steps**:
+- Run scoped reset SQL (delete Tre/Sve entities and invitees)
+- Re-run Gate 1 (parser) → Gate 2 (bootstrap)
+- Review flagged names in UI, approve/block as needed
+- Deduplicate existing case variants (separate procedure)
+
+---
+
 ## 2026-01-08: Phase 2.7.2 Entity Pipeline Nuclear Reset (EXECUTION)
 
 **Problem**: Entity bootstrapping contaminated with boilerplate (677 invalid invitees, 31 bad entities). Root causes:

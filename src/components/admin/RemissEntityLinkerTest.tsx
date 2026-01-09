@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Users, Link2, AlertCircle, Database, ChevronDown, FileWarning } from 'lucide-react';
+import { Loader2, Users, Link2, AlertCircle, Database, ChevronDown, FileWarning, ShieldAlert, CheckCircle, XCircle } from 'lucide-react';
 
 interface ProcessRemissinstansersResult {
   processed: number;
@@ -56,6 +56,13 @@ interface LinkRemissvarResult {
   message?: string;
 }
 
+interface FlaggedName {
+  name: string;
+  occurrences: number;
+  reason: string;
+  source_documents: string[];
+}
+
 interface BootstrapResult {
   invitee_rows_fetched: number;
   unique_raw_names: number;
@@ -67,7 +74,9 @@ interface BootstrapResult {
   rejected_too_long: number;
   rejected_contact_info: number;
   rejected_blocked_phrase: number;
+  blocked_by_rule: number;
   skipped_low_occurrence: number;
+  flagged_for_review: FlaggedName[];
   created: number;
   skipped_existing: number;
   skipped_invalid: number;
@@ -100,6 +109,10 @@ export function RemissEntityLinkerTest() {
   const [bootstrapDryRun, setBootstrapDryRun] = useState(true);
   const [bootstrapLimit, setBootstrapLimit] = useState(2000);
   const [minOccurrences, setMinOccurrences] = useState(1);
+  
+  // Rule management state
+  const [ruleLoading, setRuleLoading] = useState<string | null>(null);
+  const [ruleError, setRuleError] = useState<string | null>(null);
 
   const handleProcessRemissinstanser = async () => {
     setInviteesLoading(true);
@@ -151,6 +164,7 @@ export function RemissEntityLinkerTest() {
   const handleBootstrapEntities = async () => {
     setBootstrapLoading(true);
     setBootstrapResult(null);
+    setRuleError(null);
 
     try {
       const { data, error } = await supabase.functions.invoke('bootstrap-org-entities', {
@@ -165,12 +179,69 @@ export function RemissEntityLinkerTest() {
         invitee_rows_fetched: 0, unique_raw_names: 0, unique_normalized_names: 0,
         entities_created: 0, entities_already_exist: 0, invalid_rejected: 0,
         rejected_too_short: 0, rejected_too_long: 0, rejected_contact_info: 0, rejected_blocked_phrase: 0,
-        skipped_low_occurrence: 0, created: 0, skipped_existing: 0, skipped_invalid: 0, total_candidates: 0,
+        blocked_by_rule: 0, skipped_low_occurrence: 0, flagged_for_review: [],
+        created: 0, skipped_existing: 0, skipped_invalid: 0, total_candidates: 0,
         dry_run: bootstrapDryRun, sample_created: [],
         sample_skipped_invalid: [err instanceof Error ? err.message : String(err)]
       });
     } finally {
       setBootstrapLoading(false);
+    }
+  };
+
+  const handleApproveRule = async (name: string) => {
+    setRuleLoading(name);
+    setRuleError(null);
+    try {
+      const { error } = await supabase
+        .from('entity_name_rules')
+        .insert({
+          name,
+          rule_type: 'allow',
+          reason: 'Manually approved by admin'
+        });
+      if (error) throw error;
+      
+      // Remove from flagged list in UI
+      if (bootstrapResult?.flagged_for_review) {
+        setBootstrapResult({
+          ...bootstrapResult,
+          flagged_for_review: bootstrapResult.flagged_for_review.filter(f => f.name !== name)
+        });
+      }
+    } catch (err) {
+      console.error('Error approving rule:', err);
+      setRuleError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRuleLoading(null);
+    }
+  };
+
+  const handleBlockRule = async (name: string) => {
+    setRuleLoading(name);
+    setRuleError(null);
+    try {
+      const { error } = await supabase
+        .from('entity_name_rules')
+        .insert({
+          name,
+          rule_type: 'block',
+          reason: 'Rejected by admin'
+        });
+      if (error) throw error;
+      
+      // Remove from flagged list in UI
+      if (bootstrapResult?.flagged_for_review) {
+        setBootstrapResult({
+          ...bootstrapResult,
+          flagged_for_review: bootstrapResult.flagged_for_review.filter(f => f.name !== name)
+        });
+      }
+    } catch (err) {
+      console.error('Error blocking rule:', err);
+      setRuleError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRuleLoading(null);
     }
   };
 
@@ -310,6 +381,7 @@ export function RemissEntityLinkerTest() {
               <p className="text-sm text-muted-foreground">
                 <Database className="h-4 w-4 inline mr-1" />
                 Creates organization entities from parsed remiss invitees using pagination (no 1000-row limit).
+                Uses case-insensitive deduplication and allow/block list for short names.
               </p>
             </div>
             
@@ -356,19 +428,22 @@ export function RemissEntityLinkerTest() {
                     <div className="text-xs text-muted-foreground">Already Exist</div>
                   </div>
                 </div>
-                <div className="grid gap-2 md:grid-cols-4">
+                <div className="grid gap-2 md:grid-cols-5">
                   <div className="text-center p-2 bg-muted/50 rounded">
                     <div className="text-lg font-bold text-orange-400">{bootstrapResult.invalid_rejected}</div>
                     <div className="text-xs text-muted-foreground">Invalid Rejected</div>
                   </div>
                   <div className="text-center p-2 bg-muted/50 rounded">
-                    <div className="text-sm">{bootstrapResult.rejected_blocked_phrase} blocked</div>
+                    <div className="text-sm">{bootstrapResult.rejected_blocked_phrase} blocked phrase</div>
                   </div>
                   <div className="text-center p-2 bg-muted/50 rounded">
                     <div className="text-sm">{bootstrapResult.rejected_contact_info} contact</div>
                   </div>
                   <div className="text-center p-2 bg-muted/50 rounded">
                     <div className="text-sm">{bootstrapResult.rejected_too_long} too long</div>
+                  </div>
+                  <div className="text-center p-2 bg-red-500/10 rounded">
+                    <div className="text-sm text-red-400">{bootstrapResult.blocked_by_rule || 0} by rule</div>
                   </div>
                 </div>
 
@@ -380,6 +455,82 @@ export function RemissEntityLinkerTest() {
                         <Badge key={i} variant="outline" className="text-xs bg-green-500/10 border-green-500/30">{name}</Badge>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {/* Flagged Names for Human Review */}
+                {bootstrapResult.flagged_for_review && bootstrapResult.flagged_for_review.length > 0 && (
+                  <div className="space-y-2 mt-4 border-t pt-4">
+                    <div className="flex items-center gap-2 text-yellow-500">
+                      <ShieldAlert className="h-4 w-4" />
+                      <span className="font-medium">
+                        {bootstrapResult.flagged_for_review.length} Names Need Review
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Short mixed-case names (≤4 chars) not in allow/block list. Review and approve or block.
+                    </p>
+                    {ruleError && (
+                      <div className="text-sm text-destructive flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3" />
+                        {ruleError}
+                      </div>
+                    )}
+                    <ScrollArea className="h-48 border rounded-md">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Name</TableHead>
+                            <TableHead className="w-24 text-right">Occurrences</TableHead>
+                            <TableHead>Reason</TableHead>
+                            <TableHead className="w-32">Action</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {bootstrapResult.flagged_for_review.map((item) => (
+                            <TableRow key={item.name}>
+                              <TableCell className="font-mono font-medium">{item.name}</TableCell>
+                              <TableCell className="text-right">
+                                <Badge variant="outline">{item.occurrences}</Badge>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
+                                {item.reason}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex gap-1">
+                                  <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                    className="h-7 px-2"
+                                    onClick={() => handleApproveRule(item.name)}
+                                    disabled={ruleLoading === item.name}
+                                  >
+                                    {ruleLoading === item.name ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <CheckCircle className="h-3 w-3 text-green-500" />
+                                    )}
+                                  </Button>
+                                  <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                    className="h-7 px-2"
+                                    onClick={() => handleBlockRule(item.name)}
+                                    disabled={ruleLoading === item.name}
+                                  >
+                                    {ruleLoading === item.name ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <XCircle className="h-3 w-3 text-red-500" />
+                                    )}
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </ScrollArea>
                   </div>
                 )}
               </div>
