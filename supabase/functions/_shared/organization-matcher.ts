@@ -267,6 +267,8 @@ const BLOCKED_PHRASES = [
   /^page\s*\d+/i,
   /^\d+\s*\(\s*\d+\s*\)$/,               // "1 (5)" format
   /^\d+$/,                                // Standalone numbers
+  /^\d{2,4}[-\/]\d{2}$/,                  // Date fragments like "02-21", "2025-01"
+  /^\d{2,4}[-\/]\d{2}[-\/]\d{2,4}$/,      // Full dates
   
   // Common PDF artifacts
   /^remissinstanser$/i,
@@ -293,14 +295,14 @@ const BLOCKED_PHRASES = [
   /remissvaren\s+ska\s+ha\s+kommit\s+in/i,
   /remissvaren\s+kommer\s+att\s+publiceras/i,
   /svaret\s+bör\s+lämnas/i,
-  /svaren\s+bör\s+lämnas/i,                // Plural variant
-  /remissvaren\s+ska/i,                    // Plural instruction
+  /svaren\s+bör\s+lämnas/i,
+  /remissvaren\s+ska/i,
   /synpunkter\s+på\s+remissen/i,
   /i\s+ett\s+bearbetningsbart\s+format/i,
   /betankande@/i,
   /e-post(adress)?:\s*\S+@/i,
   /www\.regeringen\.se/i,
-  /remissinstansens\s+namn\s+ska\s+anges/i,
+  /remissinstansens\s+namn/i,              // More general pattern
   /statsrådsberedningens\s+promemoria/i,
   /filnamnen\s+ska\s+motsvara/i,
   /ange\s+diarienummer/i,
@@ -310,6 +312,11 @@ const BLOCKED_PHRASES = [
   /en\s+sammanfattning\s+av\s+remissvaren/i,
   /remissvar\s+lämnas\s+digitalt/i,
   /remissvar\s+ska\s+lämnas/i,
+  /i\s+ämnesraden/i,                       // "i ämnesraden"
+  /e-postmeddelandet/i,                    // Email instruction boilerplate
+  /och\s+remissinstansens/i,               // "och remissinstansens"
+  /instansens\s+synpunkter/i,
+  /^och\s+i\s+mejlet/i,
   
   // Title patterns (single person names as headers)
   /^rättschef$/i,
@@ -455,16 +462,34 @@ export function parseRemissinstanserTextWithDiagnostics(text: string): ParseResu
     const match = trimmed.match(numberedPattern);
     if (match && match[2]) {
       numberedLinesFound++;
+      const numPrefix = parseInt(match[1], 10);
       const candidate = match[2].trim();
+      
+      // VALIDATION: Reject suspiciously high number prefixes (likely page refs or dates)
+      if (numPrefix > 300) {
+        console.log(`[org-matcher] Rejected high prefix ${numPrefix}: "${candidate.substring(0, 40)}"`);
+        continue;
+      }
       
       // Skip blocked phrases (safety check)
       if (isBlockedPhrase(candidate)) continue;
       
       // Normalize the organization name
       const orgName = normalizeOrganizationName(candidate);
-      if (orgName && orgName.length > 2) {
-        organizations.push(orgName);
+      
+      // VALIDATION: Reject too short names (< 3 chars)
+      if (!orgName || orgName.length < 3) {
+        console.log(`[org-matcher] Rejected too short: "${orgName || candidate}"`);
+        continue;
       }
+      
+      // VALIDATION: Reject purely numeric names
+      if (/^\d+$/.test(orgName)) {
+        console.log(`[org-matcher] Rejected purely numeric: "${orgName}"`);
+        continue;
+      }
+      
+      organizations.push(orgName);
     }
   }
 
