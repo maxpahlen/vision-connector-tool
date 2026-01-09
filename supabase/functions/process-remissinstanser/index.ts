@@ -2,14 +2,19 @@
  * Edge Function: process-remissinstanser
  * Phase 2.7: Parses remissinstanser PDFs to extract invited organizations
  * 
+ * Gate 1: Parser Correctness
+ * - Uses whitelist numbered-pattern extraction
+ * - Captures diagnostic metadata for all PDFs (including failed)
+ * - No silent skips - all documents get processed status
+ * 
  * Input: { remiss_id?: string, limit?: number, dry_run?: boolean }
- * Output: { processed: number, invitees_extracted: number, errors: [] }
+ * Output: { processed, invitees_extracted, errors, details, skipped_details }
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { 
-  normalizeOrganizationName, 
-  parseRemissinstanserText 
+  parseRemissinstanserTextWithDiagnostics,
+  type ParseStatus
 } from '../_shared/organization-matcher.ts';
 import {
   getPdfExtractorConfig,
@@ -37,6 +42,14 @@ interface ProcessResult {
     title: string;
     invitees_count: number;
     sample_invitees: string[];
+    parse_status: ParseStatus;
+  }>;
+  skipped_details: Array<{
+    remiss_id: string;
+    title: string;
+    parse_status: ParseStatus;
+    parse_reason: string;
+    sample_lines: string[];
   }>;
 }
 
@@ -83,6 +96,7 @@ Deno.serve(async (req) => {
         skipped: 0,
         errors: [],
         details: [],
+        skipped_details: [],
         message: 'No remisser to process'
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -99,7 +113,8 @@ Deno.serve(async (req) => {
       invitees_extracted: 0,
       skipped: 0,
       errors: [],
-      details: []
+      details: [],
+      skipped_details: []
     };
 
     for (const remiss of remisser) {
@@ -111,6 +126,25 @@ Deno.serve(async (req) => {
 
         if (!extractionResult.success) {
           console.error(`[process-remissinstanser] PDF extraction failed for ${remiss.id}: ${extractionResult.message}`);
+          
+          // Still mark as processed but with failure metadata
+          if (!dry_run) {
+            await supabase
+              .from('remiss_documents')
+              .update({ 
+                metadata: { 
+                  ...remiss.metadata, 
+                  invitees_processed: true,
+                  invitees_count: 0,
+                  parse_status: 'extraction_failed',
+                  parse_reason: extractionResult.message || 'PDF extraction failed',
+                  parse_sample_lines: [],
+                  processed_at: new Date().toISOString()
+                } 
+              })
+              .eq('id', remiss.id);
+          }
+          
           result.errors.push({ remiss_id: remiss.id, error: extractionResult.message || 'PDF extraction failed' });
           continue;
         }
@@ -119,19 +153,65 @@ Deno.serve(async (req) => {
 
         if (!pdfText) {
           console.warn(`[process-remissinstanser] No text extracted from PDF for ${remiss.id}`);
+          
+          if (!dry_run) {
+            await supabase
+              .from('remiss_documents')
+              .update({ 
+                metadata: { 
+                  ...remiss.metadata, 
+                  invitees_processed: true,
+                  invitees_count: 0,
+                  parse_status: 'extraction_failed',
+                  parse_reason: 'No text extracted from PDF',
+                  parse_sample_lines: [],
+                  processed_at: new Date().toISOString()
+                } 
+              })
+              .eq('id', remiss.id);
+          }
+          
           result.errors.push({ remiss_id: remiss.id, error: 'No text extracted from PDF' });
           continue;
         }
 
         // Parse organizations from PDF text using numbered pattern (whitelist approach)
-        const organizations = parseRemissinstanserText(pdfText);
-        console.log(`[process-remissinstanser] Extracted ${organizations.length} numbered organizations from ${remiss.id}`);
+        const parseResult = parseRemissinstanserTextWithDiagnostics(pdfText);
+        const organizations = parseResult.organizations;
+        
+        console.log(`[process-remissinstanser] Parse result for ${remiss.id}: status=${parseResult.status}, orgs=${organizations.length}, numbered_lines=${parseResult.numbered_lines_found}`);
 
-        // NO FALLBACK: If numbered pattern fails, return 0 organizations
-        // This prevents boilerplate contamination. Specific failing PDFs can be investigated separately.
+        // Handle case where no organizations were found (but extraction succeeded)
         if (organizations.length === 0) {
-          console.warn(`[process-remissinstanser] No numbered organizations found in ${remiss.id} - skipping (no fallback)`);
+          console.warn(`[process-remissinstanser] No organizations found in ${remiss.id}: ${parseResult.reason}`);
+          
+          if (!dry_run) {
+            await supabase
+              .from('remiss_documents')
+              .update({ 
+                metadata: { 
+                  ...remiss.metadata, 
+                  invitees_processed: true,
+                  invitees_count: 0,
+                  parse_status: parseResult.status,
+                  parse_reason: parseResult.reason,
+                  parse_sample_lines: parseResult.sample_lines.slice(0, 20),
+                  numbered_lines_found: parseResult.numbered_lines_found,
+                  total_lines: parseResult.total_lines,
+                  processed_at: new Date().toISOString()
+                } 
+              })
+              .eq('id', remiss.id);
+          }
+          
           result.skipped++;
+          result.skipped_details.push({
+            remiss_id: remiss.id,
+            title: remiss.title || 'Untitled',
+            parse_status: parseResult.status,
+            parse_reason: parseResult.reason,
+            sample_lines: parseResult.sample_lines.slice(0, 10)
+          });
           continue;
         }
 
@@ -156,7 +236,7 @@ Deno.serve(async (req) => {
             continue;
           }
 
-          // Update remiss metadata to mark as processed
+          // Update remiss metadata to mark as processed with full diagnostics
           await supabase
             .from('remiss_documents')
             .update({ 
@@ -164,6 +244,10 @@ Deno.serve(async (req) => {
                 ...remiss.metadata, 
                 invitees_processed: true,
                 invitees_count: organizations.length,
+                parse_status: parseResult.status,
+                parse_reason: parseResult.reason,
+                numbered_lines_found: parseResult.numbered_lines_found,
+                total_lines: parseResult.total_lines,
                 processed_at: new Date().toISOString()
               } 
             })
@@ -176,7 +260,8 @@ Deno.serve(async (req) => {
           remiss_id: remiss.id,
           title: remiss.title || 'Untitled',
           invitees_count: organizations.length,
-          sample_invitees: organizations.slice(0, 5)
+          sample_invitees: organizations.slice(0, 5),
+          parse_status: parseResult.status
         });
 
       } catch (err) {
@@ -188,7 +273,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`[process-remissinstanser] Complete - processed: ${result.processed}, invitees: ${result.invitees_extracted}, errors: ${result.errors.length}`);
+    console.log(`[process-remissinstanser] Complete - processed: ${result.processed}, invitees: ${result.invitees_extracted}, skipped: ${result.skipped}, errors: ${result.errors.length}`);
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

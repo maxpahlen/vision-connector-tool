@@ -2,8 +2,14 @@
  * Edge Function: link-remissvar-entities
  * Phase 2.7: Links remissvar to entities with confidence scoring
  * 
- * Input: { remiss_id?: string, limit?: number, create_entities?: boolean, dry_run?: boolean }
- * Output: { processed, high_confidence, medium_confidence, low_confidence, unmatched, entities_created }
+ * Gate 5: Linking Correctness
+ * - Clear "linked" vs "not linked" semantics
+ * - Only writes entity_id when confidence >= threshold
+ * - Does NOT persist match_confidence for below-threshold matches
+ * - Reset-safe: clears previous match state before processing
+ * 
+ * Input: { remiss_id?, limit?, create_entities?, dry_run?, min_confidence? }
+ * Output: { processed, linked: { high }, not_linked: { medium, low, unmatched }, ... }
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -28,18 +34,34 @@ interface LinkRequest {
 
 interface LinkResult {
   processed: number;
+  
+  // NEW: Clear linked vs not-linked semantics
+  linked: {
+    high: number;
+    total: number;
+  };
+  not_linked: {
+    medium: number;
+    low: number;
+    unmatched: number;
+    total: number;
+  };
+  
+  // Legacy compatibility
   high_confidence: number;
   medium_confidence: number;
   low_confidence: number;
   unmatched: number;
   entities_created: number;
+  
   errors: Array<{ response_id: string; error: string }>;
-  low_confidence_matches: Array<{
+  review_needed: Array<{
     response_id: string;
     original_name: string;
     normalized_name: string;
     matched_name: string | null;
     similarity_score: number | null;
+    confidence: MatchConfidence;
   }>;
   unmatched_orgs: string[];
 }
@@ -61,10 +83,10 @@ Deno.serve(async (req) => {
       limit = 100, 
       create_entities = false, 
       dry_run = false,
-      min_confidence = 'high'  // Default to HIGH confidence only - correctness over recall
+      min_confidence = 'high'  // Default to HIGH only - correctness over recall
     } = body;
 
-    console.log(`[link-remissvar-entities] Starting - remiss_id: ${remiss_id}, limit: ${limit}, create_entities: ${create_entities}, dry_run: ${dry_run}`);
+    console.log(`[link-remissvar-entities] Starting - remiss_id: ${remiss_id}, limit: ${limit}, create_entities: ${create_entities}, dry_run: ${dry_run}, min_confidence: ${min_confidence}`);
 
     // Fetch unlinked remiss_responses
     let query = supabase
@@ -87,13 +109,15 @@ Deno.serve(async (req) => {
     if (!responses || responses.length === 0) {
       return new Response(JSON.stringify({
         processed: 0,
+        linked: { high: 0, total: 0 },
+        not_linked: { medium: 0, low: 0, unmatched: 0, total: 0 },
         high_confidence: 0,
         medium_confidence: 0,
         low_confidence: 0,
         unmatched: 0,
         entities_created: 0,
         errors: [],
-        low_confidence_matches: [],
+        review_needed: [],
         unmatched_orgs: [],
         message: 'No unlinked responses to process'
       }), {
@@ -105,17 +129,19 @@ Deno.serve(async (req) => {
 
     const result: LinkResult = {
       processed: 0,
+      linked: { high: 0, total: 0 },
+      not_linked: { medium: 0, low: 0, unmatched: 0, total: 0 },
       high_confidence: 0,
       medium_confidence: 0,
       low_confidence: 0,
       unmatched: 0,
       entities_created: 0,
       errors: [],
-      low_confidence_matches: [],
+      review_needed: [],
       unmatched_orgs: []
     };
 
-    // Track unique unmatched orgs for potential entity creation
+    // Track unique unmatched orgs
     const unmatchedOrgNames = new Map<string, number>();
 
     for (const response of responses) {
@@ -124,6 +150,8 @@ Deno.serve(async (req) => {
         
         if (!normalizedName) {
           result.unmatched++;
+          result.not_linked.unmatched++;
+          result.not_linked.total++;
           continue;
         }
 
@@ -132,44 +160,63 @@ Deno.serve(async (req) => {
 
         result.processed++;
 
-        // Track confidence counts
+        // Determine if we should link based on confidence threshold
+        const confidenceOrder: MatchConfidence[] = ['high', 'medium', 'low', 'unmatched'];
+        const minConfidenceIndex = confidenceOrder.indexOf(min_confidence);
+        const matchConfidenceIndex = confidenceOrder.indexOf(matchResult.confidence);
+        const shouldLink = matchResult.entity_id && matchConfidenceIndex <= minConfidenceIndex;
+
+        // Track counts based on actual match result
         switch (matchResult.confidence) {
           case 'high':
             result.high_confidence++;
+            if (shouldLink) {
+              result.linked.high++;
+              result.linked.total++;
+            }
             break;
           case 'medium':
             result.medium_confidence++;
-            break;
-          case 'low':
-            result.low_confidence++;
-            result.low_confidence_matches.push({
+            result.not_linked.medium++;
+            result.not_linked.total++;
+            // Add to review queue
+            result.review_needed.push({
               response_id: response.id,
               original_name: response.responding_organization,
               normalized_name: normalizedName,
               matched_name: matchResult.matched_name,
-              similarity_score: matchResult.similarity_score
+              similarity_score: matchResult.similarity_score,
+              confidence: 'medium'
+            });
+            break;
+          case 'low':
+            result.low_confidence++;
+            result.not_linked.low++;
+            result.not_linked.total++;
+            // Add to review queue
+            result.review_needed.push({
+              response_id: response.id,
+              original_name: response.responding_organization,
+              normalized_name: normalizedName,
+              matched_name: matchResult.matched_name,
+              similarity_score: matchResult.similarity_score,
+              confidence: 'low'
             });
             break;
           case 'unmatched':
             result.unmatched++;
+            result.not_linked.unmatched++;
+            result.not_linked.total++;
             unmatchedOrgNames.set(normalizedName, (unmatchedOrgNames.get(normalizedName) || 0) + 1);
             break;
         }
 
-        // Determine if we should use this match
-        // Only HIGH confidence matches are linked by default to prioritize correctness
-        // Medium/Low matches are logged but entity_id is set to null
-        const confidenceOrder: MatchConfidence[] = ['high', 'medium', 'low', 'unmatched'];
-        const minConfidenceIndex = confidenceOrder.indexOf(min_confidence);
-        const matchConfidenceIndex = confidenceOrder.indexOf(matchResult.confidence);
-        const shouldUseMatch = matchResult.entity_id && matchConfidenceIndex <= minConfidenceIndex;
-
-        // Only persist entity_id for matches meeting the confidence threshold
-        let entityId = shouldUseMatch ? matchResult.entity_id : null;
+        // GATE 5: Only persist when actually linking
+        let entityId = shouldLink ? matchResult.entity_id : null;
         
         // Log when we skip a potential match due to low confidence
-        if (matchResult.entity_id && !shouldUseMatch) {
-          console.log(`[link-remissvar-entities] Skipping ${matchResult.confidence} match for "${normalizedName}" -> "${matchResult.matched_name}" (score: ${matchResult.similarity_score?.toFixed(2)})`);
+        if (matchResult.entity_id && !shouldLink) {
+          console.log(`[link-remissvar-entities] NOT linking ${matchResult.confidence} match for "${normalizedName}" -> "${matchResult.matched_name}" (score: ${matchResult.similarity_score?.toFixed(2)})`);
         }
 
         // Create new entity if unmatched and create_entities is enabled
@@ -193,24 +240,45 @@ Deno.serve(async (req) => {
           } else if (newEntity) {
             entityId = newEntity.id;
             result.entities_created++;
+            result.linked.total++;
             console.log(`[link-remissvar-entities] Created entity for "${normalizedName}"`);
           }
         }
 
-        // Update remiss_response with entity link
-        if (!dry_run && (entityId || normalizedName)) {
-          const { error: updateError } = await supabase
-            .from('remiss_responses')
-            .update({
-              entity_id: entityId,
-              match_confidence: matchResult.confidence,
-              normalized_org_name: normalizedName
-            })
-            .eq('id', response.id);
+        // GATE 5: Only update DB when we have something meaningful to persist
+        // - If linking: write entity_id, match_confidence, normalized_org_name
+        // - If NOT linking: only write normalized_org_name (for future matching)
+        if (!dry_run) {
+          if (entityId) {
+            // Linked - write full match info
+            const { error: updateError } = await supabase
+              .from('remiss_responses')
+              .update({
+                entity_id: entityId,
+                match_confidence: matchResult.confidence,
+                normalized_org_name: normalizedName
+              })
+              .eq('id', response.id);
 
-          if (updateError) {
-            console.error(`[link-remissvar-entities] Update error for ${response.id}:`, updateError);
-            result.errors.push({ response_id: response.id, error: updateError.message });
+            if (updateError) {
+              console.error(`[link-remissvar-entities] Update error for ${response.id}:`, updateError);
+              result.errors.push({ response_id: response.id, error: updateError.message });
+            }
+          } else {
+            // NOT linked - only write normalized name (clear any stale match data)
+            const { error: updateError } = await supabase
+              .from('remiss_responses')
+              .update({
+                entity_id: null,
+                match_confidence: null,  // Clear stale data
+                normalized_org_name: normalizedName
+              })
+              .eq('id', response.id);
+
+            if (updateError) {
+              console.error(`[link-remissvar-entities] Update error for ${response.id}:`, updateError);
+              result.errors.push({ response_id: response.id, error: updateError.message });
+            }
           }
         }
 
@@ -229,7 +297,7 @@ Deno.serve(async (req) => {
       .slice(0, 20)
       .map(([name, count]) => `${name} (${count})`);
 
-    console.log(`[link-remissvar-entities] Complete - processed: ${result.processed}, high: ${result.high_confidence}, medium: ${result.medium_confidence}, low: ${result.low_confidence}, unmatched: ${result.unmatched}, created: ${result.entities_created}`);
+    console.log(`[link-remissvar-entities] Complete - processed: ${result.processed}, linked: ${result.linked.total}, not_linked: ${result.not_linked.total}, created: ${result.entities_created}`);
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

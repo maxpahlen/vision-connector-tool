@@ -8,6 +8,10 @@
  * VERIFICATION NOTE: This module preserves exact extraction_log format
  * from the original implementation. Any changes must be validated against
  * both consuming functions.
+ * 
+ * Gate 4: Remissvar Org Extraction
+ * - Normalizes responding_organization to remove "(pdf XkB)" suffix
+ * - Stores clean org name, keeps raw link text in metadata
  */
 
 import { DOMParser, Element } from 'https://deno.land/x/deno_dom@v0.1.43/deno-dom-wasm.ts';
@@ -22,6 +26,7 @@ export interface RemissvarDocument {
   filename: string;
   title?: string;
   responding_organization?: string;
+  raw_link_text?: string;  // NEW: Keep original for debugging
   file_type: 'pdf' | 'word' | 'excel' | 'other';
 }
 
@@ -91,17 +96,22 @@ export function classifyFileType(url: string, linkText: string): 'pdf' | 'word' 
 }
 
 /**
- * Extract organization name from filename or link text
- * Applies normalization and document title filtering to reject invalid names
+ * Extract and NORMALIZE organization name from link text
+ * 
+ * Gate 4: Removes "(pdf XkB)" suffix and normalizes
+ * Input: "Kalmar kommun (pdf 522 kB)"
+ * Output: "Kalmar kommun"
  */
-export function extractOrganization(filename: string, linkText: string): string | null {
+export function extractOrganization(filename: string, linkText: string): { clean: string | null; raw: string } {
   const text = linkText || filename;
-  if (!text) return null;
+  const raw = text;
+  
+  if (!text) return { clean: null, raw: '' };
   
   // Check if the text looks like a document title before processing
   if (isDocumentTitle(text)) {
     console.log(`[remiss-parser] Rejected document title in extractOrganization: "${text.substring(0, 50)}..."`);
-    return null;
+    return { clean: null, raw };
   }
   
   let org = text
@@ -109,17 +119,17 @@ export function extractOrganization(filename: string, linkText: string): string 
     .replace(/\.pdf$/i, '')
     .replace(/\.docx?$/i, '')
     .replace(/[-_]/g, ' ')
-    // Remove file size patterns like "(pdf 294 kB)"
+    // GATE 4: Remove file size patterns like "(pdf 294 kB)"
     .replace(/\s*\((pdf|word|doc|docx)\s+\d+(\.\d+)?\s*(kB|KB|MB|mb|b|B)\)\s*$/i, '')
     // Remove standalone file size at end
     .replace(/\s+\d+(\.\d+)?\s*(kB|KB|MB|mb|b|B)\s*$/i, '')
     .trim();
   
-  if (org.length < 3) return null;
+  if (org.length < 3) return { clean: null, raw };
   
   // Apply full normalization for consistency
   const normalized = normalizeOrganizationName(org);
-  return normalized || null;
+  return { clean: normalized || null, raw };
 }
 
 // ============================================
@@ -288,13 +298,15 @@ export function parseRemissPage(html: string, remissUrl: string): RemissPageResu
       (link as Element).closest('[class*="remissvar"]') !== null;
 
     if (isRemissvar || fileType === 'pdf') {
-      const organization = extractOrganization(filename, linkText);
+      // GATE 4: Extract normalized organization name
+      const { clean: organization, raw: rawLinkText } = extractOrganization(filename, linkText);
       
       remissvarDocs.push({
         url: fullUrl,
         filename,
         title: linkText || undefined,
         responding_organization: organization || undefined,
+        raw_link_text: rawLinkText,  // Keep raw for debugging
         file_type: fileType,
       });
       log.push(`Found remissvar: ${filename} from ${organization || 'unknown org'}`);
