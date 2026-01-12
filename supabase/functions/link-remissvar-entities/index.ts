@@ -4,9 +4,14 @@
  * 
  * Gate 5: Linking Correctness
  * - Clear "linked" vs "not linked" semantics
- * - Only writes entity_id when confidence >= threshold
- * - Does NOT persist match_confidence for below-threshold matches
- * - Reset-safe: clears previous match state before processing
+ * - Only writes entity_id when confidence >= threshold (high by default)
+ * 
+ * match_confidence persistence rules:
+ * - High confidence + linked: persists 'high' with entity_id
+ * - Medium/Low confidence (not linked): persists 'medium'/'low' for approval queue
+ * - Unmatched: clears to null (no queue noise)
+ * 
+ * This allows EntityMatchApprovalQueue to query for medium/low matches pending review.
  * 
  * Input: { remiss_id?, limit?, create_entities?, dry_run?, min_confidence? }
  * Output: { processed, linked: { high }, not_linked: { medium, low, unmatched }, ... }
@@ -275,14 +280,23 @@ Deno.serve(async (req) => {
               result.skipped_updates++;
             }
           } else {
-            // NOT linked - only write normalized name (clear any stale match data)
+            // NOT linked - persist medium/low confidence for approval queue
+            // Unmatched records clear match_confidence to null (no queue noise)
+            const updateData: Record<string, unknown> = {
+              entity_id: null,
+              normalized_org_name: normalizedName
+            };
+            
+            if (matchResult.confidence === 'medium' || matchResult.confidence === 'low') {
+              updateData.match_confidence = matchResult.confidence;
+              console.log(`[link-remissvar-entities] Persisting ${matchResult.confidence} confidence for review: "${normalizedName}" -> "${matchResult.matched_name}"`);
+            } else {
+              updateData.match_confidence = null;
+            }
+            
             const { error: updateError } = await supabase
               .from('remiss_responses')
-              .update({
-                entity_id: null,
-                match_confidence: null,  // Clear stale data
-                normalized_org_name: normalizedName
-              })
+              .update(updateData)
               .eq('id', response.id);
 
             if (updateError) {
