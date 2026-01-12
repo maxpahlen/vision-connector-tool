@@ -36,6 +36,7 @@ interface LinkRequest {
   create_entities?: boolean;
   dry_run?: boolean;
   min_confidence?: MatchConfidence;
+  reprocess_mode?: 'unlinked' | 'unmatched_and_rejected' | 'all';
 }
 
 interface LinkResult {
@@ -92,20 +93,33 @@ Deno.serve(async (req) => {
       limit = 100, 
       create_entities = false, 
       dry_run = false,
-      min_confidence = 'high'  // Default to HIGH only - correctness over recall
+      min_confidence = 'high',  // Default to HIGH only - correctness over recall
+      reprocess_mode = 'unlinked'  // Default: only unlinked records
     } = body;
 
-    console.log(`[link-remissvar-entities] Starting - remiss_id: ${remiss_id}, limit: ${limit}, create_entities: ${create_entities}, dry_run: ${dry_run}, min_confidence: ${min_confidence}`);
+    console.log(`[link-remissvar-entities] Starting - remiss_id: ${remiss_id}, limit: ${limit}, create_entities: ${create_entities}, dry_run: ${dry_run}, min_confidence: ${min_confidence}, reprocess_mode: ${reprocess_mode}`);
 
     // Clear entity cache at start of each run for fresh data
     clearEntityCache();
 
-    // Fetch unlinked remiss_responses
+    // Fetch remiss_responses based on reprocess_mode
     let query = supabase
       .from('remiss_responses')
-      .select('id, remiss_id, responding_organization, file_url')
-      .is('entity_id', null)
+      .select('id, remiss_id, responding_organization, file_url, match_confidence, metadata')
       .not('responding_organization', 'is', null);
+
+    // Apply filtering based on reprocess_mode
+    if (reprocess_mode === 'unlinked') {
+      // Default: only process records without entity_id
+      query = query.is('entity_id', null);
+    } else if (reprocess_mode === 'unmatched_and_rejected') {
+      // Reprocess failed matches after matcher improvements
+      // Records with entity_id are already approved - don't touch them
+      query = query.is('entity_id', null);
+      // Note: We can't easily filter by match_confidence in Supabase without OR syntax
+      // So we filter in-memory below
+    }
+    // 'all' mode: no entity_id filter (but still respects entity_id NOT NULL = approved)
 
     if (remiss_id) {
       query = query.eq('remiss_id', remiss_id);
@@ -289,7 +303,15 @@ Deno.serve(async (req) => {
             
             if (matchResult.confidence === 'medium' || matchResult.confidence === 'low') {
               updateData.match_confidence = matchResult.confidence;
-              console.log(`[link-remissvar-entities] Persisting ${matchResult.confidence} confidence for review: "${normalizedName}" -> "${matchResult.matched_name}"`);
+              // Store backend suggestions in metadata for UI alignment
+              // This avoids duplicate similarity calculation in EntityMatchApprovalQueue
+              updateData.metadata = {
+                ...((response as any).metadata || {}),
+                suggested_entity_id: matchResult.entity_id,
+                suggested_entity_name: matchResult.matched_name,
+                similarity_score: matchResult.similarity_score
+              };
+              console.log(`[link-remissvar-entities] Persisting ${matchResult.confidence} confidence for review: "${normalizedName}" -> "${matchResult.matched_name}" (score: ${matchResult.similarity_score?.toFixed(2)})`);
             } else {
               updateData.match_confidence = null;
             }

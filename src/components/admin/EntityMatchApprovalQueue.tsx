@@ -9,13 +9,20 @@ import { supabase } from '@/integrations/supabase/client';
 import { Loader2, CheckCircle, XCircle, RefreshCw, Link2, AlertTriangle, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
+// Backend-stored suggestion metadata (from link-remissvar-entities)
+interface SuggestionMetadata {
+  suggested_entity_id?: string;
+  suggested_entity_name?: string;
+  similarity_score?: number;
+}
+
 interface PendingMatch {
   id: string;
   responding_organization: string;
   normalized_org_name: string | null;
   file_url: string;
   remiss_id: string;
-  // We'll need to compute the match for display
+  // Computed/displayed values
   suggested_entity_id?: string;
   suggested_entity_name?: string;
   similarity_score?: number;
@@ -40,9 +47,10 @@ export function EntityMatchApprovalQueue() {
     setLoading(true);
     try {
       // Fetch responses that need review (have normalized_org_name but no entity_id)
+      // Include metadata to get backend-computed suggestions
       const { data: responses, error } = await supabase
         .from('remiss_responses')
-        .select('id, responding_organization, normalized_org_name, file_url, remiss_id, match_confidence')
+        .select('id, responding_organization, normalized_org_name, file_url, remiss_id, match_confidence, metadata')
         .is('entity_id', null)
         .not('normalized_org_name', 'is', null)
         .in('match_confidence', ['medium', 'low'])
@@ -76,20 +84,52 @@ export function EntityMatchApprovalQueue() {
         entityData.forEach(e => entityMap.set(e.id, e));
         setEntities(entityMap);
 
-        // Now compute suggested matches for each response
-        const withMatches = (responses || []).map(r => {
+        // Use backend-computed suggestions from metadata when available
+        // Fall back to local calculation for existing records without metadata
+        const withMatches: PendingMatch[] = (responses || []).map(r => {
+          const metadata = r.metadata as SuggestionMetadata | null;
+          
+          // Prefer backend suggestions (stored by link-remissvar-entities)
+          if (metadata?.suggested_entity_id) {
+            return {
+              id: r.id,
+              responding_organization: r.responding_organization || '',
+              normalized_org_name: r.normalized_org_name,
+              file_url: r.file_url,
+              remiss_id: r.remiss_id,
+              suggested_entity_id: metadata.suggested_entity_id,
+              suggested_entity_name: metadata.suggested_entity_name,
+              similarity_score: metadata.similarity_score,
+              confidence: r.match_confidence || undefined
+            };
+          }
+          
+          // Fallback: compute locally for records without metadata
           const match = findBestMatch(r.normalized_org_name || '', entityData);
           return {
-            ...r,
+            id: r.id,
+            responding_organization: r.responding_organization || '',
+            normalized_org_name: r.normalized_org_name,
+            file_url: r.file_url,
+            remiss_id: r.remiss_id,
             suggested_entity_id: match?.id,
             suggested_entity_name: match?.name,
             similarity_score: match?.score,
-            confidence: r.match_confidence
+            confidence: r.match_confidence || undefined
           };
         });
         setPendingMatches(withMatches);
       } else {
-        setPendingMatches(responses || []);
+        // No entities to match against - just show responses without suggestions
+        const noMatches: PendingMatch[] = (responses || []).map(r => ({
+          id: r.id,
+          responding_organization: r.responding_organization || '',
+          normalized_org_name: r.normalized_org_name,
+          file_url: r.file_url,
+          remiss_id: r.remiss_id,
+          confidence: r.match_confidence || undefined
+        }));
+        setPendingMatches(noMatches);
       }
 
       setSelectedIds(new Set());
