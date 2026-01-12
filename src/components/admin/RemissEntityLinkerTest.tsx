@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, Users, Link2, AlertCircle, Database, ChevronDown, FileWarning, ShieldAlert, CheckCircle, XCircle } from 'lucide-react';
 
@@ -102,6 +103,7 @@ export function RemissEntityLinkerTest() {
   const [linkingDryRun, setLinkingDryRun] = useState(true);
   const [createEntities, setCreateEntities] = useState(false);
   const [linkingLimit, setLinkingLimit] = useState(500);
+  const [reprocessMode, setReprocessMode] = useState<'unlinked' | 'unmatched_and_rejected' | 'all'>('unlinked');
 
   // Bootstrap state
   const [bootstrapLoading, setBootstrapLoading] = useState(false);
@@ -143,7 +145,12 @@ export function RemissEntityLinkerTest() {
 
     try {
       const { data, error } = await supabase.functions.invoke('link-remissvar-entities', {
-        body: { limit: linkingLimit, create_entities: createEntities, dry_run: linkingDryRun }
+        body: { 
+          limit: linkingLimit, 
+          create_entities: createEntities, 
+          dry_run: linkingDryRun,
+          reprocess_mode: reprocessMode
+        }
       });
 
       if (error) throw error;
@@ -548,6 +555,24 @@ export function RemissEntityLinkerTest() {
                 <div className="flex items-center justify-between">
                   <Label htmlFor="create-entities">Create New Entities</Label>
                   <Switch id="create-entities" checked={createEntities} onCheckedChange={setCreateEntities} disabled={linkingDryRun} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Reprocess Mode</Label>
+                  <Select value={reprocessMode} onValueChange={(v) => setReprocessMode(v as 'unlinked' | 'unmatched_and_rejected' | 'all')}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unlinked">Unlinked only (default)</SelectItem>
+                      <SelectItem value="unmatched_and_rejected">Unmatched + Rejected</SelectItem>
+                      <SelectItem value="all">All records</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {reprocessMode === 'unlinked' && 'Only process records without entity_id'}
+                    {reprocessMode === 'unmatched_and_rejected' && 'Reprocess failed matches after matcher improvements'}
+                    {reprocessMode === 'all' && 'Process all records (respects existing approved links)'}
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label>Limit: {linkingLimit} responses</Label>
