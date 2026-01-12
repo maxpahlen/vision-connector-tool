@@ -18,6 +18,7 @@ import { RemissIndexScraperTest } from '@/components/admin/RemissIndexScraperTes
 import { RemissDiscoveryDashboard } from '@/components/admin/RemissDiscoveryDashboard';
 import { ProcessRemissPagesTest } from '@/components/admin/ProcessRemissPagesTest';
 import { RemissEntityLinkerTest } from '@/components/admin/RemissEntityLinkerTest';
+import { EntityMatchApprovalQueue } from '@/components/admin/EntityMatchApprovalQueue';
 import { SouLagstiftningskedjaScraper } from '@/components/admin/SouLagstiftningskedjaScraper';
 import { SouUrlRepairTool } from '@/components/admin/SouUrlRepairTool';
 import { DirectiveMetadataScraper } from '@/components/admin/DirectiveMetadataScraper';
@@ -87,6 +88,7 @@ export default function AdminScraper() {
           <RemissIndexScraperTest />
           <ProcessRemissPagesTest />
           <RemissEntityLinkerTest />
+          <EntityMatchApprovalQueue />
           <SouUrlRepairTool />
           <SouLagstiftningskedjaScraper />
           <RemissScraperTest />
