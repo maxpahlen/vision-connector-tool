@@ -60,6 +60,23 @@ const ABBREVIATION_ALIASES: Record<string, string> = {
   'HaV': 'Havs- och vattenmyndigheten',
   'SGU': 'Sveriges geologiska undersökning',
   'PRV': 'Patent- och registreringsverket',
+  // Phase 2 additions
+  'PTS': 'Post- och telestyrelsen',
+  'KTH': 'Kungliga Tekniska högskolan',
+  'IMY': 'Integritetsskyddsmyndigheten',
+  'IVL': 'IVL Svenska Miljöinstitutet',
+  'RFSL': 'Riksförbundet för homosexuellas, bisexuellas, transpersoners, queeras och intersexpersoners rättigheter',
+  'SMHI': 'Sveriges meteorologiska och hydrologiska institut',
+  'WWF': 'Världsnaturfonden',
+  'SEKO': 'Service- och kommunikationsfacket',
+  'SIS': 'Svenska institutet för standarder',
+  'HSB': 'HSB Riksförbund',
+  'LRF': 'Lantbrukarnas Riksförbund',
+  'SPF': 'SPF Seniorerna',
+  'PRO': 'Pensionärernas Riksorganisation',
+  'TCO': 'Tjänstemännens Centralorganisation',
+  'LO': 'Landsorganisationen i Sverige',
+  'SACO': 'Sveriges akademikers centralorganisation',
 };
 
 /**
@@ -229,17 +246,26 @@ export async function matchOrganization(
       }
     }
 
-    // For short abbreviations with no match, return unmatched (no fuzzy matching)
-    console.log(`[org-matcher] Short abbreviation with no match: "${normalizedName}" - returning unmatched`);
-    return { entity_id: null, confidence: 'unmatched', matched_name: null, similarity_score: null };
+    // For short abbreviations with no match, route to review queue (low confidence)
+    // This allows human review of abbreviations not in ABBREVIATION_ALIASES
+    console.log(`[org-matcher] Unknown abbreviation: "${normalizedName}" - routing to review queue as low confidence`);
+    return { entity_id: null, confidence: 'low', matched_name: null, similarity_score: 0.0 };
   }
+
+  // Apply stad/kommun normalization for municipal matching
+  const normalizedMunicipal = normalizeMunicipalName(normalizedLower);
 
   // Standard fuzzy matching for longer names
   let bestMatch: { id: string; name: string; score: number } | null = null;
 
   for (const org of cachedEntities) {
     const orgLower = org.name.toLowerCase();
-    const score = calculateSimilarity(normalizedLower, orgLower);
+    // Try both original and municipal-normalized versions
+    const orgMunicipal = normalizeMunicipalName(orgLower);
+    const score = Math.max(
+      calculateSimilarity(normalizedLower, orgLower),
+      calculateSimilarity(normalizedMunicipal, orgMunicipal)
+    );
     
     if (!bestMatch || score > bestMatch.score) {
       bestMatch = { id: org.id, name: org.name, score };
@@ -273,6 +299,17 @@ export async function matchOrganization(
     matched_name: bestMatch.name,
     similarity_score: bestMatch.score
   };
+}
+
+/**
+ * Normalize municipal naming variants for matching
+ * "Helsingborgs stad" should match "Helsingborgs kommun"
+ */
+function normalizeMunicipalName(name: string): string {
+  return name
+    .replace(/\bstad\b/gi, 'kommun')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /**
