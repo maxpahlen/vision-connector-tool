@@ -16,6 +16,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { 
   normalizeOrganizationName, 
   matchOrganization,
+  clearEntityCache,
   type MatchConfidence 
 } from '../_shared/organization-matcher.ts';
 
@@ -35,7 +36,7 @@ interface LinkRequest {
 interface LinkResult {
   processed: number;
   
-  // NEW: Clear linked vs not-linked semantics
+  // Clear linked vs not-linked semantics
   linked: {
     high: number;
     total: number;
@@ -53,6 +54,9 @@ interface LinkResult {
   low_confidence: number;
   unmatched: number;
   entities_created: number;
+  
+  // Enhanced tracking
+  skipped_updates: number;
   
   errors: Array<{ response_id: string; error: string }>;
   review_needed: Array<{
@@ -88,6 +92,9 @@ Deno.serve(async (req) => {
 
     console.log(`[link-remissvar-entities] Starting - remiss_id: ${remiss_id}, limit: ${limit}, create_entities: ${create_entities}, dry_run: ${dry_run}, min_confidence: ${min_confidence}`);
 
+    // Clear entity cache at start of each run for fresh data
+    clearEntityCache();
+
     // Fetch unlinked remiss_responses
     let query = supabase
       .from('remiss_responses')
@@ -116,6 +123,7 @@ Deno.serve(async (req) => {
         low_confidence: 0,
         unmatched: 0,
         entities_created: 0,
+        skipped_updates: 0,
         errors: [],
         review_needed: [],
         unmatched_orgs: [],
@@ -136,6 +144,7 @@ Deno.serve(async (req) => {
       low_confidence: 0,
       unmatched: 0,
       entities_created: 0,
+      skipped_updates: 0,
       errors: [],
       review_needed: [],
       unmatched_orgs: []
@@ -263,6 +272,7 @@ Deno.serve(async (req) => {
             if (updateError) {
               console.error(`[link-remissvar-entities] Update error for ${response.id}:`, updateError);
               result.errors.push({ response_id: response.id, error: updateError.message });
+              result.skipped_updates++;
             }
           } else {
             // NOT linked - only write normalized name (clear any stale match data)
@@ -278,6 +288,7 @@ Deno.serve(async (req) => {
             if (updateError) {
               console.error(`[link-remissvar-entities] Update error for ${response.id}:`, updateError);
               result.errors.push({ response_id: response.id, error: updateError.message });
+              result.skipped_updates++;
             }
           }
         }
@@ -297,7 +308,7 @@ Deno.serve(async (req) => {
       .slice(0, 20)
       .map(([name, count]) => `${name} (${count})`);
 
-    console.log(`[link-remissvar-entities] Complete - processed: ${result.processed}, linked: ${result.linked.total}, not_linked: ${result.not_linked.total}, created: ${result.entities_created}`);
+    console.log(`[link-remissvar-entities] Complete - processed: ${result.processed}, linked: ${result.linked.total}, not_linked: ${result.not_linked.total}, created: ${result.entities_created}, skipped_updates: ${result.skipped_updates}`);
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

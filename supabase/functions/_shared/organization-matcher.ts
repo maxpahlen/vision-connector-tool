@@ -21,8 +21,46 @@ const DOCUMENT_TITLE_PATTERNS = [
 
 /**
  * File extension patterns to remove from organization names
+ * Handles trailing whitespace and case variations
  */
-const FILE_EXTENSION_PATTERN = /\.(pdf|docx?|xlsx?|pptx?|odt|rtf)$/i;
+const FILE_EXTENSION_PATTERN = /\.(pdf|docx?|xlsx?|pptx?|odt|rtf)\s*$/i;
+
+/**
+ * Module-level entity cache for performance (reset per function invocation)
+ */
+let cachedEntities: Array<{id: string; name: string}> | null = null;
+let cacheEntityType: string | null = null;
+
+/**
+ * Clear entity cache - call at start of each function invocation
+ */
+export function clearEntityCache(): void {
+  cachedEntities = null;
+  cacheEntityType = null;
+  console.log('[org-matcher] Entity cache cleared');
+}
+
+/**
+ * Known abbreviation aliases for common Swedish organizations
+ * Maps abbreviation to canonical entity name pattern (for matching)
+ */
+const ABBREVIATION_ALIASES: Record<string, string> = {
+  'SKR': 'Sveriges Kommuner och Regioner',
+  'MSB': 'Myndigheten för samhällsskydd och beredskap',
+  'FRA': 'Försvarets radioanstalt',
+  'FOI': 'Totalförsvarets forskningsinstitut',
+  'SCB': 'Statistiska centralbyrån',
+  'FMV': 'Försvarets materielverk',
+  'ISP': 'Inspektionen för strategiska produkter',
+  'SBU': 'Statens beredning för medicinsk och social utvärdering',
+  'IVO': 'Inspektionen för vård och omsorg',
+  'TLV': 'Tandvårds- och läkemedelsförmånsverket',
+  'ESV': 'Ekonomistyrningsverket',
+  'ESF': 'Europeiska socialfonden',
+  'HaV': 'Havs- och vattenmyndigheten',
+  'SGU': 'Sveriges geologiska undersökning',
+  'PRV': 'Patent- och registreringsverket',
+};
 
 /**
  * Checks if a string looks like a document title rather than an organization name
@@ -71,7 +109,7 @@ export function normalizeOrganizationName(raw: string): string {
   }
   
   let normalized = raw
-    // Remove file extensions like ".PDF", ".docx"
+    // Remove file extensions like ".PDF", ".docx" (handles trailing whitespace)
     .replace(FILE_EXTENSION_PATTERN, '')
     // Remove file size indicators like "(pdf 140 kB)" or "(word 2 MB)"
     .replace(/\s*\((pdf|word|doc|docx)\s+\d+(\.\d+)?\s*(kB|KB|MB|mb|b|B)\)\s*$/i, '')
@@ -107,7 +145,7 @@ export interface MatchResult {
 
 /**
  * Matches a normalized organization name against the entities table
- * Uses trigram similarity for fuzzy matching
+ * Uses caching + trigram similarity for fuzzy matching
  * 
  * Thresholds:
  * - >= 0.9: high confidence (near exact match)
@@ -141,27 +179,65 @@ export async function matchOrganization(
     };
   }
 
-  // Use trigram similarity for fuzzy matching
-  // Note: This requires pg_trgm extension (already enabled in this project)
-  const { data: similarMatches, error } = await supabase
-    .rpc('similarity', { text1: normalizedName, text2: '' })  // This won't work directly
-    
-  // Fallback: fetch all organizations and compute similarity client-side
-  // This is less efficient but works without custom RPC functions
-  const { data: allOrgs } = await supabase
-    .from('entities')
-    .select('id, name')
-    .eq('entity_type', entityType);
+  // Use cached entities for fuzzy matching (cache once per run)
+  if (!cachedEntities || cacheEntityType !== entityType) {
+    const { data: allOrgs } = await supabase
+      .from('entities')
+      .select('id, name')
+      .eq('entity_type', entityType);
+    cachedEntities = allOrgs || [];
+    cacheEntityType = entityType;
+    console.log(`[org-matcher] Cached ${cachedEntities?.length ?? 0} entities for type '${entityType}'`);
+  }
 
-  if (!allOrgs || allOrgs.length === 0) {
+  if (!cachedEntities || cachedEntities.length === 0) {
     return { entity_id: null, confidence: 'unmatched', matched_name: null, similarity_score: null };
   }
 
-  // Simple client-side similarity using Levenshtein-like approach
-  let bestMatch: { id: string; name: string; score: number } | null = null;
+  const normalizedUpper = normalizedName.toUpperCase();
   const normalizedLower = normalizedName.toLowerCase();
 
-  for (const org of allOrgs) {
+  // ABBREVIATION HANDLING: For short names (<=5 chars), use special matching
+  if (normalizedName.length <= 5) {
+    // Check if it's a known abbreviation alias
+    if (ABBREVIATION_ALIASES[normalizedUpper]) {
+      const aliasTarget = ABBREVIATION_ALIASES[normalizedUpper].toLowerCase();
+      for (const org of cachedEntities) {
+        if (org.name.toLowerCase().includes(aliasTarget) || aliasTarget.includes(org.name.toLowerCase())) {
+          console.log(`[org-matcher] Abbreviation alias match: "${normalizedName}" -> "${org.name}"`);
+          return {
+            entity_id: org.id,
+            confidence: 'high',
+            matched_name: org.name,
+            similarity_score: 1.0
+          };
+        }
+      }
+    }
+
+    // Look for entity containing "(ABBREV)" pattern
+    const abbrevPattern = `(${normalizedUpper})`;
+    for (const org of cachedEntities) {
+      if (org.name.toUpperCase().includes(abbrevPattern)) {
+        console.log(`[org-matcher] Parenthetical abbreviation match: "${normalizedName}" -> "${org.name}"`);
+        return {
+          entity_id: org.id,
+          confidence: 'high',
+          matched_name: org.name,
+          similarity_score: 1.0
+        };
+      }
+    }
+
+    // For short abbreviations with no match, return unmatched (no fuzzy matching)
+    console.log(`[org-matcher] Short abbreviation with no match: "${normalizedName}" - returning unmatched`);
+    return { entity_id: null, confidence: 'unmatched', matched_name: null, similarity_score: null };
+  }
+
+  // Standard fuzzy matching for longer names
+  let bestMatch: { id: string; name: string; score: number } | null = null;
+
+  for (const org of cachedEntities) {
     const orgLower = org.name.toLowerCase();
     const score = calculateSimilarity(normalizedLower, orgLower);
     
@@ -498,25 +574,31 @@ export function parseRemissinstanserTextWithDiagnostics(text: string): ParseResu
   // Deduplicate
   const uniqueOrgs = [...new Set(organizations)];
   
-  // Determine status
-  let status: ParseStatus;
-  let reason: string;
-  
-  if (uniqueOrgs.length > 0) {
-    status = 'success';
-    reason = `Extracted ${uniqueOrgs.length} organizations from ${numberedLinesFound} numbered entries`;
-  } else if (numberedLinesFound > 0) {
-    status = 'no_numbered_entries';
-    reason = `Found ${numberedLinesFound} numbered lines but all were filtered (blocked/invalid)`;
-  } else {
-    status = 'no_numbered_entries';
-    reason = 'No numbered entries found in PDF text';
+  if (uniqueOrgs.length === 0) {
+    if (numberedLinesFound === 0) {
+      return {
+        organizations: [],
+        status: 'no_numbered_entries',
+        reason: 'No numbered entries found in text - may be non-standard format',
+        sample_lines: sampleLines,
+        total_lines: lines.length,
+        numbered_lines_found: 0
+      };
+    }
+    return {
+      organizations: [],
+      status: 'extraction_failed',
+      reason: `Found ${numberedLinesFound} numbered lines but all were filtered out`,
+      sample_lines: sampleLines,
+      total_lines: lines.length,
+      numbered_lines_found: numberedLinesFound
+    };
   }
 
   return {
     organizations: uniqueOrgs,
-    status,
-    reason,
+    status: 'success',
+    reason: `Extracted ${uniqueOrgs.length} organizations from ${numberedLinesFound} numbered entries`,
     sample_lines: sampleLines,
     total_lines: lines.length,
     numbered_lines_found: numberedLinesFound
