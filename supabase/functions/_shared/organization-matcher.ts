@@ -77,6 +77,11 @@ const ABBREVIATION_ALIASES: Record<string, string> = {
   'TCO': 'Tjänstemännens Centralorganisation',
   'LO': 'Landsorganisationen i Sverige',
   'SACO': 'Sveriges akademikers centralorganisation',
+  // Phase 2.1 additions from manual review
+  'MPF': 'Myndigheten för psykologiskt försvar',
+  'SIN': 'Säkerhets- och integritetsskyddsnämnden',
+  'SVA': 'Statens veterinärmedicinska anstalt',
+  'TMF': 'Trä- och Möbelföretagen',
 };
 
 /**
