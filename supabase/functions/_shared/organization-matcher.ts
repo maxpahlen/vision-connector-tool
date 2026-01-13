@@ -131,12 +131,13 @@ export function normalizeOrganizationName(raw: string): string {
   }
   
   let normalized = raw
-    // Remove file extensions like ".PDF", ".docx" (handles trailing whitespace)
-    .replace(FILE_EXTENSION_PATTERN, '')
-    // Remove file size indicators like "(pdf 140 kB)" or "(word 2 MB)"
+    // FIRST: Remove file size indicators like "(pdf 140 kB)" or "(word 2 MB)"
+    // Must run before extension removal so ".PDF" ends up at string end
     .replace(/\s*\((pdf|word|doc|docx)\s+\d+(\.\d+)?\s*(kB|KB|MB|mb|b|B)\)\s*$/i, '')
-    // Remove standalone file size like "140 kB" at end
+    // SECOND: Remove standalone file size like "140 kB" at end
     .replace(/\s+\d+(\.\d+)?\s*(kB|KB|MB|mb|b|B)\s*$/i, '')
+    // THIRD: Now remove file extensions like ".PDF", ".docx" (they're at end after size removal)
+    .replace(FILE_EXTENSION_PATTERN, '')
     // Normalize whitespace
     .replace(/\s+/g, ' ')
     .trim();
