@@ -54,32 +54,32 @@ export function EntityMatchApprovalQueue() {
   const fetchPendingMatches = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch responses that need review (have normalized_org_name but no entity_id)
-      // Include metadata to get backend-computed suggestions
+      // Fetch responses that need review (no entity_id)
+      // Include: medium, low confidence OR null confidence (never processed)
+      // Also include items with normalized_org_name OR responding_organization
       const { data: responses, error } = await supabase
         .from('remiss_responses')
         .select('id, responding_organization, normalized_org_name, file_url, remiss_id, match_confidence, metadata')
         .is('entity_id', null)
-        .not('normalized_org_name', 'is', null)
-        .in('match_confidence', ['medium', 'low'])
-        .order('match_confidence', { ascending: true })
+        .not('match_confidence', 'in', '("high","approved","created","rejected")')
+        .order('match_confidence', { ascending: true, nullsFirst: true })
         .limit(100);
 
       if (error) throw error;
 
-      // Also get stats
+      // Also get stats - include null confidence items
       const { data: statsData } = await supabase
         .from('remiss_responses')
         .select('match_confidence')
         .is('entity_id', null)
-        .not('normalized_org_name', 'is', null);
+        .not('match_confidence', 'in', '("high","approved","created")');
 
       if (statsData) {
         const medium = statsData.filter(r => r.match_confidence === 'medium').length;
         const low = statsData.filter(r => r.match_confidence === 'low').length;
+        const unprocessed = statsData.filter(r => r.match_confidence === null).length;
         const reviewed = statsData.filter(r => r.match_confidence === 'rejected').length;
-        const created = statsData.filter(r => r.match_confidence === 'created').length;
-        setStats({ total: medium + low, medium, low, reviewed, created });
+        setStats({ total: medium + low + unprocessed, medium, low, reviewed, created: 0 });
       }
 
       // Fetch all organization entities for matching
