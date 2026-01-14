@@ -339,7 +339,9 @@ Deno.serve(async (req) => {
               };
               console.log(`[link-remissvar-entities] Persisting ${matchResult.confidence} confidence for review: "${normalizedName}" -> "${matchResult.matched_name}" (score: ${matchResult.similarity_score?.toFixed(2)})`);
             } else {
-              updateData.match_confidence = null;
+              // Persist explicit 'unmatched' for processed-but-no-match (observability)
+              // Distinguishes from NULL which means "never processed"
+              updateData.match_confidence = 'unmatched';
             }
             
             const { error: updateError } = await supabase
