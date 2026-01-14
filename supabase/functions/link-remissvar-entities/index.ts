@@ -37,6 +37,8 @@ interface LinkRequest {
   dry_run?: boolean;
   min_confidence?: MatchConfidence;
   reprocess_mode?: 'unlinked' | 'unmatched_and_rejected' | 'all';
+  after_id?: string;      // Cursor for pagination
+  force_relink?: boolean; // Override approval protection
 }
 
 interface LinkResult {
@@ -74,6 +76,7 @@ interface LinkResult {
     confidence: MatchConfidence;
   }>;
   unmatched_orgs: string[];
+  next_after_id: string | null;
 }
 
 Deno.serve(async (req) => {
@@ -94,10 +97,12 @@ Deno.serve(async (req) => {
       create_entities = false, 
       dry_run = false,
       min_confidence = 'high',  // Default to HIGH only - correctness over recall
-      reprocess_mode = 'unlinked'  // Default: only unlinked records
+      reprocess_mode = 'unlinked',  // Default: only unlinked records
+      after_id,         // Cursor for pagination
+      force_relink = false  // Override approval protection
     } = body;
 
-    console.log(`[link-remissvar-entities] Starting - remiss_id: ${remiss_id}, limit: ${limit}, create_entities: ${create_entities}, dry_run: ${dry_run}, min_confidence: ${min_confidence}, reprocess_mode: ${reprocess_mode}`);
+    console.log(`[link-remissvar-entities] Starting - remiss_id: ${remiss_id}, limit: ${limit}, create_entities: ${create_entities}, dry_run: ${dry_run}, min_confidence: ${min_confidence}, reprocess_mode: ${reprocess_mode}, after_id: ${after_id ?? 'none'}, force_relink: ${force_relink}`);
 
     // Clear entity cache at start of each run for fresh data
     clearEntityCache();
@@ -105,27 +110,36 @@ Deno.serve(async (req) => {
     // Fetch remiss_responses based on reprocess_mode
     let query = supabase
       .from('remiss_responses')
-      .select('id, remiss_id, responding_organization, file_url, match_confidence, metadata')
+      .select('id, remiss_id, responding_organization, file_url, match_confidence, entity_id, metadata')
       .not('responding_organization', 'is', null);
+
+    // PROTECTION: Never touch approved rows unless force_relink is true
+    if (!force_relink) {
+      query = query.neq('match_confidence', 'approved');
+    }
 
     // Apply filtering based on reprocess_mode
     if (reprocess_mode === 'unlinked') {
-      // Default: only process records without entity_id
-      query = query.is('entity_id', null);
+      // Default: only process records without entity_id AND no match_confidence yet
+      query = query.is('entity_id', null).is('match_confidence', null);
     } else if (reprocess_mode === 'unmatched_and_rejected') {
       // Reprocess failed matches after matcher improvements
       // Records with entity_id are already approved - don't touch them
       query = query.is('entity_id', null);
-      // Note: We can't easily filter by match_confidence in Supabase without OR syntax
-      // So we filter in-memory below
     }
-    // 'all' mode: no entity_id filter (but still respects entity_id NOT NULL = approved)
+    // 'all' mode: no entity_id filter (but approved rows excluded above)
 
     if (remiss_id) {
       query = query.eq('remiss_id', remiss_id);
     }
 
-    const { data: responses, error: fetchError } = await query.limit(limit);
+    // Cursor pagination for deterministic batching
+    if (after_id) {
+      query = query.gt('id', after_id);
+    }
+
+    // Stable ordering + limit
+    const { data: responses, error: fetchError } = await query.order('id').limit(limit);
 
     if (fetchError) {
       console.error('[link-remissvar-entities] Fetch error:', fetchError);
@@ -166,7 +180,8 @@ Deno.serve(async (req) => {
       skipped_updates: 0,
       errors: [],
       review_needed: [],
-      unmatched_orgs: []
+      unmatched_orgs: [],
+      next_after_id: null
     };
 
     // Track unique unmatched orgs
@@ -174,6 +189,16 @@ Deno.serve(async (req) => {
 
     for (const response of responses) {
       try {
+        // Track cursor for pagination
+        result.next_after_id = response.id;
+        
+        // DEFENSE IN DEPTH: Skip already-linked rows (guard in case query filter missed them)
+        if (response.entity_id && !force_relink) {
+          console.log(`[link-remissvar-entities] Skipping already-linked: ${response.id}`);
+          result.skipped_updates++;
+          continue;
+        }
+        
         const normalizedName = normalizeOrganizationName(response.responding_organization);
         
         if (!normalizedName) {

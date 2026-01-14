@@ -1,5 +1,49 @@
 # Phase Deltas
 
+## 2026-01-14: Phase 2.7.4 Entity Linking Fixes (EXECUTION)
+
+**Problem**: Three critical issues in entity linking:
+1. **AP-fonden not matching**: Entities like "Första AP-fonden" existed but responses normalized to "Första AP fonden" (space vs hyphen) causing match failures
+2. **Approvals overwritten**: Running linker in `reprocess_mode: 'all'` would overwrite manually approved links, setting them back to medium/low confidence
+3. **Batch stuck on same records**: Repeated runs with same limit processed identical records due to lack of stable ordering and cursor pagination
+
+**Root Causes Identified**:
+1. No Unicode normalization (NFKC) and no AP-fonden canonicalization in `normalizeOrganizationName()`
+2. Linker query didn't exclude `match_confidence = 'approved'` rows, and no in-loop guard for `entity_id IS NOT NULL`
+3. Missing `.order('id')` and cursor (`after_id`) parameter for deterministic batch progression
+
+**Fixes Applied**:
+1. **AP-fonden normalization** (`organization-matcher.ts`):
+   - Added `.normalize('NFKC')` at start of `normalizeOrganizationName()`
+   - Added canonicalization: `\bAP[\s\u2013]+fonden\b` → `AP-fonden` (handles space and en-dash)
+   
+2. **Approval protection** (`link-remissvar-entities/index.ts`):
+   - Query filter: `.neq('match_confidence', 'approved')` unless `force_relink = true`
+   - In-loop guard: Skip rows where `entity_id IS NOT NULL` and `force_relink = false`
+   - Added `entity_id` to SELECT statement for guard check
+   
+3. **Cursor pagination** (`link-remissvar-entities/index.ts`):
+   - Added `after_id` request parameter
+   - Added `.order('id')` and `.gt('id', after_id)` to query
+   - Response now includes `next_after_id` for subsequent batch calls
+   - Changed 'unlinked' mode to filter `entity_id IS NULL AND match_confidence IS NULL` (true unprocessed)
+
+**Files Changed**:
+- `supabase/functions/_shared/organization-matcher.ts` - NFKC + AP-fonden canonicalization
+- `supabase/functions/link-remissvar-entities/index.ts` - approval protection + cursor + interface updates
+
+**Expected Outcomes**:
+- "Första AP fonden" → normalizes to "Första AP-fonden" → exact match → high confidence link
+- Approved rows never modified by linker (unless `force_relink = true`)
+- Consecutive batch runs process distinct records using cursor
+
+**Verification**:
+- Run linker with limit 50 including AP-fonden records → should link as high confidence
+- Approve a match → run linker in 'all' mode → approved row stays intact
+- Run multiple batches → each processes new rows (no repeats)
+
+---
+
 ## 2026-01-09: Phase 2.7.3 Allow/Block List + Case Deduplication Fix (EXECUTION)
 
 **Problem**: Gate 2 testing revealed:
