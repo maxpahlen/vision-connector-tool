@@ -5,10 +5,12 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, CheckCircle, XCircle, RefreshCw, Link2, AlertTriangle, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, RefreshCw, Link2, AlertTriangle, ThumbsUp, ThumbsDown, PlusCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-
 // Backend-stored suggestion metadata (from link-remissvar-entities)
 interface SuggestionMetadata {
   suggested_entity_id?: string;
@@ -41,7 +43,13 @@ export function EntityMatchApprovalQueue() {
   const [pendingMatches, setPendingMatches] = useState<PendingMatch[]>([]);
   const [entities, setEntities] = useState<Map<string, Entity>>(new Map());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [stats, setStats] = useState({ total: 0, medium: 0, low: 0, reviewed: 0 });
+  const [stats, setStats] = useState({ total: 0, medium: 0, low: 0, reviewed: 0, created: 0 });
+  
+  // Create entity dialog state
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createDialogMatch, setCreateDialogMatch] = useState<PendingMatch | null>(null);
+  const [createEntityName, setCreateEntityName] = useState('');
+  const [creating, setCreating] = useState(false);
 
   const fetchPendingMatches = useCallback(async () => {
     setLoading(true);
@@ -70,7 +78,8 @@ export function EntityMatchApprovalQueue() {
         const medium = statsData.filter(r => r.match_confidence === 'medium').length;
         const low = statsData.filter(r => r.match_confidence === 'low').length;
         const reviewed = statsData.filter(r => r.match_confidence === 'rejected').length;
-        setStats({ total: medium + low, medium, low, reviewed });
+        const created = statsData.filter(r => r.match_confidence === 'created').length;
+        setStats({ total: medium + low, medium, low, reviewed, created });
       }
 
       // Fetch all organization entities for matching
@@ -356,6 +365,76 @@ export function EntityMatchApprovalQueue() {
     }
   };
 
+  // Open create entity dialog
+  const openCreateDialog = (match: PendingMatch) => {
+    setCreateDialogMatch(match);
+    setCreateEntityName(match.normalized_org_name || match.responding_organization || '');
+    setCreateDialogOpen(true);
+  };
+
+  // Handle entity creation
+  const handleCreateEntity = async () => {
+    if (!createDialogMatch || !createEntityName.trim()) return;
+    
+    setCreating(true);
+    try {
+      // 1. Insert new entity
+      const { data: newEntity, error: insertError } = await supabase
+        .from('entities')
+        .insert({
+          entity_type: 'organization',
+          name: createEntityName.trim(),
+          metadata: { 
+            source: 'uninvited_respondent',
+            created_from_response_id: createDialogMatch.id 
+          }
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      // 2. Update remiss_response with new entity_id
+      const { error: updateError } = await supabase
+        .from('remiss_responses')
+        .update({
+          entity_id: newEntity.id,
+          match_confidence: 'created'
+        })
+        .eq('id', createDialogMatch.id);
+
+      if (updateError) throw updateError;
+
+      toast({
+        title: 'Entity Created',
+        description: `Created "${createEntityName}" and linked to response`
+      });
+
+      // Update local state
+      setPendingMatches(prev => prev.filter(m => m.id !== createDialogMatch.id));
+      setStats(prev => ({ 
+        ...prev, 
+        total: prev.total - 1, 
+        created: prev.created + 1,
+        [createDialogMatch.confidence as 'medium' | 'low']: prev[createDialogMatch.confidence as 'medium' | 'low'] - 1 
+      }));
+
+      // Close dialog
+      setCreateDialogOpen(false);
+      setCreateDialogMatch(null);
+      setCreateEntityName('');
+    } catch (err) {
+      console.error('Create entity error:', err);
+      toast({
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Failed to create entity',
+        variant: 'destructive'
+      });
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const getConfidenceBadge = (confidence: string | undefined, score: number | undefined) => {
     if (confidence === 'medium') {
       return <Badge variant="secondary" className="bg-yellow-500/20 text-yellow-400">Medium {score ? `(${(score * 100).toFixed(0)}%)` : ''}</Badge>;
@@ -381,7 +460,7 @@ export function EntityMatchApprovalQueue() {
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Stats */}
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-5">
           <div className="text-center p-3 bg-muted rounded-lg">
             <div className="text-2xl font-bold">{stats.total}</div>
             <div className="text-xs text-muted-foreground">Pending Review</div>
@@ -397,6 +476,10 @@ export function EntityMatchApprovalQueue() {
           <div className="text-center p-3 bg-muted rounded-lg">
             <div className="text-2xl font-bold text-muted-foreground">{stats.reviewed}</div>
             <div className="text-xs text-muted-foreground">Rejected</div>
+          </div>
+          <div className="text-center p-3 bg-muted rounded-lg">
+            <div className="text-2xl font-bold text-blue-400">{stats.created}</div>
+            <div className="text-xs text-muted-foreground">Created</div>
           </div>
         </div>
 
@@ -495,16 +578,27 @@ export function EntityMatchApprovalQueue() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Button 
-                          size="icon" 
-                          variant="ghost" 
-                          className="h-8 w-8 text-green-400 hover:text-green-300 hover:bg-green-400/10"
-                          onClick={() => handleApproveOne(match)}
-                          disabled={!match.suggested_entity_id}
-                          title="Approve"
-                        >
-                          <CheckCircle className="h-4 w-4" />
-                        </Button>
+                        {match.suggested_entity_id ? (
+                          <Button 
+                            size="icon" 
+                            variant="ghost" 
+                            className="h-8 w-8 text-green-400 hover:text-green-300 hover:bg-green-400/10"
+                            onClick={() => handleApproveOne(match)}
+                            title="Approve suggested match"
+                          >
+                            <CheckCircle className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <Button 
+                            size="icon" 
+                            variant="ghost" 
+                            className="h-8 w-8 text-blue-400 hover:text-blue-300 hover:bg-blue-400/10"
+                            onClick={() => openCreateDialog(match)}
+                            title="Create new entity"
+                          >
+                            <PlusCircle className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button 
                           size="icon" 
                           variant="ghost" 
@@ -523,6 +617,54 @@ export function EntityMatchApprovalQueue() {
           </ScrollArea>
         )}
       </CardContent>
+
+      {/* Create Entity Dialog */}
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PlusCircle className="h-5 w-5 text-blue-400" />
+              Create New Entity
+            </DialogTitle>
+            <DialogDescription>
+              Create a new organization entity for this uninvited respondent.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="entity-name">Organization Name</Label>
+              <Input 
+                id="entity-name"
+                value={createEntityName}
+                onChange={(e) => setCreateEntityName(e.target.value)}
+                placeholder="Enter organization name"
+              />
+            </div>
+            
+            {createDialogMatch && (
+              <div className="text-sm text-muted-foreground bg-muted p-3 rounded-md">
+                <div><strong>Original:</strong> {createDialogMatch.responding_organization}</div>
+                <div><strong>Normalized:</strong> {createDialogMatch.normalized_org_name}</div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateDialogOpen(false)} disabled={creating}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateEntity} 
+              disabled={!createEntityName.trim() || creating}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {creating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <PlusCircle className="h-4 w-4 mr-2" />}
+              Create Entity
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

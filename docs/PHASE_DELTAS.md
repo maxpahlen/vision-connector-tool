@@ -1,5 +1,35 @@
 # Phase Deltas
 
+## 2026-01-14: Phase 2.7.6 Enhanced Normalizer + Create Entity UI (EXECUTION)
+
+**Goals**:
+1. Improve automated linking by stripping file/attachment suffixes
+2. Add "Create Entity" UI for uninvited respondents
+
+**Normalizer Enhancements** (`organization-matcher.ts`):
+- **Suffix stripping**: `bilaga`, `bilaga till remissvar`, `bilaga 1`, `svar`, `AB`
+- **Prefix stripping**: `Bilaga`, `Övrigt yttrande`, `Yttrande från`
+- **Possessive 's' handling**: `Vinnovas` → `Vinnova` (with consonant check)
+- **Hyphen canonicalization**: `Patent och registreringsverket` → `Patent- och registreringsverket`
+- **Removed 120-char length limit**: Long org names are valid (e.g., RFSL)
+
+**UI Enhancements** (`EntityMatchApprovalQueue.tsx`):
+- Added "Create Entity" button (blue +) for items with no suggested match
+- Dialog to create new organization entity with editable name
+- New "Created" stat counter in the header
+- Entity is created with `source: uninvited_respondent` metadata
+- Response is linked with `match_confidence: 'created'`
+
+**RLS Policy** (migration):
+- Added `INSERT` and `UPDATE` policies on `entities` table for admins
+
+**Files Changed**:
+- `supabase/functions/_shared/organization-matcher.ts` - Enhanced normalizer
+- `src/components/admin/EntityMatchApprovalQueue.tsx` - Create Entity UI + dialog
+- Database migration for entities RLS policies
+
+---
+
 ## 2026-01-14: Phase 2.7.5 Linker Query Filter Fix + DB Reset (EXECUTION)
 
 **Problem**: Entity linker processing only 10 of 800 records despite limit=800
