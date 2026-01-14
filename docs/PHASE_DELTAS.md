@@ -1,5 +1,46 @@
 # Phase Deltas
 
+## 2026-01-14: Phase 2.7.9 Matcher Refinements + Pending Review Mode (EXECUTION)
+
+**Problem**: After Phase 2.7.7 deployment, verification revealed:
+- Rows with `medium`/`low` confidence weren't being reprocessed when matcher improved
+- Possessive 's' stripping too aggressive ("Nitus" → "Nitu")
+- Need visibility into substring matching path for debugging
+
+**Fixes Applied**:
+
+1. **New Reprocess Mode** (`link-remissvar-entities/index.ts`):
+   - Added `reprocess_mode='pending_review'` that includes `medium`, `low`, and `unmatched`
+   - Allows improved matcher to re-evaluate previously-processed rows
+
+2. **Possessive 's' Stripping Refinement** (`organization-matcher.ts`):
+   - Increased minimum length from 4 to 6 chars (protects "Nitus")
+   - Expanded exception list with Latin/proper names
+
+3. **Debug Logging** (`organization-matcher.ts`):
+   - Added explicit logging in `calculateSimilarity()` for substring matching path
+   - Shows ratio, token boundary check result, and final decision
+
+4. **UI Updates** (`EntityMatchApprovalQueue.tsx`):
+   - Added "Re-match Pending Review" button
+   - Updated stats to show distinct `unprocessed` bucket
+   - Updated `handleReprocess` type signature
+
+**Files Changed**:
+- `supabase/functions/_shared/organization-matcher.ts`
+- `supabase/functions/link-remissvar-entities/index.ts`
+- `src/components/admin/EntityMatchApprovalQueue.tsx`
+- `docs/PHASE_DELTAS.md`
+
+**Verification Steps**:
+1. Click "Re-match Pending Review" button
+2. Check edge function logs for substring matching debug output
+3. Verify Dals Eds kommun → Dals-Eds kommun (high confidence)
+4. Verify Teracom → Teracom AB (high confidence)
+5. Verify Nitus stays as "Nitus" (not stripped)
+
+---
+
 ## 2026-01-14: Phase 2.7.7 Entity Matching Algorithm Fixes + Reprocess UI (EXECUTION)
 
 **Problem**: Critical false positives in entity matching algorithm caused incorrect links:

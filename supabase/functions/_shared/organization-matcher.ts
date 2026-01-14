@@ -188,9 +188,15 @@ export function normalizeOrganizationName(raw: string): string {
 
   // Handle possessive 's' suffix using exceptions list (safer than vowel heuristic)
   // KEEP_TRAILING_S: Names that legitimately end in 's' (not possessive)
-  const KEEP_TRAILING_S = ['borås', 'vitrysslands', 'ledarnas', 'tidningarnas', 'ukrainas', 'försvarsmaktens'];
+  // Phase 2.7.9: Expanded list with Latin/proper names, require length > 6
+  const KEEP_TRAILING_S = [
+    'borås', 'vitrysslands', 'ledarnas', 'tidningarnas', 'ukrainas', 'försvarsmaktens',
+    'nitus', 'corpus', 'campus', 'virus', 'status', 'fokus', 'plus',
+    'mars', 'bonus', 'minus', 'versus', 'zeus', 'nexus'
+  ];
   
-  if (normalized.endsWith('s') && normalized.length > 4) {
+  // Only strip 's' from names > 6 chars (short names like "Nitus" are likely proper names)
+  if (normalized.endsWith('s') && normalized.length > 6) {
     const lowerNorm = normalized.toLowerCase();
     const isException = KEEP_TRAILING_S.some(exc => lowerNorm.endsWith(exc));
     
@@ -428,9 +434,15 @@ function calculateSimilarity(a: string, b: string): number {
     // 2. OR shorter appears as a complete token (word boundary)
     const isCompleteToken = new RegExp(`\\b${escapeRegex(shorter)}\\b`, 'i').test(longer);
     
+    // Debug logging for substring matching (Phase 2.7.9)
+    console.log(`[org-matcher] Substring check: "${shorter}" in "${longer}" - ratio: ${ratio.toFixed(2)}, isCompleteToken: ${isCompleteToken}`);
+    
     if (ratio >= 0.5 || isCompleteToken) {
-      return 0.8 + (0.2 * ratio);
+      const score = 0.8 + (0.2 * ratio);
+      console.log(`[org-matcher] Substring match accepted: score=${score.toFixed(2)}`);
+      return score;
     }
+    console.log(`[org-matcher] Substring match rejected - falling through to bigram`);
     // Fall through to bigram matching for partial substring cases
     // e.g., "kommunal" inside "kommunala" is NOT a complete token match
   }

@@ -43,7 +43,7 @@ export function EntityMatchApprovalQueue() {
   const [pendingMatches, setPendingMatches] = useState<PendingMatch[]>([]);
   const [entities, setEntities] = useState<Map<string, Entity>>(new Map());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [stats, setStats] = useState({ total: 0, medium: 0, low: 0, unmatched: 0, reviewed: 0, created: 0 });
+  const [stats, setStats] = useState({ total: 0, medium: 0, low: 0, unprocessed: 0, unmatched: 0, reviewed: 0, created: 0 });
   
   // Reprocess state
   const [reprocessing, setReprocessing] = useState<string | null>(null);
@@ -85,7 +85,15 @@ export function EntityMatchApprovalQueue() {
         const unprocessed = statsData.filter(r => r.match_confidence === null).length;
         const unmatched = statsData.filter(r => r.match_confidence === 'unmatched').length;
         const reviewed = statsData.filter(r => r.match_confidence === 'rejected').length;
-        setStats({ total: medium + low + unprocessed, medium, low, unmatched, reviewed, created: 0 });
+        setStats({ 
+          total: medium + low + unprocessed + unmatched, 
+          medium, 
+          low, 
+          unprocessed,
+          unmatched, 
+          reviewed, 
+          created: 0 
+        });
       }
 
       // Fetch all organization entities for matching
@@ -460,7 +468,7 @@ export function EntityMatchApprovalQueue() {
   };
 
   // Handle reprocessing with linker
-  const handleReprocess = async (mode: 'unlinked' | 'unmatched_and_rejected') => {
+  const handleReprocess = async (mode: 'unlinked' | 'unmatched_and_rejected' | 'pending_review') => {
     setReprocessing(mode);
     try {
       const { data, error } = await supabase.functions.invoke('link-remissvar-entities', {
@@ -607,6 +615,20 @@ export function EntityMatchApprovalQueue() {
                 <Play className="h-4 w-4 mr-2" />
               )}
               Reprocess Rejected
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => handleReprocess('pending_review')}
+              disabled={!!reprocessing}
+              title="Re-run matcher on medium/low/unmatched items with improved algorithm"
+            >
+              {reprocessing === 'pending_review' ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              Re-match Pending Review
             </Button>
           </div>
         </div>
