@@ -36,7 +36,7 @@ interface LinkRequest {
   create_entities?: boolean;
   dry_run?: boolean;
   min_confidence?: MatchConfidence;
-  reprocess_mode?: 'unlinked' | 'unmatched_and_rejected' | 'all';
+  reprocess_mode?: 'unlinked' | 'unmatched_and_rejected' | 'pending_review' | 'all';
   after_id?: string;      // Cursor for pagination
   force_relink?: boolean; // Override approval protection
 }
@@ -123,6 +123,11 @@ Deno.serve(async (req) => {
     if (reprocess_mode === 'unlinked') {
       // Default: only truly virgin records (no entity_id, no confidence yet)
       query = query.is('match_confidence', null);
+    } else if (reprocess_mode === 'pending_review') {
+      // Phase 2.7.9: Reprocess items flagged for review (medium/low) plus unmatched
+      // Allows re-matching after matcher improvements
+      console.log('[linker] Mode: pending_review - including medium/low/unmatched');
+      query = query.or('match_confidence.is.null,match_confidence.in.(medium,low,unmatched)');
     } else if (reprocess_mode === 'unmatched_and_rejected') {
       // Reprocess failed matches after matcher improvements
       // entity_id IS NULL already applied above, include rejected for re-matching
