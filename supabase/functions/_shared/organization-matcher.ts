@@ -118,19 +118,22 @@ function hasContactInfo(text: string): boolean {
 export function normalizeOrganizationName(raw: string): string {
   if (!raw) return '';
   
+  // Apply Unicode normalization to handle PDF quirks (composed vs decomposed chars)
+  const normalizedRaw = raw.normalize('NFKC');
+  
   // Hard rejection: contact info
-  if (hasContactInfo(raw)) {
-    console.log(`[org-matcher] Rejected contact info: "${raw.substring(0, 50)}..."`);
+  if (hasContactInfo(normalizedRaw)) {
+    console.log(`[org-matcher] Rejected contact info: "${normalizedRaw.substring(0, 50)}..."`);
     return '';
   }
   
   // Hard rejection: very long strings (likely boilerplate paragraphs)
-  if (raw.length > 120) {
-    console.log(`[org-matcher] Rejected too long (${raw.length} chars): "${raw.substring(0, 50)}..."`);
+  if (normalizedRaw.length > 120) {
+    console.log(`[org-matcher] Rejected too long (${normalizedRaw.length} chars): "${normalizedRaw.substring(0, 50)}..."`);
     return '';
   }
   
-  let normalized = raw
+  let normalized = normalizedRaw
     // FIRST: Remove file size indicators like "(pdf 140 kB)" or "(word 2 MB)"
     // Must run before extension removal so ".PDF" ends up at string end
     .replace(/\s*\((pdf|word|doc|docx)\s+\d+(\.\d+)?\s*(kB|KB|MB|mb|b|B)\)\s*$/i, '')
@@ -141,6 +144,10 @@ export function normalizeOrganizationName(raw: string): string {
     // Normalize whitespace
     .replace(/\s+/g, ' ')
     .trim();
+
+  // Canonicalize AP-fonden variants AFTER whitespace normalization
+  // Handles "AP fonden", "AP  fonden", "AP–fonden" (en-dash) → "AP-fonden"
+  normalized = normalized.replace(/\bAP[\s\u2013]+fonden\b/gi, 'AP-fonden');
 
   // Reject document titles
   if (isDocumentTitle(normalized)) {
