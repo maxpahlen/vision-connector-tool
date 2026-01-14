@@ -92,8 +92,30 @@ export function isDocumentTitle(name: string): boolean {
 }
 
 /**
+ * Suffix patterns to strip from organization names
+ * These are file/attachment suffixes that pollute the name
+ */
+const SUFFIX_STRIP_PATTERNS = [
+  /\s*bilaga\s*(?:till\s+remissvar)?\s*$/i,  // "bilaga", "bilaga till remissvar"
+  /\s*bilaga\s+\d+\s*$/i,                     // "bilaga 1", "bilaga 2"
+  /\s*svar\s*$/i,                             // "svar" suffix
+  /\s+AB$/i,                                  // "AB" company suffix
+  /s$/,                                       // Possessive 's' (Vinnovas → Vinnova) - checked carefully below
+];
+
+/**
+ * Prefix patterns to strip from organization names
+ * These are attachment/classification prefixes
+ */
+const PREFIX_STRIP_PATTERNS = [
+  /^bilaga\s+/i,                              // "Bilaga Östhammars kommun"
+  /^övrigt\s+yttrande\s+/i,                   // "Övrigt yttrande Stiftelsen Activa"
+  /^yttrande\s+från\s+/i,                     // "Yttrande från..."
+];
+
+/**
  * Hard rejection patterns - these are always invalid regardless of context
- * Contact info, URLs, very long strings
+ * Contact info, URLs
  */
 function hasContactInfo(text: string): boolean {
   const contactPatterns = [
@@ -114,6 +136,9 @@ function hasContactInfo(text: string): boolean {
  * - "Riksdagens ombudsmän (JO) (pdf 140 kB)" → "Riksdagens ombudsmän (JO)"
  * - "Blekinge Tekniska Högskola.PDF" → "Blekinge Tekniska Högskola"
  * - "Remiss av betänkande SOU 2025:103" → "" (rejected as document title)
+ * - "Vinnovas" → "Vinnova" (possessive stripped)
+ * - "Teracom AB" → "Teracom" (company suffix stripped)
+ * - "Bilaga Östhammars kommun" → "Östhammars kommun" (prefix stripped)
  */
 export function normalizeOrganizationName(raw: string): string {
   if (!raw) return '';
@@ -127,11 +152,8 @@ export function normalizeOrganizationName(raw: string): string {
     return '';
   }
   
-  // Hard rejection: very long strings (likely boilerplate paragraphs)
-  if (normalizedRaw.length > 120) {
-    console.log(`[org-matcher] Rejected too long (${normalizedRaw.length} chars): "${normalizedRaw.substring(0, 50)}..."`);
-    return '';
-  }
+  // NOTE: Removed 120-char length rejection - legitimate org names can be long
+  // e.g. "Riksförbundet för homosexuellas, bisexuellas, transpersoners, queeras och intersexpersoners rättigheter"
   
   let normalized = normalizedRaw
     // FIRST: Remove file size indicators like "(pdf 140 kB)" or "(word 2 MB)"
@@ -145,9 +167,43 @@ export function normalizeOrganizationName(raw: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 
+  // Apply prefix stripping (e.g., "Bilaga Östhammars kommun" → "Östhammars kommun")
+  for (const pattern of PREFIX_STRIP_PATTERNS) {
+    normalized = normalized.replace(pattern, '');
+  }
+  normalized = normalized.trim();
+  
+  // Apply suffix stripping EXCEPT possessive 's' (handle that specially)
+  for (const pattern of SUFFIX_STRIP_PATTERNS) {
+    // Skip the possessive 's' pattern here - handle it separately with more care
+    if (pattern.source === 's$') continue;
+    normalized = normalized.replace(pattern, '');
+  }
+  normalized = normalized.trim();
+  
+  // Handle possessive 's' suffix carefully:
+  // Only strip if the result is still a valid word (>3 chars) and ends with a consonant+'s'
+  // This avoids stripping "s" from names that legitimately end in "s" (e.g., "Borås")
+  if (normalized.endsWith('s') && normalized.length > 4) {
+    const withoutS = normalized.slice(0, -1);
+    // Check if it looks like a possessive: ends in consonant+s (Vinnovas, Lantmäteriets)
+    // vs legitimate ending (Borås, Ledarnas - these should keep their 's')
+    const lastChar = withoutS.slice(-1).toLowerCase();
+    const possessiveConsonants = ['a', 'e', 'i', 'o', 'u', 'y', 'ö', 'ä', 'å']; // if NOT a vowel, likely possessive
+    if (!possessiveConsonants.includes(lastChar)) {
+      // Log but apply the strip
+      console.log(`[org-matcher] Stripped possessive 's': "${normalized}" → "${withoutS}"`);
+      normalized = withoutS;
+    }
+  }
+
   // Canonicalize AP-fonden variants AFTER whitespace normalization
   // Handles "AP fonden", "AP  fonden", "AP–fonden" (en-dash) → "AP-fonden"
   normalized = normalized.replace(/\bAP[\s\u2013]+fonden\b/gi, 'AP-fonden');
+  
+  // Canonicalize hyphenation: "Patent och registreringsverket" → "Patent- och registreringsverket"
+  // Common pattern: "X och Y" where X is a compound prefix should be "X- och Y"
+  normalized = normalized.replace(/\b(Patent|Post|Havs|Tandvårds|Klimat|Arbets|Miljö)\s+och\s+/gi, '$1- och ');
 
   // Reject document titles
   if (isDocumentTitle(normalized)) {
