@@ -19,6 +19,7 @@
 - New "Created" stat counter in the header
 - Entity is created with `source: uninvited_respondent` metadata
 - Response is linked with `match_confidence: 'created'`
+- Fixed approval queue fetch to include `match_confidence = NULL` items (PostgREST `not.in` excludes NULL; now uses explicit `OR`).
 
 **RLS Policy** (migration):
 - Added `INSERT` and `UPDATE` policies on `entities` table for admins

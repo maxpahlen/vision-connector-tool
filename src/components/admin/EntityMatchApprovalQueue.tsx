@@ -54,25 +54,27 @@ export function EntityMatchApprovalQueue() {
   const fetchPendingMatches = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch responses that need review (no entity_id)
-      // Include: medium, low confidence OR null confidence (never processed)
-      // Also include items with normalized_org_name OR responding_organization
+      // Fetch responses that need review
+      // IMPORTANT: PostgREST `not.in` does NOT include NULL values, so we must use an explicit OR.
+      // We treat NULL match_confidence as "unprocessed/unmatched" and include it in the queue.
       const { data: responses, error } = await supabase
         .from('remiss_responses')
         .select('id, responding_organization, normalized_org_name, file_url, remiss_id, match_confidence, metadata')
         .is('entity_id', null)
-        .not('match_confidence', 'in', '("high","approved","created","rejected")')
+        .not('normalized_org_name', 'is', null)
+        .or('match_confidence.is.null,match_confidence.in.(low,medium)')
         .order('match_confidence', { ascending: true, nullsFirst: true })
         .limit(100);
 
       if (error) throw error;
 
-      // Also get stats - include null confidence items
+      // Also get stats
+      // NOTE: We keep this scoped to rows that have a normalized name so the queue + stats stay aligned.
       const { data: statsData } = await supabase
         .from('remiss_responses')
         .select('match_confidence')
         .is('entity_id', null)
-        .not('match_confidence', 'in', '("high","approved","created")');
+        .not('normalized_org_name', 'is', null);
 
       if (statsData) {
         const medium = statsData.filter(r => r.match_confidence === 'medium').length;
@@ -325,9 +327,14 @@ export function EntityMatchApprovalQueue() {
         description: `Linked "${match.normalized_org_name}" to "${match.suggested_entity_name}"`
       });
 
-      // Remove from list
+      // Remove from list + update stats safely (supports NULL/unprocessed confidence)
       setPendingMatches(prev => prev.filter(m => m.id !== match.id));
-      setStats(prev => ({ ...prev, total: prev.total - 1, [match.confidence as 'medium' | 'low']: prev[match.confidence as 'medium' | 'low'] - 1 }));
+      setStats(prev => {
+        const next = { ...prev, total: Math.max(0, prev.total - 1) };
+        if (match.confidence === 'medium') next.medium = Math.max(0, prev.medium - 1);
+        if (match.confidence === 'low') next.low = Math.max(0, prev.low - 1);
+        return next;
+      });
     } catch (err) {
       console.error('Approval error:', err);
       toast({
@@ -352,9 +359,18 @@ export function EntityMatchApprovalQueue() {
         description: `Marked "${match.normalized_org_name}" as rejected`
       });
 
-      // Remove from list
+      // Remove from list + update stats safely (supports NULL/unprocessed confidence)
       setPendingMatches(prev => prev.filter(m => m.id !== match.id));
-      setStats(prev => ({ ...prev, total: prev.total - 1, reviewed: prev.reviewed + 1, [match.confidence as 'medium' | 'low']: prev[match.confidence as 'medium' | 'low'] - 1 }));
+      setStats(prev => {
+        const next = {
+          ...prev,
+          total: Math.max(0, prev.total - 1),
+          reviewed: prev.reviewed + 1,
+        };
+        if (match.confidence === 'medium') next.medium = Math.max(0, prev.medium - 1);
+        if (match.confidence === 'low') next.low = Math.max(0, prev.low - 1);
+        return next;
+      });
     } catch (err) {
       console.error('Rejection error:', err);
       toast({
@@ -412,12 +428,16 @@ export function EntityMatchApprovalQueue() {
 
       // Update local state
       setPendingMatches(prev => prev.filter(m => m.id !== createDialogMatch.id));
-      setStats(prev => ({ 
-        ...prev, 
-        total: prev.total - 1, 
-        created: prev.created + 1,
-        [createDialogMatch.confidence as 'medium' | 'low']: prev[createDialogMatch.confidence as 'medium' | 'low'] - 1 
-      }));
+      setStats(prev => {
+        const next = {
+          ...prev,
+          total: Math.max(0, prev.total - 1),
+          created: prev.created + 1,
+        };
+        if (createDialogMatch.confidence === 'medium') next.medium = Math.max(0, prev.medium - 1);
+        if (createDialogMatch.confidence === 'low') next.low = Math.max(0, prev.low - 1);
+        return next;
+      });
 
       // Close dialog
       setCreateDialogOpen(false);
