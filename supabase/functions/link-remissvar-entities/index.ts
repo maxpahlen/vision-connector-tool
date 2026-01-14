@@ -113,21 +113,22 @@ Deno.serve(async (req) => {
       .select('id, remiss_id, responding_organization, file_url, match_confidence, entity_id, metadata')
       .not('responding_organization', 'is', null);
 
-    // PROTECTION: Never touch approved rows unless force_relink is true
+    // PROTECTION: Never touch already-linked rows unless force_relink is true
+    // This prevents fetching rows that would just be skipped in the loop
     if (!force_relink) {
-      query = query.neq('match_confidence', 'approved');
-    }
-
-    // Apply filtering based on reprocess_mode
-    if (reprocess_mode === 'unlinked') {
-      // Default: only process records without entity_id AND no match_confidence yet
-      query = query.is('entity_id', null).is('match_confidence', null);
-    } else if (reprocess_mode === 'unmatched_and_rejected') {
-      // Reprocess failed matches after matcher improvements
-      // Records with entity_id are already approved - don't touch them
       query = query.is('entity_id', null);
     }
-    // 'all' mode: no entity_id filter (but approved rows excluded above)
+
+    // Apply filtering based on reprocess_mode (on top of base protection)
+    if (reprocess_mode === 'unlinked') {
+      // Default: only truly virgin records (no entity_id, no confidence yet)
+      query = query.is('match_confidence', null);
+    } else if (reprocess_mode === 'unmatched_and_rejected') {
+      // Reprocess failed matches after matcher improvements
+      // entity_id IS NULL already applied above, include rejected for re-matching
+      query = query.or('match_confidence.is.null,match_confidence.eq.rejected');
+    }
+    // 'all' mode: all unlinked records (entity_id IS NULL already applied above)
 
     if (remiss_id) {
       query = query.eq('remiss_id', remiss_id);
