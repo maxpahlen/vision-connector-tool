@@ -1,5 +1,30 @@
 # Phase Deltas
 
+## 2026-01-14: Phase 2.7.5 Linker Query Filter Fix + DB Reset (EXECUTION)
+
+**Problem**: Entity linker processing only 10 of 800 records despite limit=800
+
+**Root Cause**:
+- Query filter only excluded `approved` rows (77 records)
+- In-loop guard skipped all `entity_id IS NOT NULL` rows (3,349 records)
+- Result: fetched 800 already-linked rows, skipped 790 in loop
+
+**Fixes Applied**:
+1. **Aligned query filter with in-loop guard** - Now excludes `entity_id IS NOT NULL` at query level unless `force_relink=true`
+2. **Database reset** - Cleared all linking data (entity_id, match_confidence, normalized_org_name, metadata suggestions) for fresh start
+
+**Files Changed**:
+- `supabase/functions/link-remissvar-entities/index.ts` - Fixed query filter logic (lines 116-131)
+
+**DB Impact**:
+- 3,424 rows reset to unlinked state
+- All previous approvals/rejections cleared
+
+**Verification**:
+- Run linker with `reprocess_mode: 'all'`, `limit: 500` → should process all 500 rows
+
+---
+
 ## 2026-01-14: Phase 2.7.4 Entity Linking Fixes (EXECUTION)
 
 **Problem**: Three critical issues in entity linking:
@@ -18,7 +43,7 @@
    - Added canonicalization: `\bAP[\s\u2013]+fonden\b` → `AP-fonden` (handles space and en-dash)
    
 2. **Approval protection** (`link-remissvar-entities/index.ts`):
-   - Query filter: `.neq('match_confidence', 'approved')` unless `force_relink = true`
+   - Query filter: `.is('entity_id', null)` unless `force_relink = true`
    - In-loop guard: Skip rows where `entity_id IS NOT NULL` and `force_relink = false`
    - Added `entity_id` to SELECT statement for guard check
    
@@ -26,7 +51,6 @@
    - Added `after_id` request parameter
    - Added `.order('id')` and `.gt('id', after_id)` to query
    - Response now includes `next_after_id` for subsequent batch calls
-   - Changed 'unlinked' mode to filter `entity_id IS NULL AND match_confidence IS NULL` (true unprocessed)
 
 **Files Changed**:
 - `supabase/functions/_shared/organization-matcher.ts` - NFKC + AP-fonden canonicalization
