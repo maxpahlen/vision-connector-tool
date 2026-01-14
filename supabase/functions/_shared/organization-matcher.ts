@@ -181,17 +181,21 @@ export function normalizeOrganizationName(raw: string): string {
   }
   normalized = normalized.trim();
   
-  // Handle possessive 's' suffix carefully:
-  // Only strip if the result is still a valid word (>3 chars) and ends with a consonant+'s'
-  // This avoids stripping "s" from names that legitimately end in "s" (e.g., "Borås")
+  // Strip trailing parenthetical abbreviations (2-6 uppercase chars)
+  // e.g., "Riksförbundet... rättigheter (RFSL)" → "Riksförbundet... rättigheter"
+  normalized = normalized.replace(/\s*\([A-ZÄÖÅ]{2,6}\)\s*$/, '');
+  normalized = normalized.trim();
+
+  // Handle possessive 's' suffix using exceptions list (safer than vowel heuristic)
+  // KEEP_TRAILING_S: Names that legitimately end in 's' (not possessive)
+  const KEEP_TRAILING_S = ['borås', 'vitrysslands', 'ledarnas', 'tidningarnas', 'ukrainas', 'försvarsmaktens'];
+  
   if (normalized.endsWith('s') && normalized.length > 4) {
-    const withoutS = normalized.slice(0, -1);
-    // Check if it looks like a possessive: ends in consonant+s (Vinnovas, Lantmäteriets)
-    // vs legitimate ending (Borås, Ledarnas - these should keep their 's')
-    const lastChar = withoutS.slice(-1).toLowerCase();
-    const possessiveConsonants = ['a', 'e', 'i', 'o', 'u', 'y', 'ö', 'ä', 'å']; // if NOT a vowel, likely possessive
-    if (!possessiveConsonants.includes(lastChar)) {
-      // Log but apply the strip
+    const lowerNorm = normalized.toLowerCase();
+    const isException = KEEP_TRAILING_S.some(exc => lowerNorm.endsWith(exc));
+    
+    if (!isException) {
+      const withoutS = normalized.slice(0, -1);
       console.log(`[org-matcher] Stripped possessive 's': "${normalized}" → "${withoutS}"`);
       normalized = withoutS;
     }
@@ -382,25 +386,58 @@ function normalizeMunicipalName(name: string): string {
 }
 
 /**
+ * Escape special regex characters in a string
+ */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
  * Calculate similarity score between two strings (0-1)
  * Uses a combination of:
- * - Exact substring match bonus
- * - Bigram/trigram overlap (Dice coefficient)
+ * - Hyphen/space normalization (treats "X-Y" and "X Y" as equivalent)
+ * - Guarded substring match bonus (length ratio >= 0.5 OR complete token match)
+ * - Bigram overlap (Dice coefficient)
+ * 
+ * Phase 2.7.7 fixes:
+ * - Prevents false positives like "kommunal" matching "nätverket för kommunala lärcentra"
+ * - Allows valid matches like "Teracom" vs "Teracom AB"
  */
 function calculateSimilarity(a: string, b: string): number {
   if (a === b) return 1.0;
   if (!a || !b) return 0.0;
 
-  // Exact substring match gets high score
-  if (a.includes(b) || b.includes(a)) {
-    const longer = a.length > b.length ? a : b;
-    const shorter = a.length > b.length ? b : a;
-    return 0.8 + (0.2 * shorter.length / longer.length);
+  // Normalize hyphen/space variants before comparison
+  // "Dals-Eds kommun" and "Dals Eds kommun" should be equivalent
+  const normalizeForComparison = (s: string) => 
+    s.replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
+  
+  const aNorm = normalizeForComparison(a);
+  const bNorm = normalizeForComparison(b);
+  
+  if (aNorm === bNorm) return 1.0;
+
+  // Guarded substring match with length ratio + token boundary checks
+  if (aNorm.includes(bNorm) || bNorm.includes(aNorm)) {
+    const longer = aNorm.length > bNorm.length ? aNorm : bNorm;
+    const shorter = aNorm.length > bNorm.length ? bNorm : aNorm;
+    const ratio = shorter.length / longer.length;
+    
+    // Only apply substring bonus if:
+    // 1. Shorter is >=50% of longer length (handles "Teracom" vs "Teracom AB")
+    // 2. OR shorter appears as a complete token (word boundary)
+    const isCompleteToken = new RegExp(`\\b${escapeRegex(shorter)}\\b`, 'i').test(longer);
+    
+    if (ratio >= 0.5 || isCompleteToken) {
+      return 0.8 + (0.2 * ratio);
+    }
+    // Fall through to bigram matching for partial substring cases
+    // e.g., "kommunal" inside "kommunala" is NOT a complete token match
   }
 
   // Use bigrams for similarity (Dice coefficient)
-  const bigramsA = getBigrams(a);
-  const bigramsB = getBigrams(b);
+  const bigramsA = getBigrams(aNorm);
+  const bigramsB = getBigrams(bNorm);
   
   if (bigramsA.size === 0 || bigramsB.size === 0) return 0.0;
 

@@ -1,5 +1,68 @@
 # Phase Deltas
 
+## 2026-01-14: Phase 2.7.7 Entity Matching Algorithm Fixes + Reprocess UI (EXECUTION)
+
+**Problem**: Critical false positives in entity matching algorithm caused incorrect links:
+- "Dals Eds kommun" → matched to "Munkedals kommun" (wrong)
+- "Hyres och arrendenämnden i Stockholm" → matched to "Hyres- och arrendenämnden i Malmö" (wrong)
+- "Nätverket för kommunala lärcentra, Nitus" → matched to "Kommunal" (wrong)
+
+Additionally: "RFSL", "Vinnovas", "Teracom" not matching despite entities existing.
+
+**Root Causes**:
+1. **Greedy substring bonus**: Any substring match got 0.8+ score, even "kommunal" inside "kommunala"
+2. **No hyphen/space normalization**: "Dals-Eds" vs "Dals Eds" treated as different
+3. **Possessive 's' stripping used vowel heuristic**: Failed for "Vinnovas" (vowel+s)
+4. **Trailing parenthetical abbreviations not stripped**: "(RFSL)" not removed
+
+**Fixes Applied**:
+
+1. **Guarded Substring Matching** (`organization-matcher.ts`):
+   - Added length ratio guard: substring bonus only if `shorter.length / longer.length >= 0.5`
+   - Added token boundary check: OR if shorter is a complete word (`\b...\b`) in longer
+   - Added `escapeRegex()` helper for safe regex construction
+   - Prevents: "kommunal" → "kommunala" (partial word, ratio 0.13)
+   - Allows: "Teracom" → "Teracom AB" (ratio 0.7, complete token)
+
+2. **Hyphen/Space Normalization** (`calculateSimilarity`):
+   - Added `normalizeForComparison()` that replaces `-` with ` ` before comparison
+   - "Dals-Eds kommun" now equals "Dals Eds kommun" (score 1.0)
+
+3. **Possessive 's' Stripping** (`normalizeOrganizationName`):
+   - Changed from vowel heuristic to explicit exceptions list
+   - `KEEP_TRAILING_S = ['borås', 'vitrysslands', 'ledarnas', 'tidningarnas', 'ukrainas', 'försvarsmaktens']`
+   - Default: strip trailing 's' unless in exception list
+   - "Vinnovas" → "Vinnova" (stripped)
+
+4. **Parenthetical Abbreviation Stripping** (`normalizeOrganizationName`):
+   - Added: `normalized.replace(/\s*\([A-ZÄÖÅ]{2,6}\)\s*$/, '')`
+   - "Riksförbundet... (RFSL)" → "Riksförbundet..."
+
+5. **Explicit 'unmatched' Confidence** (`link-remissvar-entities/index.ts`):
+   - Changed from `match_confidence = null` to `match_confidence = 'unmatched'` for processed-but-no-match
+   - Distinguishes: NULL = never processed, 'unmatched' = processed but no match
+
+6. **Reprocess UI Buttons** (`EntityMatchApprovalQueue.tsx`):
+   - Added "Run Matcher (Unprocessed)" button → calls linker with `reprocess_mode: 'unlinked'`
+   - Added "Reprocess Rejected" button → calls linker with `reprocess_mode: 'unmatched_and_rejected'`
+   - Added 'unmatched' stat counter in header (6 columns now)
+   - Added `Play` icon import
+
+**Files Changed**:
+- `supabase/functions/_shared/organization-matcher.ts` - Algorithm fixes
+- `supabase/functions/link-remissvar-entities/index.ts` - Explicit 'unmatched' confidence
+- `src/components/admin/EntityMatchApprovalQueue.tsx` - Reprocess UI + stats
+
+**Expected Outcomes After Reprocessing**:
+- "Dals Eds kommun" → matches "Dals-Eds kommun" (high confidence)
+- "Hyres och arrendenämnden i Stockholm" → matches Stockholm variant (high)
+- "Nätverket för kommunala lärcentra, Nitus" → NO match to "Kommunal" (correct)
+- "Vinnovas" → matches "Vinnova" (high)
+- "Teracom" → matches "Teracom AB" (high)
+- RFSL long name → matches RFSL entity (high)
+
+---
+
 ## 2026-01-14: Phase 2.7.6 Enhanced Normalizer + Create Entity UI (EXECUTION)
 
 **Goals**:

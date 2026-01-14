@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, CheckCircle, XCircle, RefreshCw, Link2, AlertTriangle, ThumbsUp, ThumbsDown, PlusCircle } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, RefreshCw, Link2, AlertTriangle, ThumbsUp, ThumbsDown, PlusCircle, Play } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 // Backend-stored suggestion metadata (from link-remissvar-entities)
 interface SuggestionMetadata {
@@ -43,7 +43,10 @@ export function EntityMatchApprovalQueue() {
   const [pendingMatches, setPendingMatches] = useState<PendingMatch[]>([]);
   const [entities, setEntities] = useState<Map<string, Entity>>(new Map());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [stats, setStats] = useState({ total: 0, medium: 0, low: 0, reviewed: 0, created: 0 });
+  const [stats, setStats] = useState({ total: 0, medium: 0, low: 0, unmatched: 0, reviewed: 0, created: 0 });
+  
+  // Reprocess state
+  const [reprocessing, setReprocessing] = useState<string | null>(null);
   
   // Create entity dialog state
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -80,8 +83,9 @@ export function EntityMatchApprovalQueue() {
         const medium = statsData.filter(r => r.match_confidence === 'medium').length;
         const low = statsData.filter(r => r.match_confidence === 'low').length;
         const unprocessed = statsData.filter(r => r.match_confidence === null).length;
+        const unmatched = statsData.filter(r => r.match_confidence === 'unmatched').length;
         const reviewed = statsData.filter(r => r.match_confidence === 'rejected').length;
-        setStats({ total: medium + low + unprocessed, medium, low, reviewed, created: 0 });
+        setStats({ total: medium + low + unprocessed, medium, low, unmatched, reviewed, created: 0 });
       }
 
       // Fetch all organization entities for matching
@@ -455,6 +459,37 @@ export function EntityMatchApprovalQueue() {
     }
   };
 
+  // Handle reprocessing with linker
+  const handleReprocess = async (mode: 'unlinked' | 'unmatched_and_rejected') => {
+    setReprocessing(mode);
+    try {
+      const { data, error } = await supabase.functions.invoke('link-remissvar-entities', {
+        body: { 
+          reprocess_mode: mode, 
+          limit: 50
+        }
+      });
+      
+      if (error) throw error;
+      
+      toast({
+        title: "Reprocessing complete",
+        description: `Processed: ${data.processed}, Linked: ${data.linked?.total ?? 0}, Review: ${(data.not_linked?.medium ?? 0) + (data.not_linked?.low ?? 0)}`
+      });
+      
+      // Refresh queue to show new matches
+      fetchPendingMatches();
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Reprocessing failed",
+        description: err instanceof Error ? err.message : String(err)
+      });
+    } finally {
+      setReprocessing(null);
+    }
+  };
+
   const getConfidenceBadge = (confidence: string | undefined, score: number | undefined) => {
     if (confidence === 'medium') {
       return <Badge variant="secondary" className="bg-yellow-500/20 text-yellow-400">Medium {score ? `(${(score * 100).toFixed(0)}%)` : ''}</Badge>;
@@ -462,7 +497,10 @@ export function EntityMatchApprovalQueue() {
     if (confidence === 'low') {
       return <Badge variant="secondary" className="bg-orange-500/20 text-orange-400">Low {score ? `(${(score * 100).toFixed(0)}%)` : ''}</Badge>;
     }
-    return <Badge variant="outline">{confidence}</Badge>;
+    if (confidence === 'unmatched') {
+      return <Badge variant="secondary" className="bg-muted text-muted-foreground">Unmatched</Badge>;
+    }
+    return <Badge variant="outline">{confidence ?? 'Unprocessed'}</Badge>;
   };
 
   const selectableCount = pendingMatches.filter(m => m.suggested_entity_id).length;
@@ -480,18 +518,22 @@ export function EntityMatchApprovalQueue() {
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Stats */}
-        <div className="grid gap-4 md:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-6">
           <div className="text-center p-3 bg-muted rounded-lg">
             <div className="text-2xl font-bold">{stats.total}</div>
             <div className="text-xs text-muted-foreground">Pending Review</div>
           </div>
           <div className="text-center p-3 bg-muted rounded-lg">
             <div className="text-2xl font-bold text-yellow-400">{stats.medium}</div>
-            <div className="text-xs text-muted-foreground">Medium Confidence</div>
+            <div className="text-xs text-muted-foreground">Medium</div>
           </div>
           <div className="text-center p-3 bg-muted rounded-lg">
             <div className="text-2xl font-bold text-orange-400">{stats.low}</div>
-            <div className="text-xs text-muted-foreground">Low Confidence</div>
+            <div className="text-xs text-muted-foreground">Low</div>
+          </div>
+          <div className="text-center p-3 bg-muted rounded-lg">
+            <div className="text-2xl font-bold text-muted-foreground">{stats.unmatched}</div>
+            <div className="text-xs text-muted-foreground">Unmatched</div>
           </div>
           <div className="text-center p-3 bg-muted rounded-lg">
             <div className="text-2xl font-bold text-muted-foreground">{stats.reviewed}</div>
@@ -504,34 +546,67 @@ export function EntityMatchApprovalQueue() {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <Button onClick={fetchPendingMatches} variant="outline" size="sm" disabled={loading}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-            <span className="text-sm text-muted-foreground">
-              {selectedIds.size} of {selectableCount} selected
-            </span>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <Button onClick={fetchPendingMatches} variant="outline" size="sm" disabled={loading}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                {selectedIds.size} of {selectableCount} selected
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button 
+                onClick={handleApproveSelected} 
+                disabled={selectedIds.size === 0 || approving}
+                size="sm"
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {approving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ThumbsUp className="h-4 w-4 mr-2" />}
+                Approve Selected ({selectedIds.size})
+              </Button>
+              <Button 
+                onClick={handleRejectSelected}
+                disabled={selectedIds.size === 0 || approving}
+                variant="destructive"
+                size="sm"
+              >
+                <ThumbsDown className="h-4 w-4 mr-2" />
+                Reject Selected
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          
+          {/* Reprocess Actions */}
+          <div className="flex items-center gap-2 border-t pt-3">
+            <span className="text-sm text-muted-foreground mr-2">Reprocess:</span>
             <Button 
-              onClick={handleApproveSelected} 
-              disabled={selectedIds.size === 0 || approving}
-              size="sm"
-              className="bg-green-600 hover:bg-green-700"
+              variant="outline" 
+              size="sm" 
+              onClick={() => handleReprocess('unlinked')}
+              disabled={!!reprocessing}
             >
-              {approving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ThumbsUp className="h-4 w-4 mr-2" />}
-              Approve Selected ({selectedIds.size})
+              {reprocessing === 'unlinked' ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Play className="h-4 w-4 mr-2" />
+              )}
+              Run Matcher (Unprocessed)
             </Button>
             <Button 
-              onClick={handleRejectSelected}
-              disabled={selectedIds.size === 0 || approving}
-              variant="destructive"
-              size="sm"
+              variant="outline" 
+              size="sm" 
+              onClick={() => handleReprocess('unmatched_and_rejected')}
+              disabled={!!reprocessing}
             >
-              <ThumbsDown className="h-4 w-4 mr-2" />
-              Reject Selected
+              {reprocessing === 'unmatched_and_rejected' ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Play className="h-4 w-4 mr-2" />
+              )}
+              Reprocess Rejected
             </Button>
           </div>
         </div>
