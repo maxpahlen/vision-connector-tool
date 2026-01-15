@@ -91,6 +91,9 @@ const ABBREVIATION_ALIASES: Record<string, string> = {
   'SIN': 'Säkerhets- och integritetsskyddsnämnden',
   'SVA': 'Statens veterinärmedicinska anstalt',
   'TMF': 'Trä- och Möbelföretagen',
+  // Phase 2.7.9.4 additions - abbreviation expansion fixes
+  'SVEBIO': 'Bioenergiföreningen',
+  'SFOG': 'Svensk förening för obstetrik och gynekologi',
 };
 
 /**
@@ -390,6 +393,46 @@ export async function matchOrganization(
     // This allows human review of abbreviations not in ABBREVIATION_ALIASES
     console.log(`[org-matcher] Unknown abbreviation: "${normalizedName}" - routing to review queue as low confidence`);
     return { entity_id: null, confidence: 'low', matched_name: null, similarity_score: 0.0 };
+  }
+
+  // ABBREVIATION EMBEDDED IN LONGER NAME: Check if name starts with a known abbreviation
+  // e.g., "WWF Sverige" should match "Världsnaturfonden WWF"
+  const firstWord = normalizedName.split(/[\s-]/)[0].toUpperCase();
+  if (ABBREVIATION_ALIASES[firstWord]) {
+    const aliasTarget = ABBREVIATION_ALIASES[firstWord].toLowerCase();
+    for (const org of cachedEntities) {
+      const orgLower = org.name.toLowerCase();
+      // Match if entity contains the expanded form OR the abbreviation in parentheses
+      if (orgLower.includes(aliasTarget) || org.name.toUpperCase().includes(`(${firstWord})`)) {
+        console.log(`[org-matcher] Embedded abbreviation match: "${normalizedName}" -> "${org.name}" (via ${firstWord})`);
+        return {
+          entity_id: org.id,
+          confidence: 'high',
+          matched_name: org.name,
+          similarity_score: 1.0
+        };
+      }
+    }
+  }
+
+  // Also check if entity name ENDS with the abbreviation without parentheses
+  // e.g., "Världsnaturfonden WWF" contains "WWF" at end
+  for (const abbrev of Object.keys(ABBREVIATION_ALIASES)) {
+    if (normalizedName.toUpperCase().includes(abbrev) && abbrev.length >= 3) {
+      for (const org of cachedEntities) {
+        const orgUpper = org.name.toUpperCase();
+        // Check if entity contains the abbreviation (with or without parentheses)
+        if (orgUpper.includes(abbrev) || orgUpper.includes(`(${abbrev})`)) {
+          console.log(`[org-matcher] Abbreviation content match: "${normalizedName}" -> "${org.name}" (via ${abbrev})`);
+          return {
+            entity_id: org.id,
+            confidence: 'high',
+            matched_name: org.name,
+            similarity_score: 1.0
+          };
+        }
+      }
+    }
   }
 
   // Apply stad/kommun normalization for municipal matching
