@@ -200,11 +200,27 @@ export function normalizeOrganizationName(raw: string): string {
 
   // Handle possessive 's' suffix using exceptions list (safer than vowel heuristic)
   // KEEP_TRAILING_S: Names that legitimately end in 's' (not possessive)
-  // Phase 2.7.9: Expanded list with Latin/proper names, require length > 6
+  // Phase 2.7.10: Expanded list to prevent over-stripping English names and Swedish agency endings
   const KEEP_TRAILING_S = [
-    'borås', 'vitrysslands', 'ledarnas', 'tidningarnas', 'ukrainas', 'försvarsmaktens',
+    // Swedish cities/places
+    'borås', 
+    // Swedish genitive forms that are part of proper names
+    'vitrysslands', 'ledarnas', 'tidningarnas', 'ukrainas', 'försvarsmaktens',
+    // Latin words (common in proper names)
     'nitus', 'corpus', 'campus', 'virus', 'status', 'fokus', 'plus',
-    'mars', 'bonus', 'minus', 'versus', 'zeus', 'nexus'
+    'mars', 'bonus', 'minus', 'versus', 'zeus', 'nexus', 'consensus',
+    // English words ending in 's' (not possessive)
+    'access', 'news', 'defenders', 'friends', 'partners', 'systems',
+    'solutions', 'services', 'industries', 'redhawks', 'hawks', 'press',
+    'express', 'congress', 'holdings', 'studios', 'games', 'dynamics',
+    'robotics', 'electronics', 'genetics', 'analytics', 'logistics',
+    // Swedish agency/org endings with 'analys' (analysis words)
+    'trafikanalys', 'biståndsanalys', 'omsorgsanalys', 'konjunkturanalys',
+    'energianalys', 'miljöanalys', 'livsmedelsanalys', 'arbetsanalys',
+    // Swedish compound words ending in legitimately 's'
+    'fastighets', 'energis', 'finans', 'allmännas',
+    // Company name patterns
+    'bofors', 'affairs', 'atlas', 'siemens', 'philips', 'mercedes'
   ];
   
   // Only strip 's' from names > 6 chars (short names like "Nitus" are likely proper names)
