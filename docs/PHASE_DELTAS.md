@@ -1,5 +1,30 @@
 # Phase Deltas
 
+## 2026-01-15: Phase 2.7.9.3 Entity Cache Pagination Fix
+
+**Problem**: Entity cache in `organization-matcher.ts` was limited to 1000 entities due to Supabase's default row limit, causing entities beyond row 1000 (like "Teracom AB" at row 1224) to be invisible to the matcher.
+
+**Root Cause**: Supabase has a hard 1000-row default limit on queries. Neither `.limit(5000)` nor `.range(0, 4999)` bypasses this limit with a single query.
+
+**Fix Applied** (`organization-matcher.ts` lines 315-347):
+1. Implemented pagination loop with `PAGE_SIZE = 1000`
+2. Fetches entities page-by-page using `.range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)`
+3. Concatenates pages until `pageData.length < PAGE_SIZE`
+4. Logs page count for verification
+
+**Result**: 
+- Cache now loads all 1430 organization entities (2 pages)
+- "Teracom" and "Teracom AB" now both match with `high` confidence
+
+**Verified**:
+```sql
+SELECT id, responding_organization, match_confidence, entity_id 
+FROM remiss_responses WHERE responding_organization ILIKE '%teracom%'
+-- Both entries now linked to entity_id: db00b96d-... with match_confidence: high
+```
+
+---
+
 ## 2026-01-15: Phase 2.7.9.2 Hyphen-Space DB Lookup Fix
 
 **Problem**: Hyphen normalization in `calculateSimilarity` was working, but DB exact-match lookup still failed because `ILIKE` doesn't normalize "Dals Eds kommun" to match "Dals-Eds kommun".
