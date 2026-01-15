@@ -1,7 +1,18 @@
 # Product Roadmap — Legislative Intelligence Platform
 
-**Last Updated:** 2026-01-07  
-**Current Phase:** Phase 5.2 ✅ Complete | Phase 5.3 In Progress (Phase 2.5 executing)
+**Last Updated:** 2026-01-15  
+**Current Phase:** Phase 5.3 ✅ COMPLETE | Phase 5.4 Planned
+
+---
+
+## Recent Milestone: Phase 5.3 Complete 🎉
+
+**Remisser + Remissvar pipeline fully operational:**
+- 54 remisser matched to SOUs
+- 3,424 remissvar extracted
+- 4,321 invitees parsed and linked (100%)
+- 1,473 organization entities (cleaned, deduplicated)
+- 99.91% response linking rate
 
 ---
 
@@ -382,33 +393,34 @@ These were **NOT** implemented until MVP is validated:
 
 ---
 
-## Phase 5: Legislative Graph Expansion 🚀 IN PROGRESS
+## Phase 5: Legislative Graph Expansion ✅ PHASE 5.3 COMPLETE
 
 **Goal:** Expand beyond SOUs to build comprehensive legislative process graph.
 
-### Current Database Metrics (2026-01-07)
+### Current Database Metrics (2026-01-15)
 
 | Table | Count | Notes |
 |-------|-------|-------|
 | **Documents** | 127 total | 61 SOUs, 56 directives, 10 propositions |
 | **Processes** | 127 | All with linked documents |
-| **Entities** | 284 | Persons, committees, ministries |
+| **Entities** | 1,473 | Organizations (cleaned, deduplicated) |
 | **Timeline Events** | 723 | Extracted with citations |
 | **Document References** | 494 | Cross-document citations |
-| **Remiss Documents** | 54 | 54 scraped, all with remissinstanser PDFs |
-| **Remiss Responses** | 3,424 | Extracted from remiss pages |
+| **Remiss Documents** | 54 | All scraped with remissinstanser PDFs |
+| **Remiss Responses** | 3,424 | 99.91% linked to entities |
+| **Remiss Invitees** | 4,321 | 100% linked to entities |
 
 ### Core Strategy
 > One new document type at a time → fully end-to-end → tested → then move to the next.
 
 ### Implementation Order (following Swedish legislative lifecycle)
 1. **Propositions** — ✅ COMPLETE (Phase 5.2)
-2. **Remisser + Remissvar** — 🚀 IN PROGRESS (Phase 5.3)
-   - Phase 2: Remiss Index Scraping ✅ COMPLETE (54 matched)
-   - Phase 2.5: Process Remiss Pages ✅ COMPLETE (3,424 remissvar extracted)
-   - Phase 2.7: Remissinstanser & Remissvar Processing 🚧 NEXT
-3. **Committee Reports** — PLANNED (Phase 5.4)
-4. **Laws** — PLANNED (Phase 5.4)
+2. **Remisser + Remissvar** — ✅ COMPLETE (Phase 5.3)
+   - Phase 2: Remiss Index Scraping ✅ (54 matched)
+   - Phase 2.5: Process Remiss Pages ✅ (3,424 remissvar)
+   - Phase 2.7: Entity Pipeline ✅ (1,473 entities, 100% invitee linking)
+3. **Committee Reports** — 📋 PLANNED (Phase 5.4)
+4. **Laws** — 📋 PLANNED (Phase 5.4)
 
 ### Database Schema Changes
 - `lifecycle_stage` column on documents (directive, interim_analysis, remiss, proposition, parliament, law)

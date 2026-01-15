@@ -1,7 +1,7 @@
 # Context Priority
 
-**Last Updated:** 2026-01-07  
-**Current Phase:** 5.3 (Remisser + Remissvar) — Phase 2.7 executing
+**Last Updated:** 2026-01-15  
+**Current Phase:** 5.3 (Remisser + Remissvar) — ✅ COMPLETE
 
 ---
 
@@ -19,19 +19,43 @@ Maintained by: **Lovable (Architectural Authority)**
 |---|------|-------------------|
 | 1 | `docs/WORKFLOW.md` | Operating agreement: roles, phases, message discipline |
 | 2 | `docs/PHASE_DELTAS.md` | Most recent changes since last sync |
-| 3 | `docs/development/branches/phase-5.3-remisser-remissvar.md` | Active implementation phase |
-| 4 | `docs/CHECKLISTS.md` | Verification requirements before sign-off |
-| 5 | `docs/DECISION_LOG.md` | Approved decisions with triple sign-off |
-| 6 | `docs/development/PRODUCT_ROADMAP.md` | Overall progress and metrics |
-| 7 | `supabase/functions/_shared/README.md` | Shared edge function utilities (incl. new `pdf-extractor.ts`) |
+| 3 | `docs/development/ENTITY_DEDUPLICATION_PLAN.md` | Just completed - entity quality improvements |
+| 4 | `docs/development/branches/phase-5.3-remisser-remissvar.md` | Phase 5.3 summary (complete) |
+| 5 | `docs/CHECKLISTS.md` | Verification requirements before sign-off |
+| 6 | `docs/DECISION_LOG.md` | Approved decisions with triple sign-off |
+| 7 | `docs/development/PRODUCT_ROADMAP.md` | Overall progress and metrics |
 
 ---
 
-## Recent Changes (2026-01-07)
+## Recent Changes (2026-01-15)
 
-- **NEW:** `_shared/pdf-extractor.ts` — Shared PDF extraction client, prevents endpoint/auth drift
-- **REFACTORED:** `process-sou-pdf` and `process-remissinstanser` now use shared utility
-- **FIXED:** Phase 2.7 PDF extraction 404 errors resolved
+- **COMPLETE:** Entity deduplication plan executed
+- **COMPLETE:** Possessive 's' stripping fix deployed (40+ exceptions)
+- **COMPLETE:** 17 truncated entities repaired
+- **COMPLETE:** 4,321 invitees linked to entities (100%)
+- **COMPLETE:** Phase 5.3 Remisser + Remissvar fully operational
+
+---
+
+## Phase 5.3 Final Status
+
+| Component | Status |
+|-----------|--------|
+| Remiss index scraping | ✅ 54 matched |
+| Process remiss pages | ✅ 3,424 remissvar |
+| Parse remissinstanser PDFs | ✅ 4,321 invitees |
+| Bootstrap org entities | ✅ 1,473 entities |
+| Link remissvar to entities | ✅ 99.91% |
+| Link invitees to entities | ✅ 100% |
+| Entity quality fixes | ✅ 0 duplicates, 0 truncated |
+
+---
+
+## Next Steps
+
+1. **Phase 5.4:** Committee Reports + Laws ingestion
+2. **Phase 6:** Relationship Inference & Case Reconstruction
+3. **Optional:** Add unique constraint on entities.name_lower
 
 ---
 
