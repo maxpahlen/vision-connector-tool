@@ -232,6 +232,42 @@ export type Database = {
           },
         ]
       }
+      entities_duplicates_backup_20260115: {
+        Row: {
+          created_at: string | null
+          entity_type: string | null
+          id: string | null
+          metadata: Json | null
+          name: string | null
+          role: string | null
+          source_document_id: string | null
+          source_excerpt: string | null
+          source_page: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          entity_type?: string | null
+          id?: string | null
+          metadata?: Json | null
+          name?: string | null
+          role?: string | null
+          source_document_id?: string | null
+          source_excerpt?: string | null
+          source_page?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          entity_type?: string | null
+          id?: string | null
+          metadata?: Json | null
+          name?: string | null
+          role?: string | null
+          source_document_id?: string | null
+          source_excerpt?: string | null
+          source_page?: number | null
+        }
+        Relationships: []
+      }
       entity_name_rules: {
         Row: {
           created_at: string | null
