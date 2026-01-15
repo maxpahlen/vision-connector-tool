@@ -24,7 +24,7 @@ import {
   matchOrganization,
   clearEntityCache,
   type MatchConfidence 
-} from '../_shared/organization-matcher.ts?v=2.7.9.5';
+} from '../_shared/organization-matcher.ts?v=2.7.9.6';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
