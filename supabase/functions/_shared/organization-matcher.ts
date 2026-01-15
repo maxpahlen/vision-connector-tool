@@ -3,6 +3,8 @@
  * Phase 2.7: Remissinstanser & Remissvar Processing
  * 
  * Applies to both remiss_invitees and remiss_responses for consistent matching.
+ * 
+ * v2.7.9.3 - Fixed entity cache limit (5000 vs default 1000)
  */
 
 /**
@@ -38,6 +40,13 @@ export function clearEntityCache(): void {
   cachedEntities = null;
   cacheEntityType = null;
   console.log('[org-matcher] Entity cache cleared');
+}
+
+/**
+ * Get current entity cache size (for diagnostics)
+ */
+export function getEntityCacheSize(): number {
+  return cachedEntities?.length ?? 0;
 }
 
 /**
