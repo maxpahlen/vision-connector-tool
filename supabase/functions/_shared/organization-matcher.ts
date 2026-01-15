@@ -438,6 +438,39 @@ export async function matchOrganization(
   // Apply stad/kommun normalization for municipal matching
   const normalizedMunicipal = normalizeMunicipalName(normalizedLower);
 
+  // STEM MATCHING: Check if normalized name is contained in entity name (minus common suffixes)
+  // Handles "Svensk Bioenergi" matching "Svenska Bioenergiföreningen"
+  const ENTITY_SUFFIXES_TO_STRIP = [
+    'föreningen', 'förbundet', 'organisationen', 'myndigheten', 
+    'verket', 'styrelsen', 'institutet', 'rådet', 'nämnden'
+  ];
+  
+  for (const org of cachedEntities) {
+    const orgLower = org.name.toLowerCase();
+    // Strip common suffixes from entity for stem comparison
+    let orgStem = orgLower;
+    for (const suffix of ENTITY_SUFFIXES_TO_STRIP) {
+      if (orgStem.endsWith(suffix)) {
+        orgStem = orgStem.slice(0, -suffix.length).trim();
+      }
+    }
+    
+    // Check if input name (minus "Svensk/Svenska") matches stem
+    const inputStem = normalizedLower
+      .replace(/^svenska?\s+/i, '')  // Strip "Svensk" or "Svenska" prefix
+      .replace(/^sveriges\s+/i, '');  // Strip "Sveriges" prefix
+    
+    if (orgStem.includes(inputStem) && inputStem.length >= 6) {
+      console.log(`[org-matcher] Stem match: "${normalizedName}" -> "${org.name}" (stem: ${inputStem} in ${orgStem})`);
+      return {
+        entity_id: org.id,
+        confidence: 'high',
+        matched_name: org.name,
+        similarity_score: 0.95
+      };
+    }
+  }
+
   // Standard fuzzy matching for longer names
   let bestMatch: { id: string; name: string; score: number } | null = null;
 
