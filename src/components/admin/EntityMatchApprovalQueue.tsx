@@ -695,7 +695,7 @@ export function EntityMatchApprovalQueue() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {match.suggested_entity_id ? (
+                        {match.suggested_entity_id && (
                           <Button 
                             size="icon" 
                             variant="ghost" 
@@ -705,17 +705,16 @@ export function EntityMatchApprovalQueue() {
                           >
                             <CheckCircle className="h-4 w-4" />
                           </Button>
-                        ) : (
-                          <Button 
-                            size="icon" 
-                            variant="ghost" 
-                            className="h-8 w-8 text-blue-400 hover:text-blue-300 hover:bg-blue-400/10"
-                            onClick={() => openCreateDialog(match)}
-                            title="Create new entity"
-                          >
-                            <PlusCircle className="h-4 w-4" />
-                          </Button>
                         )}
+                        <Button 
+                          size="icon" 
+                          variant="ghost" 
+                          className="h-8 w-8 text-blue-400 hover:text-blue-300 hover:bg-blue-400/10"
+                          onClick={() => openCreateDialog(match)}
+                          title="Create new entity instead"
+                        >
+                          <PlusCircle className="h-4 w-4" />
+                        </Button>
                         <Button 
                           size="icon" 
                           variant="ghost" 
