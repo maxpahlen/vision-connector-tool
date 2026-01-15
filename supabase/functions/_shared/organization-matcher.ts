@@ -275,6 +275,34 @@ export async function matchOrganization(
     };
   }
 
+  // Second: Try hyphen/space-normalized exact match
+  // "Dals Eds kommun" should match "Dals-Eds kommun" in DB
+  // Create a pattern that treats spaces/hyphens as interchangeable
+  const hyphenSpacePattern = normalizedName.replace(/[\s-]+/g, '%');
+  
+  const { data: hyphenMatch } = await supabase
+    .from('entities')
+    .select('id, name')
+    .ilike('name', hyphenSpacePattern)
+    .limit(1)
+    .single();
+
+  if (hyphenMatch) {
+    // Verify it's actually a hyphen/space variation, not a different name entirely
+    const inputNormalized = normalizedName.toLowerCase().replace(/[\s-]+/g, '');
+    const matchNormalized = hyphenMatch.name.toLowerCase().replace(/[\s-]+/g, '');
+    
+    if (inputNormalized === matchNormalized) {
+      console.log(`[org-matcher] Hyphen-normalized exact match: "${normalizedName}" -> "${hyphenMatch.name}"`);
+      return {
+        entity_id: hyphenMatch.id,
+        confidence: 'high',
+        matched_name: hyphenMatch.name,
+        similarity_score: 1.0
+      };
+    }
+  }
+
   // Use cached entities for fuzzy matching (cache once per run)
   if (!cachedEntities || cacheEntityType !== entityType) {
     const { data: allOrgs } = await supabase

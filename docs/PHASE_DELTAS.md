@@ -1,5 +1,27 @@
 # Phase Deltas
 
+## 2026-01-15: Phase 2.7.9.2 Hyphen-Space DB Lookup Fix
+
+**Problem**: Hyphen normalization in `calculateSimilarity` was working, but DB exact-match lookup still failed because `ILIKE` doesn't normalize "Dals Eds kommun" to match "Dals-Eds kommun".
+
+**Root Cause**: The exact match query at line 262-267 used `.ilike('name', normalizedName)` which does a literal case-insensitive match but doesn't treat space/hyphen as equivalent.
+
+**Fix Applied** (`organization-matcher.ts` lines 278-302):
+1. Added second lookup stage using wildcard pattern: `normalizedName.replace(/[\s-]+/g, '%')`
+2. Pattern converts "Dals Eds kommun" → "Dals%Eds%kommun" which matches "Dals-Eds kommun"
+3. Added verification check to ensure pattern match is truly equivalent (strips both space/hyphen and compares)
+
+**Result**: "Dals Eds kommun" now correctly matches "Dals-Eds kommun" with `confidence: high`.
+
+**Verified**:
+```sql
+SELECT entity_id, entity_name, match_confidence FROM remiss_responses 
+WHERE normalized_org_name = 'Dals Eds kommun'
+-- entity_id: 30e2ba87-..., entity_name: Dals-Eds kommun, match_confidence: high
+```
+
+---
+
 ## 2026-01-15: Phase 2.7.9.1 Hyphen Normalization Fix + Unit Tests
 
 **Problem**: "Dals Eds kommun" still matching "Munkedals kommun" instead of "Dals-Eds kommun" due to missing `.toLowerCase()` in similarity comparison.
