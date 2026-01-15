@@ -313,16 +313,38 @@ export async function matchOrganization(
   }
 
   // Use cached entities for fuzzy matching (cache once per run)
-  // IMPORTANT: Supabase default limit is 1000, must specify higher for full entity list
+  // IMPORTANT: Supabase default limit is 1000, need to paginate to get all
   if (!cachedEntities || cacheEntityType !== entityType) {
-    const { data: allOrgs } = await supabase
-      .from('entities')
-      .select('id, name')
-      .eq('entity_type', entityType)
-      .limit(5000);
-    cachedEntities = allOrgs || [];
+    // Fetch entities in pages to bypass 1000 row limit
+    const PAGE_SIZE = 1000;
+    let allEntities: Array<{id: string, name: string}> = [];
+    let page = 0;
+    let hasMore = true;
+    
+    while (hasMore) {
+      const { data: pageData, error } = await supabase
+        .from('entities')
+        .select('id, name')
+        .eq('entity_type', entityType)
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+      
+      if (error) {
+        console.error(`[org-matcher] Error fetching entities page ${page}: ${error.message}`);
+        break;
+      }
+      
+      if (pageData && pageData.length > 0) {
+        allEntities = allEntities.concat(pageData);
+        page++;
+        hasMore = pageData.length === PAGE_SIZE;  // If we got a full page, there might be more
+      } else {
+        hasMore = false;
+      }
+    }
+    
+    cachedEntities = allEntities;
     cacheEntityType = entityType;
-    console.log(`[org-matcher] Cached ${cachedEntities?.length ?? 0} entities for type '${entityType}'`);
+    console.log(`[org-matcher] Cached ${cachedEntities.length} entities for type '${entityType}' (${page} pages)`);
   }
 
   if (!cachedEntities || cachedEntities.length === 0) {

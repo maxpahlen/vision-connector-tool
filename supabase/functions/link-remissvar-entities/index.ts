@@ -1,6 +1,7 @@
 /**
  * Edge Function: link-remissvar-entities
- * Phase 2.7: Links remissvar to entities with confidence scoring
+ * Phase 2.7.9.3: Links remissvar to entities with confidence scoring
+ * Fixed: Entity cache limit increased to 5000 (was defaulting to 1000)
  * 
  * Gate 5: Linking Correctness
  * - Clear "linked" vs "not linked" semantics
@@ -23,7 +24,7 @@ import {
   matchOrganization,
   clearEntityCache,
   type MatchConfidence 
-} from '../_shared/organization-matcher.ts';
+} from '../_shared/organization-matcher.ts?v=2.7.9.5';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
