@@ -1,5 +1,33 @@
 # Phase Deltas
 
+## 2026-01-15: Phase 2.7.9.4 Abbreviation & Stem Matching
+
+**Problem**: Backend matcher was producing wrong suggestions for organizations with abbreviations or suffix variations:
+- "WWF Sverige" → "UNICEF Sverige" (wrong - should match "Världsnaturfonden WWF")
+- "Svensk Bioenergi" → "Svensk Solenergi" (wrong - should match "Svenska Bioenergiföreningen")
+
+**Root Cause**: 
+1. Abbreviation handling only triggered for short names (≤5 chars), missing "WWF Sverige" (10 chars)
+2. No stem matching for "-föreningen" suffix variations
+
+**Fixes Applied** (`organization-matcher.ts`):
+
+1. **Embedded abbreviation matching** (lines 396-436):
+   - Checks if first word of name is a known abbreviation
+   - Matches against entities containing the expanded form or the abbreviation in parentheses
+   - Example: "WWF Sverige" → first word "WWF" → matches "Världsnaturfonden WWF"
+
+2. **Stem matching** (lines 441-467):
+   - Strips common Swedish suffixes from entity names: `-föreningen`, `-förbundet`, `-myndigheten`, etc.
+   - Also strips "Svensk/Svenska/Sveriges" prefixes from input
+   - Example: "Svensk Bioenergi" → stem "bioenergi" → matches "Svenska bioenergiföreningen"
+
+**Result**: 
+- "WWF Sverige" → "Världsnaturfonden WWF" (high) ✅
+- "Svensk Bioenergi" → "Svenska bioenergiföreningen (Svebio)" (high) ✅
+
+---
+
 ## 2026-01-15: Phase 2.7.9.3 Entity Cache Pagination Fix
 
 **Problem**: Entity cache in `organization-matcher.ts` was limited to 1000 entities due to Supabase's default row limit, causing entities beyond row 1000 (like "Teracom AB" at row 1224) to be invisible to the matcher.
