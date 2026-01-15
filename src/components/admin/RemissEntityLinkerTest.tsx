@@ -11,7 +11,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Users, Link2, AlertCircle, Database, ChevronDown, FileWarning, ShieldAlert, CheckCircle, XCircle } from 'lucide-react';
+import { Loader2, Users, Link2, AlertCircle, Database, ChevronDown, FileWarning, ShieldAlert, CheckCircle, XCircle, UserCheck } from 'lucide-react';
 
 interface ProcessRemissinstansersResult {
   processed: number;
@@ -88,6 +88,25 @@ interface BootstrapResult {
   message?: string;
 }
 
+interface LinkInviteesResult {
+  processed: number;
+  linked: { high: number; total: number };
+  not_linked: { medium: number; low: number; unmatched: number; total: number };
+  entities_created: number;
+  errors: Array<{ invitee_id: string; error: string }>;
+  review_needed: Array<{
+    invitee_id: string;
+    original_name: string;
+    normalized_name: string;
+    matched_name: string | null;
+    similarity_score: number | null;
+    confidence: string;
+  }>;
+  unmatched_orgs: string[];
+  dry_run: boolean;
+  message?: string;
+}
+
 export function RemissEntityLinkerTest() {
   const [activeTab, setActiveTab] = useState('invitees');
   
@@ -111,6 +130,13 @@ export function RemissEntityLinkerTest() {
   const [bootstrapDryRun, setBootstrapDryRun] = useState(true);
   const [bootstrapLimit, setBootstrapLimit] = useState(2000);
   const [minOccurrences, setMinOccurrences] = useState(1);
+  
+  // Link invitees state
+  const [linkInviteesLoading, setLinkInviteesLoading] = useState(false);
+  const [linkInviteesResult, setLinkInviteesResult] = useState<LinkInviteesResult | null>(null);
+  const [linkInviteesDryRun, setLinkInviteesDryRun] = useState(true);
+  const [linkInviteesLimit, setLinkInviteesLimit] = useState(500);
+  const [linkInviteesCreateEntities, setLinkInviteesCreateEntities] = useState(false);
   
   // Rule management state
   const [ruleLoading, setRuleLoading] = useState<string | null>(null);
@@ -252,6 +278,38 @@ export function RemissEntityLinkerTest() {
     }
   };
 
+  const handleLinkInvitees = async () => {
+    setLinkInviteesLoading(true);
+    setLinkInviteesResult(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('link-invitee-entities', {
+        body: { 
+          limit: linkInviteesLimit, 
+          create_entities: linkInviteesCreateEntities, 
+          dry_run: linkInviteesDryRun
+        }
+      });
+
+      if (error) throw error;
+      setLinkInviteesResult(data);
+    } catch (err) {
+      console.error('Error linking invitees:', err);
+      setLinkInviteesResult({
+        processed: 0, 
+        linked: { high: 0, total: 0 }, 
+        not_linked: { medium: 0, low: 0, unmatched: 0, total: 0 },
+        entities_created: 0,
+        errors: [{ invitee_id: 'N/A', error: err instanceof Error ? err.message : String(err) }],
+        review_needed: [], 
+        unmatched_orgs: [],
+        dry_run: linkInviteesDryRun
+      });
+    } finally {
+      setLinkInviteesLoading(false);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -265,10 +323,11 @@ export function RemissEntityLinkerTest() {
       </CardHeader>
       <CardContent>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="invitees">1. Parse</TabsTrigger>
             <TabsTrigger value="bootstrap">2. Bootstrap</TabsTrigger>
-            <TabsTrigger value="linking">3. Link</TabsTrigger>
+            <TabsTrigger value="linking">3. Link Remissvar</TabsTrigger>
+            <TabsTrigger value="link-invitees">4. Link Invitees</TabsTrigger>
           </TabsList>
 
           {/* Parse Tab */}
@@ -653,6 +712,133 @@ export function RemissEntityLinkerTest() {
                       ))}
                     </div>
                   </div>
+                )}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Link Invitees Tab */}
+          <TabsContent value="link-invitees" className="space-y-4 mt-4">
+            <div className="p-3 bg-muted/50 rounded-lg mb-4">
+              <p className="text-sm text-muted-foreground">
+                <UserCheck className="h-4 w-4 inline mr-1" />
+                Links remiss_invitees records to entities for analytics (who was invited to which remiss).
+              </p>
+            </div>
+            
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="link-invitees-dry-run">Dry Run</Label>
+                  <Switch id="link-invitees-dry-run" checked={linkInviteesDryRun} onCheckedChange={setLinkInviteesDryRun} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="link-invitees-create-entities">Create New Entities</Label>
+                  <Switch id="link-invitees-create-entities" checked={linkInviteesCreateEntities} onCheckedChange={setLinkInviteesCreateEntities} disabled={linkInviteesDryRun} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Limit: {linkInviteesLimit} invitees</Label>
+                  <Slider value={[linkInviteesLimit]} onValueChange={(v) => setLinkInviteesLimit(v[0])} min={10} max={2000} step={10} />
+                </div>
+              </div>
+              <div className="flex items-end">
+                <Button onClick={handleLinkInvitees} disabled={linkInviteesLoading} className="w-full">
+                  {linkInviteesLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <UserCheck className="mr-2 h-4 w-4" />
+                  {linkInviteesDryRun ? 'Preview Matching' : 'Link Invitees'}
+                </Button>
+              </div>
+            </div>
+
+            {linkInviteesResult && (
+              <div className="space-y-4 mt-4">
+                <div className="grid gap-2 md:grid-cols-5">
+                  <div className="text-center p-3 bg-muted rounded-lg">
+                    <div className="text-xl font-bold">{linkInviteesResult.processed}</div>
+                    <div className="text-xs text-muted-foreground">Processed</div>
+                  </div>
+                  <div className="text-center p-3 bg-green-500/10 rounded-lg">
+                    <div className="text-xl font-bold text-green-400">{linkInviteesResult.linked?.total || 0}</div>
+                    <div className="text-xs text-muted-foreground">Linked (High)</div>
+                  </div>
+                  <div className="text-center p-3 bg-yellow-500/10 rounded-lg">
+                    <div className="text-xl font-bold text-yellow-400">{linkInviteesResult.not_linked?.medium || 0}</div>
+                    <div className="text-xs text-muted-foreground">Review (Medium)</div>
+                  </div>
+                  <div className="text-center p-3 bg-orange-500/10 rounded-lg">
+                    <div className="text-xl font-bold text-orange-400">{linkInviteesResult.not_linked?.low || 0}</div>
+                    <div className="text-xs text-muted-foreground">Review (Low)</div>
+                  </div>
+                  <div className="text-center p-3 bg-muted rounded-lg">
+                    <div className="text-xl font-bold">{linkInviteesResult.not_linked?.unmatched || 0}</div>
+                    <div className="text-xs text-muted-foreground">Unmatched</div>
+                  </div>
+                </div>
+
+                {linkInviteesResult.entities_created > 0 && (
+                  <div className="text-center p-2 bg-blue-500/10 rounded">
+                    <span className="text-blue-400 font-medium">{linkInviteesResult.entities_created}</span>
+                    <span className="text-sm text-muted-foreground ml-2">entities {linkInviteesResult.dry_run ? 'would be' : ''} created</span>
+                  </div>
+                )}
+
+                {linkInviteesResult.review_needed && linkInviteesResult.review_needed.length > 0 && (
+                  <Collapsible>
+                    <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium text-yellow-400">
+                      Review Needed ({linkInviteesResult.review_needed.length})
+                      <ChevronDown className="h-4 w-4" />
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <ScrollArea className="h-48 border rounded-md mt-2">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Original</TableHead>
+                              <TableHead>Matched To</TableHead>
+                              <TableHead>Score</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {linkInviteesResult.review_needed.slice(0, 20).map((m) => (
+                              <TableRow key={m.invitee_id}>
+                                <TableCell className="text-sm">{m.normalized_name}</TableCell>
+                                <TableCell className="text-sm text-muted-foreground">{m.matched_name || '-'}</TableCell>
+                                <TableCell><Badge variant="outline">{m.similarity_score?.toFixed(2)}</Badge></TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </ScrollArea>
+                    </CollapsibleContent>
+                  </Collapsible>
+                )}
+
+                {linkInviteesResult.unmatched_orgs && linkInviteesResult.unmatched_orgs.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">Top Unmatched Organizations</div>
+                    <div className="flex flex-wrap gap-1">
+                      {linkInviteesResult.unmatched_orgs.slice(0, 15).map((org, i) => (
+                        <Badge key={i} variant="outline" className="text-xs">{org}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {linkInviteesResult.errors && linkInviteesResult.errors.length > 0 && linkInviteesResult.errors[0].invitee_id !== 'N/A' && (
+                  <div className="p-3 bg-destructive/10 rounded-lg">
+                    <div className="flex items-center gap-2 text-destructive mb-2">
+                      <AlertCircle className="h-4 w-4" /><span className="font-medium">Errors</span>
+                    </div>
+                    <ul className="text-sm space-y-1">
+                      {linkInviteesResult.errors.slice(0, 5).map((err, i) => (
+                        <li key={i} className="text-muted-foreground">{err.invitee_id}: {err.error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {linkInviteesResult.message && (
+                  <div className="text-sm text-muted-foreground italic">{linkInviteesResult.message}</div>
                 )}
               </div>
             )}
