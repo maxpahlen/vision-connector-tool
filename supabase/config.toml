@@ -62,3 +62,6 @@ verify_jwt = false
 
 [functions.bootstrap-org-entities]
 verify_jwt = false
+
+[functions.link-invitee-entities]
+verify_jwt = false
