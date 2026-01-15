@@ -65,7 +65,7 @@ export function EntityMatchApprovalQueue() {
         .select('id, responding_organization, normalized_org_name, file_url, remiss_id, match_confidence, metadata')
         .is('entity_id', null)
         .not('normalized_org_name', 'is', null)
-        .or('match_confidence.is.null,match_confidence.in.(low,medium)')
+        .or('match_confidence.is.null,match_confidence.in.(low,medium,unmatched)')
         .order('match_confidence', { ascending: true, nullsFirst: true })
         .limit(100);
 
