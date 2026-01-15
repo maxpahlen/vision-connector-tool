@@ -195,6 +195,7 @@ export type Database = {
           id: string
           metadata: Json | null
           name: string
+          name_lower: string | null
           role: string | null
           source_document_id: string | null
           source_excerpt: string | null
@@ -206,6 +207,7 @@ export type Database = {
           id?: string
           metadata?: Json | null
           name: string
+          name_lower?: string | null
           role?: string | null
           source_document_id?: string | null
           source_excerpt?: string | null
@@ -217,6 +219,7 @@ export type Database = {
           id?: string
           metadata?: Json | null
           name?: string
+          name_lower?: string | null
           role?: string | null
           source_document_id?: string | null
           source_excerpt?: string | null
