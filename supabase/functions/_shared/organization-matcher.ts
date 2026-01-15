@@ -304,11 +304,13 @@ export async function matchOrganization(
   }
 
   // Use cached entities for fuzzy matching (cache once per run)
+  // IMPORTANT: Supabase default limit is 1000, must specify higher for full entity list
   if (!cachedEntities || cacheEntityType !== entityType) {
     const { data: allOrgs } = await supabase
       .from('entities')
       .select('id, name')
-      .eq('entity_type', entityType);
+      .eq('entity_type', entityType)
+      .limit(5000);
     cachedEntities = allOrgs || [];
     cacheEntityType = entityType;
     console.log(`[org-matcher] Cached ${cachedEntities?.length ?? 0} entities for type '${entityType}'`);
