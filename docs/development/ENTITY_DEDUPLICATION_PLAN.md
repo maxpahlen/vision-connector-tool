@@ -101,7 +101,7 @@ HAVING COUNT(DISTINCT entity_id) > 1;
 
 ---
 
-## Step 2: Fix Possessive 's' Stripping (MEDIUM PRIORITY)
+## Step 2: Fix Possessive 's' Stripping (MEDIUM PRIORITY) ✅ COMPLETED
 
 ### 2.1 Root Cause
 
@@ -110,29 +110,37 @@ In `organization-matcher.ts`, the `normalizeOrganizationName()` function strips 
 - "Hi3G Access AB" → "Hi3G Acces"
 - "Friends" → "Friend"
 
-### 2.2 Fix Strategy
+### 2.2 Fix Applied (2026-01-15)
 
-**Option A: Expand exception list** (simpler, less robust)
+Expanded the `KEEP_TRAILING_S` exception list in `organization-matcher.ts` to include:
+
 ```typescript
 const KEEP_TRAILING_S = [
-  // Existing entries...
-  // Add common English patterns:
-  'access', 'news', 'defenders', 'friends', 'partners', 
-  'systems', 'solutions', 'services', 'industries',
-  'bofors', 'analysis', 'congress', 'press', 'express',
-  // Swedish agency endings
-  'trafikanalys', 'biståndsanalys',
+  // Swedish cities/places
+  'borås', 
+  // Swedish genitive forms that are part of proper names
+  'vitrysslands', 'ledarnas', 'tidningarnas', 'ukrainas', 'försvarsmaktens',
+  // Latin words (common in proper names)
+  'nitus', 'corpus', 'campus', 'virus', 'status', 'fokus', 'plus',
+  'mars', 'bonus', 'minus', 'versus', 'zeus', 'nexus', 'consensus',
+  // English words ending in 's' (not possessive)
+  'access', 'news', 'defenders', 'friends', 'partners', 'systems',
+  'solutions', 'services', 'industries', 'redhawks', 'hawks', 'press',
+  'express', 'congress', 'holdings', 'studios', 'games', 'dynamics',
+  'robotics', 'electronics', 'genetics', 'analytics', 'logistics',
+  // Swedish agency/org endings with 'analys' (analysis words)
+  'trafikanalys', 'biståndsanalys', 'omsorgsanalys', 'konjunkturanalys',
+  'energianalys', 'miljöanalys', 'livsmedelsanalys', 'arbetsanalys',
+  // Swedish compound words ending in legitimately 's'
+  'fastighets', 'energis', 'finans', 'allmännas',
+  // Company name patterns
+  'bofors', 'affairs', 'atlas', 'siemens', 'philips', 'mercedes'
 ];
 ```
 
-**Option B: Smarter stripping logic** (more robust)
-Only strip 's' when it appears to be Swedish genitive context:
-- Word ends in 's' AND preceded by a proper noun pattern
-- OR word is in a known genitive phrase list
-
 ### 2.3 Repair Affected Entities
 
-After fixing the normalizer, repair entity names:
+After fixing the normalizer, existing entity names with truncated 's' should be reviewed:
 
 ```sql
 -- Identify entities that may have been truncated
