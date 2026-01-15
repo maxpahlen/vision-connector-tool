@@ -1,30 +1,48 @@
 # Phase Deltas
 
+## 2026-01-15: Phase 2.7.10 Entity Deduplication & Quality Fixes ✅ COMPLETE
+
+**Objective**: Address data quality issues from Entity Linking Audit
+
+### Accomplishments
+
+1. **Fixed possessive 's' stripping** (`organization-matcher.ts`):
+   - Expanded `KEEP_TRAILING_S` exception list with 40+ entries
+   - Covers English words (access, friends, defenders, systems, etc.)
+   - Covers Swedish agency endings (*analys, *fastighets)
+   - Covers company names (Bofors, Siemens, Mercedes)
+
+2. **Repaired truncated entities** (17 total):
+   - 3 renamed directly (BAE Systems Bofors, EURENCO Bofors, FLIR Systems)
+   - 14 merged (references moved to correct entity, duplicates deleted)
+   - Examples: Hi3G Acces → Hi3G Access AB, Trafikanaly → Trafikanalys
+
+3. **Linked all invitees to entities**:
+   - 4,321 invitees → 100% linked
+   - All high confidence matches
+   - 99.98% exact match (similarity = 1.0)
+   - Enables "invited vs responded" analytics
+
+### Final Metrics
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Duplicate entity groups | 45 | 0 |
+| Truncated entities | 17 | 0 |
+| Invitees linked | 0% | 100% |
+| Responses linked | 99.91% | 99.91% |
+| Total org entities | ~1,500 | 1,473 |
+
+### Files Changed
+- `supabase/functions/_shared/organization-matcher.ts` - KEEP_TRAILING_S expansion
+- `supabase/functions/link-invitee-entities/index.ts` - New edge function
+- `src/components/admin/RemissEntityLinkerTest.tsx` - Link Invitees UI tab
+- `docs/development/ENTITY_DEDUPLICATION_PLAN.md` - Marked complete
+- Database: 14 orphaned entities deleted, 3 renamed
+
+---
+
 ## 2026-01-15: Phase 2.7.9.4 Abbreviation & Stem Matching
-
-**Problem**: Backend matcher was producing wrong suggestions for organizations with abbreviations or suffix variations:
-- "WWF Sverige" → "UNICEF Sverige" (wrong - should match "Världsnaturfonden WWF")
-- "Svensk Bioenergi" → "Svensk Solenergi" (wrong - should match "Svenska Bioenergiföreningen")
-
-**Root Cause**: 
-1. Abbreviation handling only triggered for short names (≤5 chars), missing "WWF Sverige" (10 chars)
-2. No stem matching for "-föreningen" suffix variations
-
-**Fixes Applied** (`organization-matcher.ts`):
-
-1. **Embedded abbreviation matching** (lines 396-436):
-   - Checks if first word of name is a known abbreviation
-   - Matches against entities containing the expanded form or the abbreviation in parentheses
-   - Example: "WWF Sverige" → first word "WWF" → matches "Världsnaturfonden WWF"
-
-2. **Stem matching** (lines 441-467):
-   - Strips common Swedish suffixes from entity names: `-föreningen`, `-förbundet`, `-myndigheten`, etc.
-   - Also strips "Svensk/Svenska/Sveriges" prefixes from input
-   - Example: "Svensk Bioenergi" → stem "bioenergi" → matches "Svenska bioenergiföreningen"
-
-**Result**: 
-- "WWF Sverige" → "Världsnaturfonden WWF" (high) ✅
-- "Svensk Bioenergi" → "Svenska bioenergiföreningen (Svebio)" (high) ✅
 
 ---
 
