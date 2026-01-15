@@ -1,5 +1,35 @@
 # Phase Deltas
 
+## 2026-01-15: Phase 2.7.9.1 Hyphen Normalization Fix + Unit Tests
+
+**Problem**: "Dals Eds kommun" still matching "Munkedals kommun" instead of "Dals-Eds kommun" due to missing `.toLowerCase()` in similarity comparison.
+
+**Fixes Applied**:
+
+1. **Case-insensitive normalization** (`organization-matcher.ts`):
+   - Added `.toLowerCase()` to `normalizeForComparison()` in `calculateSimilarity`
+   - Now applies BEFORE all comparisons (exact match, substring, bigram)
+
+2. **Debug logging** for normalized strings:
+   - Logs both normalized inputs to verify correct comparison
+
+3. **Unit tests** (`organization-matcher.test.ts` - NEW):
+   - Hyphen vs space normalization (Dals-Eds regression test)
+   - Case insensitivity
+   - Substring ratio gating (Teracom vs false positives)
+   - Possessive 's' exceptions (Nitus)
+
+4. **Exported `calculateSimilarity`** for testability
+
+**Files Changed**:
+- `supabase/functions/_shared/organization-matcher.ts`
+- `supabase/functions/_shared/organization-matcher.test.ts` (new)
+- `docs/PHASE_DELTAS.md`
+
+**Safety Guard**: Defense-in-depth guard at line 201-206 in `link-remissvar-entities/index.ts` already prevents overwriting linked rows.
+
+---
+
 ## 2026-01-14: Phase 2.7.9 Matcher Refinements + Pending Review Mode (EXECUTION)
 
 **Problem**: After Phase 2.7.7 deployment, verification revealed:

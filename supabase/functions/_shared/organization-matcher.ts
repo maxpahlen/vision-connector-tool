@@ -408,20 +408,29 @@ function escapeRegex(str: string): string {
  * Phase 2.7.7 fixes:
  * - Prevents false positives like "kommunal" matching "nätverket för kommunala lärcentra"
  * - Allows valid matches like "Teracom" vs "Teracom AB"
+ * 
+ * Phase 2.7.9.1 fixes:
+ * - Case-insensitive + hyphen normalization applied BEFORE all comparisons
  */
-function calculateSimilarity(a: string, b: string): number {
+export function calculateSimilarity(a: string, b: string): number {
   if (a === b) return 1.0;
   if (!a || !b) return 0.0;
 
-  // Normalize hyphen/space variants before comparison
+  // Normalize FIRST: hyphen/space + lowercase before ANY comparison
   // "Dals-Eds kommun" and "Dals Eds kommun" should be equivalent
   const normalizeForComparison = (s: string) => 
-    s.replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
+    s.replace(/-/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
   
   const aNorm = normalizeForComparison(a);
   const bNorm = normalizeForComparison(b);
   
-  if (aNorm === bNorm) return 1.0;
+  // Debug log for normalized comparison (temporary - remove after verification)
+  console.log(`[org-matcher] calculateSimilarity: "${aNorm}" vs "${bNorm}"`);
+  
+  if (aNorm === bNorm) {
+    console.log(`[org-matcher] Exact match after normalization: score=1.0`);
+    return 1.0;
+  }
 
   // Guarded substring match with length ratio + token boundary checks
   if (aNorm.includes(bNorm) || bNorm.includes(aNorm)) {
