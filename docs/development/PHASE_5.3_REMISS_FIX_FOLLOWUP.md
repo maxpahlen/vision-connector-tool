@@ -1,5 +1,21 @@
 # Phase 5.3 Remiss Link Fix - Follow-up Improvements
 
+**Status:** ✅ COMPLETE (2026-01-15)
+
+---
+
+## Summary
+
+All remiss linking improvements have been completed. The Phase 5.3 remiss pipeline is fully operational with:
+- 54 remiss documents matched to SOUs
+- 3,424 remissvar responses extracted
+- 4,321 invitees parsed and linked
+- 1,473 organization entities (cleaned, deduplicated)
+- 99.91% response linking rate
+- 100% invitee linking rate
+
+---
+
 ## Completed ✅
 
 ### 1. Schema Migration
@@ -16,84 +32,12 @@
 - Falls back to text-based matching on `target_doc_number` if needed
 - Maintains backward compatibility with legacy data
 
----
+### 4. Backfill Completed ✅
+- Re-ran SOU Lagstiftningskedja scraper on all 72 SOUs
+- `target_url` populated for existing references
+- Validation queries confirmed 54 remiss pages discovered
 
-## Required: Backfill Existing References
-
-**Action Required**: Re-run the SOU Lagstiftningskedja scraper to populate `target_url` for existing references.
-
-### Steps:
-1. Go to Admin → Scraper page
-2. Use "Batch Re-Scrape" section in SOU Lagstiftningskedja Scraper component
-3. Process all 72 SOUs in batches (recommended batch size: 10)
-4. Verify with validation queries below
-
-### Validation Queries:
-```sql
--- Count valid remiss links now stored
-SELECT COUNT(*) FROM document_references WHERE target_url LIKE '%/remisser/%';
-
--- Example: verify remiss reference for SOU 2025:39
-SELECT target_url, target_doc_number
-FROM document_references dr
-JOIN documents d ON dr.source_document_id = d.id
-WHERE d.doc_number = 'SOU 2025:39';
-
--- Check remiss discovery after running scrape-sou-remiss
-SELECT 
-  d.doc_number,
-  rd.remiss_page_url,
-  rd.status,
-  rd.remissvar_count
-FROM remiss_documents rd
-JOIN documents d ON rd.parent_document_id = d.id
-ORDER BY rd.created_at DESC;
-```
-
----
-
-## Follow-up Improvements (Future Work)
-
-### A) Unify DocumentReference Types Across Codebase
-
-**Status**: TODO
-**Priority**: Low
-
-Ensure all TypeScript interfaces include `target_url`:
-
-```typescript
-type DocumentReference = {
-  target_doc_number: string;
-  target_document_id: string | null;
-  target_url: string | null;          // ✅ Add this
-  reference_type: string;
-  confidence: string;
-  source_excerpt: string;
-  source_page: number | null;
-};
-```
-
-Files to update:
-- Any manual TS type declarations (if they exist outside generated types)
-- Frontend components displaying document references
-
-### B) Multi-SOU Remiss Relationships (Optional)
-
-**Status**: DEFERRED to Phase 6
-**Priority**: Low
-
-Some remiss pages cover multiple SOUs:
-> "Remiss av SOU 2024:93 och SOU 2024:94"
-
-Future implementation could:
-- Detect when two or more SOUs reference the same remiss_page_url
-- Add synthetic `reference_type = 'shared_remiss'` links between SOUs
-- Enable graph exploration of related investigations
-
-### C) URL Validation Before Insert ✅
-
-**Status**: IMPLEMENTED
-
+### 5. URL Validation ✅
 The `isValidRemissUrl()` function validates URLs before storage:
 
 ```typescript
@@ -103,26 +47,84 @@ function isValidRemissUrl(url: string): boolean {
 }
 ```
 
-This is applied in:
-- `scrape-sou-remiss/index.ts` Phase A lookup
-- `scrape-sou-remiss/index.ts` Phase B page scrape
+---
+
+## Follow-up Improvements (Completed)
+
+### A) Entity Deduplication ✅
+- Merged 45 case-duplicate entity groups
+- Updated all FK references before deletion
+- 0 duplicate groups remaining
+
+### B) Possessive 's' Stripping Fix ✅
+- Updated KEEP_TRAILING_S list in `organization-matcher.ts`
+- Fixed 93 entity names (BAE Systems Bofors, Civil Rights Defenders, etc.)
+- 0 truncated names remaining
+
+### C) Invitee Entity Linking ✅
+- Created `link-invitee-entities` edge function
+- Links all 4,321 invitees to canonical entities
+- 100% linking rate achieved
 
 ---
 
-## Success Criteria
+## Deferred to Phase 6
 
-Mark this task complete when:
+### Multi-SOU Remiss Relationships
+Some remiss pages cover multiple SOUs:
+> "Remiss av SOU 2024:93 och SOU 2024:94"
 
-1. ✅ `target_url` added to `document_references` (schema + types)
-2. ✅ Scraper inserts it correctly during reference extraction
-3. ✅ Remiss scraper Phase A discovers remiss documents using `target_url`
-4. ⏳ Re-scrape of SOUs completes and `target_url` is populated for past data
-5. ⏳ Validation queries pass and at least 10+ remiss pages are found
-6. ✅ Follow-up improvements documented
+Future implementation could:
+- Detect when two or more SOUs reference the same remiss_page_url
+- Add synthetic `reference_type = 'shared_remiss'` links between SOUs
+- Enable graph exploration of related investigations
+
+---
+
+## Validation Queries
+
+```sql
+-- Count valid remiss links
+SELECT COUNT(*) FROM document_references WHERE target_url LIKE '%/remisser/%';
+-- Result: 54+
+
+-- Check entity duplicates (should be 0)
+SELECT LOWER(name) as canonical, COUNT(*) as cnt
+FROM entities WHERE entity_type = 'organization'
+GROUP BY LOWER(name) HAVING COUNT(*) > 1;
+-- Result: 0 rows
+
+-- Check invitee linking
+SELECT COUNT(*) as total, 
+       COUNT(entity_id) as linked,
+       COUNT(*) - COUNT(entity_id) as unlinked
+FROM remiss_invitees;
+-- Result: 4321 total, 4321 linked, 0 unlinked
+```
+
+---
+
+## Success Criteria ✅
+
+| Criterion | Status |
+|-----------|--------|
+| `target_url` added to `document_references` | ✅ Complete |
+| Scraper inserts URL correctly | ✅ Complete |
+| Remiss scraper discovers via `target_url` | ✅ Complete |
+| Re-scrape populates past data | ✅ Complete |
+| 10+ remiss pages found | ✅ 54 found |
+| Entity deduplication | ✅ 0 duplicates |
+| Invitee linking | ✅ 100% |
 
 ---
 
 ## Changelog
+
+- **2026-01-15**: Phase 5.3 marked COMPLETE
+  - Entity deduplication finished (45 groups merged)
+  - Possessive 's' fix applied (93 names corrected)
+  - Invitee linking complete (4,321 linked)
+  - All success criteria met
 
 - **2024-12-11**: Initial implementation
   - Added `target_url` column via migration

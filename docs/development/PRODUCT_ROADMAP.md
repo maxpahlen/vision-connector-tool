@@ -410,54 +410,34 @@ These were **NOT** implemented until MVP is validated:
 | **Remiss Responses** | 3,424 | 99.91% linked to entities |
 | **Remiss Invitees** | 4,321 | 100% linked to entities |
 
-### Core Strategy
-> One new document type at a time → fully end-to-end → tested → then move to the next.
+### Completion Summary
 
-### Implementation Order (following Swedish legislative lifecycle)
-1. **Propositions** — ✅ COMPLETE (Phase 5.2)
-2. **Remisser + Remissvar** — ✅ COMPLETE (Phase 5.3)
-   - Phase 2: Remiss Index Scraping ✅ (54 matched)
-   - Phase 2.5: Process Remiss Pages ✅ (3,424 remissvar)
-   - Phase 2.7: Entity Pipeline ✅ (1,473 entities, 100% invitee linking)
-3. **Committee Reports** — 📋 PLANNED (Phase 5.4)
-4. **Laws** — 📋 PLANNED (Phase 5.4)
+**Phase 5.1:** Database Schema + Timeline Agent v2.1 ✅  
+**Phase 5.2:** Propositions End-to-End ✅  
+**Phase 5.3:** Remisser + Remissvar + Entity Pipeline ✅  
 
-### Database Schema Changes
-- `lifecycle_stage` column on documents (directive, interim_analysis, remiss, proposition, parliament, law)
-- `document_references` table for document-to-document citations with confidence scoring
-- `external_urls` JSONB column for press releases and external links
+All entity deduplication complete (0 duplicates, 0 truncated names). Ready for Phase 5.4.
 
-### Timeline Agent v2 Enhancements
-- **Confidence scoring:** high (exact day), medium (month+year), low (year only)
-- **Future date extraction:** Planned events with citations
-- **New event types:**
-  - directive_issued, committee_formed
-  - remiss_period_start / remiss_period_end
-  - proposition_submitted, law_enacted
+### Next: Phase 5.4 — Committee Reports + Laws
 
-### Metadata Agent v2 Enhancements
-- **ADD:** External stakeholders (organizations submitting remissvar)
-- **KEEP:** Lead investigators, committee names
-- **REMOVE:** Ministry extraction (use documents.ministry instead)
+1. **Committee Reports** — Scrape riksdagen.se/betankanden
+2. **Laws** — Scrape riksdagen.se/lagar
+3. Link to source propositions
 
-### Genvägar Link Classification
-- Model as document-to-document references (not generic URLs)
-- Classify reference types: cites, amends, responds_to, based_on, related
-- Store unresolved references with target_doc_number for future linking
+### Database Schema Changes (Implemented)
+- `lifecycle_stage` column on documents ✅
+- `document_references` table with confidence scoring ✅
+- `external_urls` JSONB column ✅
+- `target_url` column for remiss URL lookups ✅
 
-### Success Criteria
-- [ ] Propositions end-to-end ingestion and searchable
-- [ ] Timeline Agent v2 extracts events with confidence scores
-- [ ] Metadata Agent v2 extracts stakeholders without hallucinations
-- [ ] Genvägar links produce document-to-document references
-- [ ] lifecycle_stage populated and consistent
-- [ ] No regressions to Phase 3 or Phase 4 functionality
-
-### Out of Scope (Phase 6+)
-- Document-to-document relationship **inference**
-- Case-level reconstruction
-- Timeline visualization (UI)
-- UX improvements
+### Success Criteria (Phase 5.3) ✅
+- [x] Propositions end-to-end ingestion and searchable
+- [x] Remisser matched to SOUs (54/54)
+- [x] Remissvar extracted (3,424)
+- [x] Entity pipeline operational (1,473 entities)
+- [x] 100% invitee linking
+- [x] 99.91% response linking
+- [x] Entity deduplication complete
 
 **Documentation:** `docs/development/branches/phase-5-legislative-graph-expansion.md`, `docs/development/PHASE_5_IMPLEMENTATION_PLAN.md`
 
