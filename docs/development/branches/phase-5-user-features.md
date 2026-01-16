@@ -1,7 +1,13 @@
 # Phase 5: User Features & Collaboration
 
-**Status:** Planning  
-**Branch:** `phase-5-user-features`  
+> **📋 DEFERRED — NOT CURRENTLY PLANNED**
+> 
+> This document describes potential user collaboration features that were conceptualized but have been deferred indefinitely. The "Phase 5" naming conflicts with the Legislative Graph Expansion work (the actual Phase 5). Consider this document as a future feature wishlist, not an active phase.
+
+---
+
+**Status:** Archived / Deferred  
+**Branch:** None (not implemented)  
 **Dependencies:** Phase 3 (AI System), Phase 4 (Search)
 
 ---
@@ -10,49 +16,40 @@
 
 Transform Transparency from a read-only research tool into a collaborative platform where users can contribute knowledge, save insights, and work together on legislative analysis.
 
+**Note:** Current development priority is completing the legislative graph (Phase 5.4: Committee Reports + Laws) and moving to relationship inference (Phase 6).
+
 ---
 
-## Rough Goals
+## Rough Goals (If Implemented)
 
 ### 1. User Accounts & Profiles
-- Extended profiles with:
-  - Organization affiliation
-  - Areas of interest (ministries, topics)
-  - Notification preferences
-- User activity tracking (searches, views, annotations)
+- Extended profiles with organization affiliation
+- Areas of interest (ministries, topics)
+- Notification preferences
 
 ### 2. Saved Searches & Alerts
 - Save search queries with filters
-- Email/in-app notifications when:
-  - New SOU matches saved search
-  - Process stage changes on watched processes
-  - New events added to timeline
+- Email/in-app notifications for new matches
 
 ### 3. Annotations & Notes
-- Users can add private notes to:
-  - Documents
-  - Timeline events
-  - Entities
-- Optionally share notes with team/organization
+- Private notes on documents, events, entities
+- Optional sharing with team/organization
 
 ### 4. Collections & Bookmarks
-- Create custom collections of processes
+- Custom collections of processes
 - Tag and organize for research projects
-- Export collections to reports
 
 ### 5. Discussion & Comments
 - Comment threads on processes
 - @mention other users
-- Link comments to specific citations
 
 ### 6. Collaboration Features
 - Share collections with colleagues
-- Collaborative annotation (Google Docs-style)
 - Organization-level shared workspaces
 
 ---
 
-## Interaction with Phase 3 Data
+## Technical Considerations (For Reference)
 
 ### User-Generated Content Tables
 
@@ -64,8 +61,7 @@ CREATE TABLE annotations (
   target_type text, -- 'document', 'event', 'entity'
   target_id uuid,
   content text,
-  visibility text DEFAULT 'private', -- 'private', 'shared', 'public'
-  created_at timestamptz DEFAULT now()
+  visibility text DEFAULT 'private'
 );
 
 -- Saved searches
@@ -82,79 +78,23 @@ CREATE TABLE collections (
   id uuid PRIMARY KEY,
   user_id uuid REFERENCES profiles(id),
   name text,
-  description text,
   visibility text DEFAULT 'private'
-);
-
-CREATE TABLE collection_items (
-  collection_id uuid REFERENCES collections(id),
-  process_id uuid REFERENCES processes(id),
-  added_at timestamptz DEFAULT now()
 );
 ```
 
-### Integration with Existing Data
-- Annotations link to `documents`, `timeline_events`, `entities`
-- Saved searches use same filters as Phase 4 search
-- Notifications triggered by changes to `processes.current_stage`
-
 ---
 
-## Technical Considerations
-
-### Real-Time Notifications
-- Use Supabase Realtime for in-app notifications
-- Email queue using background jobs
-- Websocket connections for live updates
-
-### Privacy & Permissions
-- RLS policies for annotations (user can only see own or shared)
-- Organization-level data isolation
-- Admin controls for public sharing
-
-### Performance
-- Denormalize frequently accessed user data
-- Cache user preferences
-- Lazy load annotation threads
-
----
-
-## Open Questions
+## Open Questions (Unresolved)
 
 1. **Organization model:** How to structure multi-user orgs?
-   - Simple: `profiles.organization` (text field)
-   - Complex: Separate `organizations` table with roles
-
 2. **Notification volume:** Risk of spam with many saved searches?
-   - Daily digest option
-   - Rate limiting on notifications
-   - Smart grouping ("3 new matches today")
-
 3. **Moderation:** If comments are public, who moderates?
-   - Admin role with moderation tools
-   - Report/flag system
-   - Start with organization-only comments
-
 4. **Export formats:** What do users need?
-   - PDF reports with citations
-   - CSV for data analysis
-   - Integration with Zotero/reference managers
 
 ---
 
-## Success Criteria
+## Related Documentation
 
-- [ ] Users can save searches and receive useful notifications
-- [ ] Annotation system enables meaningful note-taking
-- [ ] Collections help users organize research projects
-- [ ] Collaboration features foster knowledge sharing
-- [ ] User activity doesn't impact system performance
-
----
-
-## Future Enhancements
-
-- AI-powered note suggestions
-- Automatic tagging of user interests
-- Integration with external tools (Slack, Teams)
-- Public knowledge base mode
+- `docs/development/PRODUCT_ROADMAP.md` - Current active phases
+- `docs/development/branches/phase-5-legislative-graph-expansion.md` - Actual Phase 5
+- `docs/development/branches/phase-6-relationship-inference.md` - Next major phase
