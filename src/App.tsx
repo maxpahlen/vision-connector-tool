@@ -12,6 +12,7 @@ import DocumentDetail from "./pages/DocumentDetail";
 import Search from "./pages/Search";
 import EntityDetail from "./pages/EntityDetail";
 import ProcessDetail from "./pages/ProcessDetail";
+import ParticipationDashboard from "./pages/ParticipationDashboard";
 import ProtectedRoute from "./components/layout/ProtectedRoute";
 import AdminRoute from "./components/layout/AdminRoute";
 
@@ -55,13 +56,18 @@ const App = () => (
               <ProcessDetail />
             </ProtectedRoute>
           } />
+          <Route path="/insights/participation" element={
+            <ProtectedRoute>
+              <ParticipationDashboard />
+            </ProtectedRoute>
+          } />
           <Route path="/admin/scraper" element={
-          <AdminRoute>
-            <AdminScraper />
-          </AdminRoute>
-        } />
-        <Route path="/admin/scraper/document/:id" element={
-          <AdminRoute>
+            <AdminRoute>
+              <AdminScraper />
+            </AdminRoute>
+          } />
+          <Route path="/admin/scraper/document/:id" element={
+            <AdminRoute>
             <DocumentDetail />
           </AdminRoute>
         } />
