@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
 
     // Parse query params
     const url = new URL(req.url);
-    const limit = parseInt(url.searchParams.get("limit") || "100", 10);
+    const limit = parseInt(url.searchParams.get("limit") || "500", 10);
 
     // Get total response count (bypasses 1000-row limit via aggregate)
     const { count: totalResponses, error: respCountErr } = await supabase
@@ -53,21 +53,46 @@ Deno.serve(async (req) => {
 
     if (invCountErr) throw invCountErr;
 
-    // Get responses grouped by entity with remiss_id for uninvited calculation
-    const { data: responseData, error: respErr } = await supabase
-      .from("remiss_responses")
-      .select("entity_id, remiss_id")
-      .not("entity_id", "is", null);
+    // Fetch ALL responses using pagination to bypass 1000-row limit
+    const allResponses: { entity_id: string; remiss_id: string }[] = [];
+    let responseOffset = 0;
+    const pageSize = 1000;
+    
+    while (true) {
+      const { data: responseData, error: respErr } = await supabase
+        .from("remiss_responses")
+        .select("entity_id, remiss_id")
+        .not("entity_id", "is", null)
+        .range(responseOffset, responseOffset + pageSize - 1);
 
-    if (respErr) throw respErr;
+      if (respErr) throw respErr;
+      if (!responseData || responseData.length === 0) break;
+      
+      allResponses.push(...responseData);
+      if (responseData.length < pageSize) break;
+      responseOffset += pageSize;
+    }
 
-    // Get invites grouped by entity with remiss_id
-    const { data: inviteData, error: invErr } = await supabase
-      .from("remiss_invitees")
-      .select("entity_id, remiss_id")
-      .not("entity_id", "is", null);
+    // Fetch ALL invites using pagination
+    const allInvites: { entity_id: string; remiss_id: string }[] = [];
+    let inviteOffset = 0;
+    
+    while (true) {
+      const { data: inviteData, error: invErr } = await supabase
+        .from("remiss_invitees")
+        .select("entity_id, remiss_id")
+        .not("entity_id", "is", null)
+        .range(inviteOffset, inviteOffset + pageSize - 1);
 
-    if (invErr) throw invErr;
+      if (invErr) throw invErr;
+      if (!inviteData || inviteData.length === 0) break;
+      
+      allInvites.push(...inviteData);
+      if (inviteData.length < pageSize) break;
+      inviteOffset += pageSize;
+    }
+
+    console.log(`Fetched ${allResponses.length} responses, ${allInvites.length} invites`);
 
     // Get all entity names for organizations
     const { data: entities, error: entErr } = await supabase
@@ -79,40 +104,43 @@ Deno.serve(async (req) => {
 
     const entityNameMap = new Map(entities?.map((e) => [e.id, e.name]) || []);
 
-    // Aggregate responses by entity with remiss tracking
-    const responseMap = new Map<string, Set<string>>();
-    responseData?.forEach((r) => {
+    // Aggregate RAW response counts by entity (not distinct remiss_id)
+    const responseCountMap = new Map<string, number>();
+    const responseRemissMap = new Map<string, Set<string>>();
+    allResponses.forEach((r) => {
       if (!r.entity_id) return;
-      if (!responseMap.has(r.entity_id)) {
-        responseMap.set(r.entity_id, new Set());
+      responseCountMap.set(r.entity_id, (responseCountMap.get(r.entity_id) || 0) + 1);
+      if (!responseRemissMap.has(r.entity_id)) {
+        responseRemissMap.set(r.entity_id, new Set());
       }
-      responseMap.get(r.entity_id)!.add(r.remiss_id);
+      responseRemissMap.get(r.entity_id)!.add(r.remiss_id);
     });
 
-    // Aggregate invites by entity with remiss tracking
-    const inviteMap = new Map<string, Set<string>>();
-    inviteData?.forEach((i) => {
+    // Aggregate RAW invite counts by entity (not distinct remiss_id)
+    const inviteCountMap = new Map<string, number>();
+    const inviteRemissMap = new Map<string, Set<string>>();
+    allInvites.forEach((i) => {
       if (!i.entity_id) return;
-      if (!inviteMap.has(i.entity_id)) {
-        inviteMap.set(i.entity_id, new Set());
+      inviteCountMap.set(i.entity_id, (inviteCountMap.get(i.entity_id) || 0) + 1);
+      if (!inviteRemissMap.has(i.entity_id)) {
+        inviteRemissMap.set(i.entity_id, new Set());
       }
-      inviteMap.get(i.entity_id)!.add(i.remiss_id);
+      inviteRemissMap.get(i.entity_id)!.add(i.remiss_id);
     });
 
     // Combine all entity IDs
-    const allEntityIds = new Set([...responseMap.keys(), ...inviteMap.keys()]);
+    const allEntityIds = new Set([...responseCountMap.keys(), ...inviteCountMap.keys()]);
 
     // Calculate metrics per organization
     const organizations: OrganizationMetrics[] = [];
 
     allEntityIds.forEach((entityId) => {
-      const responseRemisser = responseMap.get(entityId) || new Set();
-      const inviteRemisser = inviteMap.get(entityId) || new Set();
+      const responseCount = responseCountMap.get(entityId) || 0;
+      const inviteCount = inviteCountMap.get(entityId) || 0;
+      const responseRemisser = responseRemissMap.get(entityId) || new Set();
+      const inviteRemisser = inviteRemissMap.get(entityId) || new Set();
 
-      const responseCount = responseRemisser.size;
-      const inviteCount = inviteRemisser.size;
-
-      // Uninvited responses: responded but not invited
+      // Uninvited responses: responded to remisser where not invited
       let uninvitedResponses = 0;
       responseRemisser.forEach((remissId) => {
         if (!inviteRemisser.has(remissId)) {
@@ -120,7 +148,7 @@ Deno.serve(async (req) => {
         }
       });
 
-      // Response rate: only if invited
+      // Response rate: only if invited (using raw counts)
       const responseRate = inviteCount > 0
         ? Math.round((responseCount / inviteCount) * 100)
         : null;

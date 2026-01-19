@@ -101,18 +101,18 @@ const ParticipationDashboard = () => {
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardDescription className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <TrendingUp className="h-4 w-4" />
-                    Svarsfrekvens
+                    <span>Svarsfrekvens</span>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Info className="h-3 w-3 text-muted-foreground cursor-help" />
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Svarsfrekvens = Svar / Inbjudningar × 100%</p>
+                        <span>Svarsfrekvens = Svar / Inbjudningar × 100%</span>
                       </TooltipContent>
                     </Tooltip>
-                  </CardDescription>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="text-3xl font-bold">{data.overall_response_rate}%</div>
@@ -243,7 +243,7 @@ const ParticipationDashboard = () => {
                 </Table>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
-                  No participation data available
+                  Ingen deltagande data tillgänglig
                 </div>
               )}
             </CardContent>
