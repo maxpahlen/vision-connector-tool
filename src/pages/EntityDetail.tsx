@@ -1,4 +1,4 @@
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import Header from '@/components/layout/Header';
@@ -6,8 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Separator } from '@/components/ui/separator';
-import { User, Building2, Users, FileText, Link2, Calendar } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { User, Building2, Users, FileText, Link2, Calendar, ArrowLeft, Mail, MessageSquare } from 'lucide-react';
 import { format } from 'date-fns';
 import { sv } from 'date-fns/locale';
 
@@ -27,6 +27,7 @@ const ENTITY_TYPE_LABELS = {
 
 export default function EntityDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
 
   // Fetch entity details
   const { data: entity, isLoading: entityLoading, error: entityError } = useQuery({
@@ -170,6 +171,69 @@ export default function EntityDetail() {
     enabled: !!id && !!documents && documents.length > 0,
   });
 
+  // Fetch remiss responses for organizations
+  const { data: remissResponses, isLoading: responsesLoading } = useQuery({
+    queryKey: ['entity-remiss-responses', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('remiss_responses')
+        .select(`
+          id,
+          file_url,
+          filename,
+          responding_organization,
+          created_at,
+          remiss_documents!remiss_responses_remiss_id_fkey (
+            id,
+            title,
+            parent_document_id,
+            documents!remiss_documents_parent_document_id_fkey (
+              id,
+              doc_number,
+              title
+            )
+          )
+        `)
+        .eq('entity_id', id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!id && entity?.entity_type === 'organization',
+  });
+
+  // Fetch remiss invitations for organizations
+  const { data: remissInvites, isLoading: invitesLoading } = useQuery({
+    queryKey: ['entity-remiss-invites', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('remiss_invitees')
+        .select(`
+          id,
+          organization_name,
+          invited_at,
+          remiss_documents!remiss_invitees_remiss_id_fkey (
+            id,
+            title,
+            remiss_deadline,
+            parent_document_id,
+            documents!remiss_documents_parent_document_id_fkey (
+              id,
+              doc_number,
+              title
+            )
+          )
+        `)
+        .eq('entity_id', id)
+        .order('invited_at', { ascending: false });
+
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!id && entity?.entity_type === 'organization',
+  });
+
   if (entityLoading) {
     return (
       <div className="min-h-screen bg-background">
@@ -196,9 +260,14 @@ export default function EntityDetail() {
               {entityError ? 'Ett fel uppstod vid hämtning av entitet.' : 'Entitet hittades inte.'}
             </AlertDescription>
           </Alert>
-          <Link to="/search" className="text-primary hover:underline mt-4 inline-block">
-            ← Tillbaka till sökning
-          </Link>
+          <Button
+            variant="ghost"
+            onClick={() => navigate(-1)}
+            className="text-primary hover:underline mt-4"
+          >
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Tillbaka
+          </Button>
         </main>
       </div>
     );
@@ -213,9 +282,15 @@ export default function EntityDetail() {
       <main className="container mx-auto px-4 py-8">
         {/* Entity Header */}
         <div className="mb-8">
-          <Link to="/search" className="text-sm text-muted-foreground hover:text-foreground mb-4 inline-block">
-            ← Tillbaka till sökning
-          </Link>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate(-1)}
+            className="text-muted-foreground hover:text-foreground mb-4 -ml-2"
+          >
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Tillbaka
+          </Button>
           <div className="flex items-start gap-4">
             <div className="p-3 rounded-lg bg-muted">
               <Icon className="h-8 w-8" />
@@ -301,6 +376,157 @@ export default function EntityDetail() {
               )}
             </CardContent>
           </Card>
+
+          {/* Remiss Responses - only for organizations */}
+          {entity.entity_type === 'organization' && (
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <MessageSquare className="h-5 w-5" />
+                  Remissvar ({remissResponses?.length || 0})
+                </CardTitle>
+                <CardDescription>
+                  Remissvar som organisationen har lämnat
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {responsesLoading ? (
+                  <div className="space-y-4">
+                    {[1, 2, 3].map(i => <Skeleton key={i} className="h-16" />)}
+                  </div>
+                ) : remissResponses && remissResponses.length > 0 ? (
+                  <div className="space-y-3">
+                    {remissResponses.slice(0, 20).map((resp) => {
+                      const remiss = resp.remiss_documents as any;
+                      const parentDoc = remiss?.documents;
+                      return (
+                        <div
+                          key={resp.id}
+                          className="p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Badge variant="outline" className="text-xs">Remissvar</Badge>
+                                {parentDoc?.doc_number && (
+                                  <Link
+                                    to={`/document/${parentDoc.id}`}
+                                    className="text-sm font-medium hover:underline"
+                                  >
+                                    {parentDoc.doc_number}
+                                  </Link>
+                                )}
+                              </div>
+                              <p className="text-sm line-clamp-2">
+                                {remiss?.title || parentDoc?.title || 'Okänd remiss'}
+                              </p>
+                              {resp.filename && (
+                                <a
+                                  href={resp.file_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-primary hover:underline mt-1 inline-block"
+                                >
+                                  📄 {resp.filename}
+                                </a>
+                              )}
+                            </div>
+                            {resp.created_at && (
+                              <div className="text-xs text-muted-foreground whitespace-nowrap">
+                                {format(new Date(resp.created_at), 'yyyy-MM-dd')}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {remissResponses.length > 20 && (
+                      <p className="text-sm text-muted-foreground text-center py-2">
+                        +{remissResponses.length - 20} fler remissvar
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-center py-8">
+                    Inga remissvar registrerade
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Remiss Invitations - only for organizations */}
+          {entity.entity_type === 'organization' && (
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Mail className="h-5 w-5" />
+                  Inbjudningar ({remissInvites?.length || 0})
+                </CardTitle>
+                <CardDescription>
+                  Remisser som organisationen har bjudits in till
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {invitesLoading ? (
+                  <div className="space-y-4">
+                    {[1, 2, 3].map(i => <Skeleton key={i} className="h-16" />)}
+                  </div>
+                ) : remissInvites && remissInvites.length > 0 ? (
+                  <div className="space-y-3">
+                    {remissInvites.slice(0, 20).map((invite) => {
+                      const remiss = invite.remiss_documents as any;
+                      const parentDoc = remiss?.documents;
+                      return (
+                        <div
+                          key={invite.id}
+                          className="p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Badge variant="secondary" className="text-xs">Inbjudan</Badge>
+                                {parentDoc?.doc_number && (
+                                  <Link
+                                    to={`/document/${parentDoc.id}`}
+                                    className="text-sm font-medium hover:underline"
+                                  >
+                                    {parentDoc.doc_number}
+                                  </Link>
+                                )}
+                              </div>
+                              <p className="text-sm line-clamp-2">
+                                {remiss?.title || parentDoc?.title || 'Okänd remiss'}
+                              </p>
+                              {remiss?.remiss_deadline && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Svarsdatum: {format(new Date(remiss.remiss_deadline), 'yyyy-MM-dd')}
+                                </p>
+                              )}
+                            </div>
+                            {invite.invited_at && (
+                              <div className="text-xs text-muted-foreground whitespace-nowrap">
+                                {format(new Date(invite.invited_at), 'yyyy-MM-dd')}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {remissInvites.length > 20 && (
+                      <p className="text-sm text-muted-foreground text-center py-2">
+                        +{remissInvites.length - 20} fler inbjudningar
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-center py-8">
+                    Inga inbjudningar registrerade
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Sidebar */}
           <div className="space-y-6">

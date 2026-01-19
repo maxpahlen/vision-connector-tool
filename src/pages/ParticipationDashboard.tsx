@@ -1,15 +1,32 @@
+import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import Header from "@/components/layout/Header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useParticipationMetrics } from "@/hooks/useParticipationMetrics";
 import { Link } from "react-router-dom";
-import { RefreshCw, Users, FileText, TrendingUp, AlertCircle } from "lucide-react";
+import { RefreshCw, Users, FileText, TrendingUp, AlertCircle, Search, Info, ArrowLeft } from "lucide-react";
 
 const ParticipationDashboard = () => {
+  const navigate = useNavigate();
   const { data, isLoading, refetch, isRefetching } = useParticipationMetrics(100);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Filter organizations by search query
+  const filteredOrganizations = useMemo(() => {
+    if (!data?.organizations) return [];
+    if (!searchQuery.trim()) return data.organizations;
+    
+    const query = searchQuery.toLowerCase();
+    return data.organizations.filter(org => 
+      org.entity_name.toLowerCase().includes(query)
+    );
+  }, [data?.organizations, searchQuery]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -19,9 +36,18 @@ const ParticipationDashboard = () => {
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <div>
-              <h1 className="text-3xl font-bold">Organization Participation</h1>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate(-1)}
+                className="text-muted-foreground hover:text-foreground mb-2 -ml-2"
+              >
+                <ArrowLeft className="h-4 w-4 mr-1" />
+                Tillbaka
+              </Button>
+              <h1 className="text-3xl font-bold">Organisation Deltagande</h1>
               <p className="text-muted-foreground mt-1">
-                Track how organizations engage with remiss consultations
+                Följ hur organisationer engagerar sig i remisser
               </p>
             </div>
             <Button
@@ -31,7 +57,7 @@ const ParticipationDashboard = () => {
               disabled={isRefetching}
             >
               <RefreshCw className={`h-4 w-4 mr-2 ${isRefetching ? "animate-spin" : ""}`} />
-              Refresh
+              Uppdatera
             </Button>
           </div>
 
@@ -55,7 +81,7 @@ const ParticipationDashboard = () => {
                 <CardHeader className="pb-2">
                   <CardDescription className="flex items-center gap-1">
                     <FileText className="h-4 w-4" />
-                    Total Responses
+                    Totalt antal svar
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -66,7 +92,7 @@ const ParticipationDashboard = () => {
                 <CardHeader className="pb-2">
                   <CardDescription className="flex items-center gap-1">
                     <Users className="h-4 w-4" />
-                    Total Invitations
+                    Totalt antal inbjudningar
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -75,9 +101,17 @@ const ParticipationDashboard = () => {
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardDescription className="flex items-center gap-1">
+                  <CardDescription className="flex items-center gap-2">
                     <TrendingUp className="h-4 w-4" />
-                    Overall Response Rate
+                    Svarsfrekvens
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Svarsfrekvens = Svar / Inbjudningar × 100%</p>
+                      </TooltipContent>
+                    </Tooltip>
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -88,7 +122,7 @@ const ParticipationDashboard = () => {
                 <CardHeader className="pb-2">
                   <CardDescription className="flex items-center gap-1">
                     <Users className="h-4 w-4" />
-                    Active Organizations
+                    Aktiva organisationer
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -101,10 +135,23 @@ const ParticipationDashboard = () => {
           {/* Organizations Table */}
           <Card>
             <CardHeader>
-              <CardTitle>Top Organizations by Response Volume</CardTitle>
-              <CardDescription>
-                Organizations ranked by number of remissvar submitted
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Organisationer efter svarsvolym</CardTitle>
+                  <CardDescription>
+                    Organisationer rangordnade efter antal remissvar
+                  </CardDescription>
+                </div>
+                <div className="relative w-64">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Sök organisation..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-8"
+                  />
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               {isLoading ? (
@@ -113,20 +160,44 @@ const ParticipationDashboard = () => {
                     <Skeleton key={i} className="h-12 w-full" />
                   ))}
                 </div>
-              ) : data?.organizations.length ? (
+              ) : filteredOrganizations.length ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-12">#</TableHead>
-                      <TableHead>Organization</TableHead>
-                      <TableHead className="text-right">Responses</TableHead>
-                      <TableHead className="text-right">Invitations</TableHead>
-                      <TableHead className="text-right">Response Rate</TableHead>
-                      <TableHead className="text-right">Uninvited</TableHead>
+                      <TableHead>Organisation</TableHead>
+                      <TableHead className="text-right">Svar</TableHead>
+                      <TableHead className="text-right">Inbjudningar</TableHead>
+                      <TableHead className="text-right">
+                        <span className="flex items-center justify-end gap-1">
+                          Svarsfrekvens
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Svarsfrekvens = Svar / Inbjudningar × 100%</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </span>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <span className="flex items-center justify-end gap-1">
+                          Oinbjudna
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Svar på remisser där organisationen inte stod på inbjudningslistan</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </span>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.organizations.map((org, index) => (
+                    {filteredOrganizations.map((org, index) => (
                       <TableRow key={org.entity_id}>
                         <TableCell className="font-medium text-muted-foreground">
                           {index + 1}

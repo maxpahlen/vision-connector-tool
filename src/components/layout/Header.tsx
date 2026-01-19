@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { User, LogOut, Scale, TestTube, Settings } from "lucide-react";
+import { User, LogOut, Scale, TestTube, Settings, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
@@ -80,6 +80,15 @@ const Header = () => {
                   className="text-sm"
                 >
                   Sök
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigate("/insights/participation")}
+                  className="text-sm"
+                >
+                  <BarChart3 className="h-4 w-4 mr-1" />
+                  Insikter
                 </Button>
               </nav>
             )}
