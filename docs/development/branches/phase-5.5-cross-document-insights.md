@@ -85,32 +85,59 @@ Create explicit directive → SOU relationships by parsing directive citations f
 
 ### Execution Results (2026-01-19)
 
+**Approach:**
+- Searched both directions: SOUs citing directives, and directives citing SOUs
+- Pattern-matched `Dir. YYYY:NN` and `SOU YYYY:NN` in titles and raw_content
+- Created links only when BOTH documents exist in corpus
+
 **Dry-Run Analysis:**
 | Search Direction | Potential Matches | Docs in Corpus | Valid Pairs |
 |------------------|-------------------|----------------|-------------|
 | SOU → Directive  | 38 SOUs cite directives | 0 directives in corpus | 0 |
-| Directive → SOU  | 5 directives cite SOUs | 2 SOUs in corpus | 1 |
+| Directive → SOU  | 8 directives cite SOUs | 8 SOUs in corpus | 8 |
 
-**Created Links:**
-| Source | Target | Reference Type | ID |
-|--------|--------|----------------|-----|
-| Dir. 2025:103 | SOU 2024:78 | fulfills | 9b89575d-fb3f-4f8c-a2df-d32e283209a5 |
+**Created Links (Final):**
+| # | Directive | SOU | Reference Type | Semantic Match |
+|---|-----------|-----|----------------|----------------|
+| 1 | Dir. 2025:103 | SOU 2024:78 | **fulfills** | ✅ Strong (stärkta rättigheter) |
+| 2 | Dir. 2025:105 | SOU 2024:88 | **fulfills** | ✅ Strong (trygghetssystem) |
+| 3 | Dir. 2025:31 | SOU 2024:87 | **cites** | ⚠️ Weak (hedersrelaterat vs. uppgiftsutbyte) |
+| 4 | Dir. 2025:51 | SOU 2025:1 | **fulfills** | ✅ Strong (bostadsförsörjning) |
+| 5 | Dir. 2025:60 | SOU 2025:20 | **fulfills** | ✅ Strong (arbetskraftsinvandring) |
+| 6 | Dir. 2025:64 | SOU 2025:12 | **cites** | ⚠️ Weak (datadriven vs. AI-kommissionen) |
+| 7 | Dir. 2025:77 | SOU 2025:8 | **fulfills** | ✅ Strong (rättshjälp) |
+| 8 | Dir. 2025:82 | SOU 2025:46 | **cites** | ⚠️ Weak (nödvärnsrätt vs. idrottsarrangemang) |
+
+**Link Classification:**
+- **5 `fulfills`** — Strong semantic match between directive scope and SOU topic
+- **3 `cites`** — Citation confirmed by regex, but weak semantic alignment; reclassified after manual review
 
 **Corpus Limitation Findings:**
 - SOUs cite directives from 2021-2024 (not in corpus, only Dir. 2025:XX present)
-- Dry-run identified 5 directive→SOU pairs, but only 1 pair has both docs in corpus
-- Missing from corpus: Dir. 2025:28, Dir. 2025:110, SOU 2024:30, SOU 2024:53
+- Directive → SOU direction yielded 8 valid pairs within corpus
+- Low yield (8 links from 126 documents) is expected given:
+  - Only 108 directives and 18 SOUs in corpus
+  - Directives cite historical SOUs (pre-2024), not current corpus
+  - Legislative cycles span 2-4 years; corpus covers only recent documents
 
 ### Success Criteria Verification
 
-- [x] Directive → SOU links created for all valid pairs (1 of 1)
+- [x] Directive → SOU links created for all valid pairs (8 of 8)
 - [x] Zero orphan references (both documents verified to exist)
 - [x] No ambiguous matches found (all patterns exact)
-- [x] Links verified via INSERT RETURNING
+- [x] Links verified via INSERT RETURNING and sanity check queries
+- [x] Weak semantic matches reclassified from `fulfills` to `cites`
 
 ### Conclusion
 
-Link creation is limited by corpus coverage (126 documents). Future expansion of directive/SOU ingestion will enable additional linking. The single verified link (Dir. 2025:103 → SOU 2024:78) demonstrates the mechanism works correctly.
+**Final count: 8 directive→SOU links (5 fulfills + 3 cites)**
+
+Low yield is expected and correct given corpus constraints:
+1. Corpus contains only Dir. 2025:XX (108 directives) and limited SOUs (18)
+2. Legislative chains typically span 2-4 years; most SOU→Directive citations reference 2021-2024 directives (not in corpus)
+3. The 8 links represent ALL valid pairs where both documents exist
+
+Future corpus expansion (ingesting Dir. 2023-2024, more SOUs) will enable additional linking using the same mechanism.
 
 **Ready for Phase 5.5.3: Insights MVP**
 
@@ -258,3 +285,5 @@ Phase 5.5.3: Minimal Insights MVP
 | 2026-01-16 | Initial plan created | Lovable |
 | 2026-01-16 | Added explicit scope guardrails, metrics definitions | Lovable |
 | 2026-01-19 | Phase 5.5.1 executed and completed | Lovable |
+| 2026-01-19 | Phase 5.5.2 executed: 8 directive→SOU links created (5 fulfills + 3 cites) | Lovable |
+| 2026-01-19 | Reclassified 3 weak semantic matches from fulfills→cites after review | Lovable |
