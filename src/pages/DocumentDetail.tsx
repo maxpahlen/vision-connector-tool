@@ -1,4 +1,4 @@
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft, ExternalLink, FileText, Calendar, Building2, Link as LinkIcon, Network, User, Users } from 'lucide-react';
@@ -12,6 +12,7 @@ import { useDocumentContext } from '@/hooks/useDocumentContext';
 
 export default function DocumentDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
 
   const { data: document, isLoading } = useQuery({
     queryKey: ['document', id],
@@ -44,12 +45,10 @@ export default function DocumentDetail() {
         <Card>
           <CardContent className="py-8 text-center">
             <p className="text-muted-foreground">Document not found</p>
-            <Link to="/search">
-              <Button variant="outline" className="mt-4">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Tillbaka till sökning
-              </Button>
-            </Link>
+            <Button variant="outline" className="mt-4" onClick={() => navigate(-1)}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Tillbaka
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -87,12 +86,10 @@ export default function DocumentDetail() {
     <div className="container mx-auto py-8 space-y-6">
       {/* Header with navigation */}
       <div className="flex items-center justify-between">
-        <Link to="/search">
-          <Button variant="ghost">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Tillbaka till sökning
-          </Button>
-        </Link>
+        <Button variant="ghost" onClick={() => navigate(-1)}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Tillbaka
+        </Button>
         {document.url && (
           <a href={document.url} target="_blank" rel="noopener noreferrer">
             <Button variant="outline">
