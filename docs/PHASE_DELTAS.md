@@ -1,5 +1,51 @@
 # Phase Deltas
 
+## 2026-01-19: Phase 5.5.2 Directive-SOU Linking ✅ COMPLETE
+
+**Objective**: Create explicit directive → SOU relationships by parsing citations
+
+### Results
+
+**Final Link Count:** 8 directive→SOU links (5 `fulfills` + 3 `cites`)
+
+| # | Directive | SOU | Type | Semantic |
+|---|-----------|-----|------|----------|
+| 1 | Dir. 2025:103 | SOU 2024:78 | fulfills | ✅ Strong |
+| 2 | Dir. 2025:105 | SOU 2024:88 | fulfills | ✅ Strong |
+| 3 | Dir. 2025:31 | SOU 2024:87 | cites | Reclassified (weak) |
+| 4 | Dir. 2025:51 | SOU 2025:1 | fulfills | ✅ Strong |
+| 5 | Dir. 2025:60 | SOU 2025:20 | fulfills | ✅ Strong |
+| 6 | Dir. 2025:64 | SOU 2025:12 | cites | Reclassified (weak) |
+| 7 | Dir. 2025:77 | SOU 2025:8 | fulfills | ✅ Strong |
+| 8 | Dir. 2025:82 | SOU 2025:46 | cites | Reclassified (weak) |
+
+**Why Low Yield (8 from 126 documents)?**
+- Corpus contains only Dir. 2025:XX (108 directives) and 18 SOUs
+- Legislative chains span 2-4 years; SOUs cite 2021-2024 directives (not in corpus)
+- All 8 valid pairs where BOTH documents exist were linked
+
+### Files Changed
+- `docs/development/branches/phase-5.5-cross-document-insights.md` — Phase 5.5.2 section updated with full results
+- Database: 8 `document_references` rows created (5 fulfills, 3 cites)
+
+### Next Steps
+- Phase 5.5.3: Minimal Insights MVP (participation dashboard, velocity metrics)
+
+---
+
+## 2026-01-19: Phase 5.5.1 Reference Resolution ✅ COMPLETE
+
+**Objective**: Resolve existing document references within corpus
+
+### Results
+- **Before:** 587 references, 74 resolved (12.6%)
+- **After:** 587 references, 76 resolved (12.9%)
+- **Net gain:** 2 newly resolved references
+
+Resolution limited by corpus size, not logic. 446 references point to documents outside corpus (SOUs from 2021-2023, older propositions).
+
+---
+
 ## 2026-01-15: Phase 2.7.10 Entity Deduplication & Quality Fixes ✅ COMPLETE
 
 **Objective**: Address data quality issues from Entity Linking Audit
