@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { User, LogOut, Scale, TestTube, Settings, BarChart3 } from "lucide-react";
+import { User, LogOut, Scale, TestTube, Settings, BarChart3, Users, Clock, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
@@ -81,15 +81,27 @@ const Header = () => {
                 >
                   Sök
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => navigate("/insights/participation")}
-                  className="text-sm"
-                >
-                  <BarChart3 className="h-4 w-4 mr-1" />
-                  Insikter
-                </Button>
+                
+                {/* Insights Dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="text-sm">
+                      <BarChart3 className="h-4 w-4 mr-1" />
+                      Insikter
+                      <ChevronDown className="h-3 w-3 ml-1" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem onClick={() => navigate("/insights/participation")}>
+                      <Users className="mr-2 h-4 w-4" />
+                      Organisationsdeltagande
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => navigate("/insights/velocity")}>
+                      <Clock className="mr-2 h-4 w-4" />
+                      Processhastighet
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </nav>
             )}
           </div>
