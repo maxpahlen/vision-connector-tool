@@ -13,6 +13,7 @@ import Search from "./pages/Search";
 import EntityDetail from "./pages/EntityDetail";
 import ProcessDetail from "./pages/ProcessDetail";
 import ParticipationDashboard from "./pages/ParticipationDashboard";
+import VelocityDashboard from "./pages/VelocityDashboard";
 import ProtectedRoute from "./components/layout/ProtectedRoute";
 import AdminRoute from "./components/layout/AdminRoute";
 
@@ -59,6 +60,11 @@ const App = () => (
           <Route path="/insights/participation" element={
             <ProtectedRoute>
               <ParticipationDashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/insights/velocity" element={
+            <ProtectedRoute>
+              <VelocityDashboard />
             </ProtectedRoute>
           } />
           <Route path="/admin/scraper" element={
