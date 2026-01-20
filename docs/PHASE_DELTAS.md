@@ -73,9 +73,36 @@ while (true) {
 
 - English UI strings in `DocumentDetail.tsx` (minor i18n issue, separate task)
 
+---
+
+## 2026-01-20: Phase 5.5.4 Velocity Dashboard 🔧 NEEDS DEBUGGING
+
+**Objective**: Display process velocity metrics by ministry
+
+### Implementation Status
+
+**Built:**
+- Edge function `get-velocity-metrics` with pagination
+- Route `/insights/velocity`
+- Hook `useVelocityMetrics.ts`
+- Ministry velocity comparison table
+
+**Bug Reported:**
+- Bug identified by Max on 2026-01-20
+- Status: NEEDS DEBUGGING (not blocking other work)
+- Specific issue: TBD (requires investigation)
+
+### Files Changed
+
+- `supabase/functions/get-velocity-metrics/index.ts` — New edge function
+- `src/hooks/useVelocityMetrics.ts` — New hook
+- `src/pages/VelocityDashboard.tsx` — New page
+- `src/App.tsx` — Route added
+
 ### Next Steps
 
-- Phase 5.5.4: Velocity Dashboard (optional)
+- Debug velocity metrics calculation
+- Verify edge function returns correct data
 - Phase 5.6: Response Content Insights (requires PDF extraction pipeline)
 
 ---
