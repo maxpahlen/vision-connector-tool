@@ -1,11 +1,11 @@
 import Header from "@/components/layout/Header";
 import { useProcesses } from "@/hooks/useProcesses";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "react-router-dom";
-import { Search, FileText, Building2 } from "lucide-react";
+import { Search, FileText, Building2, Users, Clock, ArrowRight, BarChart3 } from "lucide-react";
 
 const Index = () => {
   const { processes, isLoading } = useProcesses();
@@ -17,20 +17,73 @@ const Index = () => {
         <div className="text-center mb-12">
           <h1 className="mb-4 text-4xl font-bold">SOU Policy Radar</h1>
           <p className="text-xl text-muted-foreground mb-6">
-            Track and analyze Swedish legislative processes in real-time
+            Följ och analysera svenska lagstiftningsprocesser i realtid
           </p>
           <Link to="/search">
             <Button size="lg" className="gap-2">
               <Search className="h-4 w-4" />
-              Search Documents
+              Sök dokument
             </Button>
           </Link>
         </div>
 
+        {/* Insights Section */}
+        <div className="max-w-6xl mx-auto mb-12">
+          <div className="mb-6">
+            <h2 className="text-2xl font-semibold mb-2 flex items-center gap-2">
+              <BarChart3 className="h-6 w-6" />
+              Insikter
+            </h2>
+            <p className="text-muted-foreground">Utforska data och mönster i lagstiftningsprocessen</p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <Link to="/insights/participation">
+              <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-5 w-5 text-primary" />
+                      <CardTitle className="text-lg">Organisationsdeltagande</CardTitle>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <CardDescription className="text-sm">
+                    Se hur organisationer engagerar sig i remisser. Visar antal svar, inbjudningar, 
+                    svarsfrekvens och oinbjudna svar per organisation.
+                  </CardDescription>
+                </CardContent>
+              </Card>
+            </Link>
+
+            <Link to="/insights/velocity">
+              <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-5 w-5 text-primary" />
+                      <CardTitle className="text-lg">Processhastighet</CardTitle>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <CardDescription className="text-sm">
+                    Analysera tid från direktiv till remissdeadline. Jämför hastighet mellan 
+                    departement och se trender över tid.
+                  </CardDescription>
+                </CardContent>
+              </Card>
+            </Link>
+          </div>
+        </div>
+
         <div className="max-w-6xl mx-auto">
           <div className="mb-6">
-            <h2 className="text-2xl font-semibold mb-2">Recent Processes</h2>
-            <p className="text-muted-foreground">Latest legislative initiatives and investigations</p>
+            <h2 className="text-2xl font-semibold mb-2">Senaste processerna</h2>
+            <p className="text-muted-foreground">De senaste lagstiftningsinitiativen och utredningarna</p>
           </div>
 
           {isLoading ? (
