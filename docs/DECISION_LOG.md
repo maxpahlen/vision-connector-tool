@@ -22,6 +22,7 @@ Running log of approved decisions for the Legislative Intelligence Platform.
 
 | Date | Change Title | PR/Issue | Data Risk | Max | Lovable | Codex |
 |------|--------------|----------|-----------|-----|---------|-------|
+| 2026-01-20 | Remissvar structure guidance documented for Phase 5.6 | N/A | NONE | AGREE | AGREE | AGREE |
 | 2026-01-20 | Phase 5.5.3 Participation Dashboard MVP | N/A | NONE | AGREE | AGREE | AGREE |
 | 2026-01-05 | Operating agreement adopted | N/A | NONE | AGREE | AGREE | AGREE |
 
@@ -59,6 +60,19 @@ Running log of approved decisions for the Legislative Intelligence Platform.
 - Uninvited Responses: Responses where remiss_id NOT IN org's invites (distinct remiss count)
 
 **Data Risk:** NONE — Read-only aggregation, no data modifications
+
+**Approvals:**
+- AGREE – Max ✓
+- AGREE – Lovable ✓
+- AGREE – Codex ✓
+
+---
+
+### 2026-01-20 — Remissvar structure guidance documented for Phase 5.6
+
+**Description:** Captured structure and language guidance from “Svara på remiss” (SB PM 2021:1) to inform future remissvar text extraction + NLP analysis planning. This includes recommended sections (summary, stance statements, section references) and parsing cues for response structure.
+
+**Data Risk:** NONE — Documentation only
 
 **Approvals:**
 - AGREE – Max ✓
