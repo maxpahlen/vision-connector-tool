@@ -224,7 +224,7 @@ Deliver 2 actionable insights for Erik using validated linkage.
 | Item | Future Phase | Notes |
 |------|--------------|-------|
 | Committee Reports + Laws | 5.4 | Defer unless pilot feedback shows explicit need |
-| Remissvar Text Extraction | 6+ | `file_url` stored; add extraction columns when ready |
+| Remissvar Text Extraction | 6+ | `file_url` stored; add extraction columns when ready. Guidance: `docs/development/PHASE_5.6_REMISSVAR_TEXT_EXTRACTION_GUIDANCE.md` |
 | Entity Co-Occurrence Network | 5.6+ | Visualization layer after core insights proven |
 | Full Case Reconstruction | 6 | Requires all document types |
 
