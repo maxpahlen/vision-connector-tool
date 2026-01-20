@@ -235,29 +235,46 @@ Deliver 2 actionable insights for Erik using validated linkage.
 
 ## Phase 5.5.4: Velocity Dashboard
 
-**Status:** 🔧 NEEDS DEBUGGING  
+**Status:** ✅ COMPLETE (2026-01-20)  
 **Owner:** Lovable  
 **Prerequisite:** Phase 5.5.3 complete
 
 ### Goal
 Display process velocity metrics (time between directive issued and remiss deadline) by ministry.
 
-### Implementation Status
+### Implementation
 
-**Built:**
-- Edge function `get-velocity-metrics` with pagination
-- Route `/insights/velocity`
-- Ministry velocity comparison table
+- [x] Edge function: `get-velocity-metrics` with ministry data from directive documents
+- [x] Hook: `useVelocityMetrics`  
+- [x] Page: `/insights/velocity` (titled "Remissperioder")
 
-**Bug Identified:**
-- Bug reported by Max on 2026-01-20, not yet debugged
-- Status changed from COMPLETE to NEEDS DEBUGGING
+### Metrics Displayed
+
+| Metric | Definition | Source |
+|--------|------------|--------|
+| **Duration (days)** | `remiss_deadline - directive_issued` | `timeline_events` table |
+| **Average by Ministry** | Mean of Duration grouped by ministry | Aggregated |
+| **Median by Ministry** | Median of Duration grouped by ministry | Aggregated |
+
+### Bug Fix (2026-01-20)
+
+**Issue:** Ministry field showed "Okänt departement" for all processes
+
+**Root Cause:**
+- `processes.ministry` column was almost entirely NULL (1/127 populated)
+- `documents` table has correct ministry data for 56 directives
+
+**Solution:**
+Modified edge function to source ministry from directive documents:
+1. Get `source_url` from `timeline_events` where `event_type = 'directive_issued'`
+2. Look up `documents.ministry` where `doc_type = 'directive'` and `url` matches
+3. Fallback chain: directive document ministry → `processes.ministry` → "Okänt departement"
 
 ### Success Criteria
 
-- [ ] Velocity metrics display correctly
-- [ ] Ministry averages are accurate
-- [ ] Edge cases (missing dates) handled gracefully
+- [x] Velocity metrics display correctly
+- [x] Ministry averages are accurate (sourced from directive documents)
+- [x] Edge cases (missing dates) handled gracefully
 - [ ] Erik confirms metrics are understandable
 
 ---
@@ -332,3 +349,4 @@ Phase 5.5.3: Minimal Insights MVP
 | 2026-01-19 | Reclassified 3 weak semantic matches from fulfills→cites after review | Lovable |
 | 2026-01-20 | Phase 5.5.3 Participation Dashboard completed (pagination bug fixed) | Lovable |
 | 2026-01-20 | Phase 5.5.4 Velocity Dashboard: bug reported, marked NEEDS DEBUGGING | Lovable |
+| 2026-01-20 | Phase 5.5.4 Bug fixed: ministry now sourced from directive documents | Lovable |

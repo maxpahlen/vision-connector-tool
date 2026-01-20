@@ -1,7 +1,7 @@
 # Context Priority
 
 **Last Updated:** 2026-01-20  
-**Current Phase:** 5.5 (Cross-Document Insights Foundation) — Phase 5.5.3 ✅ COMPLETE | Phase 5.5.4 🔧 NEEDS DEBUGGING
+**Current Phase:** 5.5 (Cross-Document Insights Foundation) — ✅ ALL COMPLETE
 
 ---
 
@@ -19,7 +19,7 @@ Maintained by: **Lovable (Architectural Authority)**
 |---|------|-------------------|
 | 1 | `docs/WORKFLOW.md` | Operating agreement: roles, phases, message discipline |
 | 2 | `docs/PHASE_DELTAS.md` | Most recent changes since last sync |
-| 3 | `docs/development/branches/phase-5.5-cross-document-insights.md` | **ACTIVE** - Cross-document linking & insights |
+| 3 | `docs/development/branches/phase-5.5-cross-document-insights.md` | **COMPLETE** - Cross-document linking & insights |
 | 4 | `docs/development/branches/phase-5.6-content-insights.md` | **STAGED** - Remissvar content extraction (Phase 5.6) |
 | 5 | `docs/development/PHASE_5.6_REMISSVAR_TEXT_EXTRACTION_GUIDANCE.md` | Structural guidance for Phase 5.6 |
 | 6 | `docs/CHECKLISTS.md` | Verification requirements before sign-off |
@@ -30,8 +30,8 @@ Maintained by: **Lovable (Architectural Authority)**
 
 ## Recent Changes (2026-01-20)
 
+- **COMPLETE:** Phase 5.5.4 Velocity Dashboard (bug fixed: ministry now sourced from directive documents)
 - **COMPLETE:** Phase 5.5.3 Participation Dashboard MVP (pagination bug fixed, all 3,424 responses counted)
-- **NEEDS DEBUGGING:** Phase 5.5.4 Velocity Dashboard (bug reported by Max)
 - **STAGED:** Phase 5.6 Concept Brief created for remissvar content extraction
 - **COMPLETE:** Phase 5.5.1 Reference Resolution (76 references resolved)
 - **COMPLETE:** Phase 5.5.2 Directive-SOU Linking (8 links: 5 fulfills + 3 cites)
@@ -45,14 +45,14 @@ Maintained by: **Lovable (Architectural Authority)**
 | 5.5.1 Reference Resolution | ✅ 76 resolved (limited by corpus) |
 | 5.5.2 Directive-SOU Linking | ✅ 8 links (5 fulfills + 3 cites) |
 | 5.5.3 Participation Dashboard | ✅ COMPLETE |
-| 5.5.4 Velocity Dashboard | 🔧 NEEDS DEBUGGING |
+| 5.5.4 Velocity Dashboard | ✅ COMPLETE (bug fixed 2026-01-20) |
 
 ---
 
 ## Next Steps
 
-1. **Debug Phase 5.5.4:** Velocity Dashboard bug fix
-2. **Phase 5.6:** Remissvar Content Extraction + Insights (concept brief ready)
+1. **Plan Phase 5.6:** Remissvar Content Extraction + Insights (concept brief ready)
+2. **Future: Direktiv→Lag metric:** Track full legislative cycle when proposition/law data available
 3. **Phase 5.4:** Committee Reports + Laws ingestion
 4. **Phase 6:** Relationship Inference & Case Reconstruction
 
