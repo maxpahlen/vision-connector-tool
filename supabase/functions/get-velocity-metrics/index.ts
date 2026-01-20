@@ -130,73 +130,29 @@ serve(async (req) => {
       }
     }
 
-    // Fetch directive documents to get ministry data (more reliable source)
-    // Get source_url from directive_issued events and match to documents
+    // Fetch ministry from directive documents via process_documents table
+    // This is the canonical link: process → process_documents(role='directive') → documents.ministry
     const directiveMinistries: Map<string, string> = new Map();
     
-    // Build a set of source URLs from directive events
-    const sourceUrls: string[] = [];
-    let urlPage = 0;
-    
-    while (true) {
+    for (let i = 0; i < matchedProcessIds.length; i += 100) {
+      const chunk = matchedProcessIds.slice(i, i + 100);
       const { data, error } = await supabase
-        .from("timeline_events")
-        .select("process_id, source_url")
-        .eq("event_type", "directive_issued")
-        .not("source_url", "is", null)
-        .in("process_id", matchedProcessIds)
-        .range(urlPage * pageSize, (urlPage + 1) * pageSize - 1);
+        .from("process_documents")
+        .select(`
+          process_id,
+          documents!inner(ministry)
+        `)
+        .eq("role", "directive")
+        .in("process_id", chunk);
       
       if (error) throw error;
-      if (!data || data.length === 0) break;
-      
-      for (const event of data) {
-        if (event.source_url) {
-          sourceUrls.push(event.source_url);
-        }
-      }
-      
-      if (data.length < pageSize) break;
-      urlPage++;
-    }
-    
-    // Fetch directive documents with their ministries
-    if (sourceUrls.length > 0) {
-      for (let i = 0; i < sourceUrls.length; i += 100) {
-        const chunk = sourceUrls.slice(i, i + 100);
-        const { data, error } = await supabase
-          .from("documents")
-          .select("url, ministry")
-          .eq("doc_type", "directive")
-          .in("url", chunk);
-        
-        if (error) throw error;
-        if (data) {
-          // Build URL -> ministry map
-          const urlToMinistry = new Map<string, string>();
-          for (const doc of data) {
-            if (doc.url && doc.ministry) {
-              urlToMinistry.set(doc.url, doc.ministry);
-            }
-          }
-          
-          // Now map back to process_id using directive events
-          for (const [processId, directiveDate] of directiveEvents.entries()) {
-            if (!matchedProcessIds.includes(processId)) continue;
-            
-            // Find the source_url for this process's directive event
-            const { data: eventData } = await supabase
-              .from("timeline_events")
-              .select("source_url")
-              .eq("process_id", processId)
-              .eq("event_type", "directive_issued")
-              .not("source_url", "is", null)
-              .limit(1)
-              .maybeSingle();
-            
-            if (eventData?.source_url && urlToMinistry.has(eventData.source_url)) {
-              directiveMinistries.set(processId, urlToMinistry.get(eventData.source_url)!);
-            }
+      if (data) {
+        for (const pd of data) {
+          // documents is an object with ministry field
+          const docs = pd.documents as unknown as { ministry: string | null } | { ministry: string | null }[];
+          const ministry = Array.isArray(docs) ? docs[0]?.ministry : docs?.ministry;
+          if (ministry) {
+            directiveMinistries.set(pd.process_id, ministry);
           }
         }
       }
