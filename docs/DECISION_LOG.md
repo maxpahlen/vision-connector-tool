@@ -22,6 +22,8 @@ Running log of approved decisions for the Legislative Intelligence Platform.
 
 | Date | Change Title | PR/Issue | Data Risk | Max | Lovable | Codex |
 |------|--------------|----------|-----------|-----|---------|-------|
+| 2026-01-20 | Phase 5.6 Concept Brief created | N/A | NONE | AGREE | AGREE | AGREE |
+| 2026-01-20 | Phase 5.5.4 Velocity Dashboard: marked NEEDS DEBUGGING | N/A | NONE | AGREE | AGREE | AGREE |
 | 2026-01-20 | Remissvar structure guidance documented for Phase 5.6 | N/A | NONE | AGREE | AGREE | AGREE |
 | 2026-01-20 | Phase 5.5.3 Participation Dashboard MVP | N/A | NONE | AGREE | AGREE | AGREE |
 | 2026-01-05 | Operating agreement adopted | N/A | NONE | AGREE | AGREE | AGREE |

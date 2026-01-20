@@ -1,7 +1,7 @@
 # Context Priority
 
-**Last Updated:** 2026-01-19  
-**Current Phase:** 5.5 (Cross-Document Insights Foundation) — Phase 5.5.2 ✅ COMPLETE
+**Last Updated:** 2026-01-20  
+**Current Phase:** 5.5 (Cross-Document Insights Foundation) — Phase 5.5.3 ✅ COMPLETE | Phase 5.5.4 🔧 NEEDS DEBUGGING
 
 ---
 
@@ -20,20 +20,21 @@ Maintained by: **Lovable (Architectural Authority)**
 | 1 | `docs/WORKFLOW.md` | Operating agreement: roles, phases, message discipline |
 | 2 | `docs/PHASE_DELTAS.md` | Most recent changes since last sync |
 | 3 | `docs/development/branches/phase-5.5-cross-document-insights.md` | **ACTIVE** - Cross-document linking & insights |
-| 4 | `docs/development/branches/phase-5.3-remisser-remissvar.md` | Phase 5.3 summary (complete) |
-| 5 | `docs/CHECKLISTS.md` | Verification requirements before sign-off |
-| 6 | `docs/DECISION_LOG.md` | Approved decisions with triple sign-off |
-| 7 | `docs/development/PRODUCT_ROADMAP.md` | Overall progress and metrics |
+| 4 | `docs/development/branches/phase-5.6-content-insights.md` | **STAGED** - Remissvar content extraction (Phase 5.6) |
+| 5 | `docs/development/PHASE_5.6_REMISSVAR_TEXT_EXTRACTION_GUIDANCE.md` | Structural guidance for Phase 5.6 |
+| 6 | `docs/CHECKLISTS.md` | Verification requirements before sign-off |
+| 7 | `docs/DECISION_LOG.md` | Approved decisions with triple sign-off |
+| 8 | `docs/development/PRODUCT_ROADMAP.md` | Overall progress and metrics |
 
 ---
 
-## Recent Changes (2026-01-19)
+## Recent Changes (2026-01-20)
 
-- **COMPLETE:** Phase 5.5.1 Reference Resolution (76 references resolved, limited by corpus)
+- **COMPLETE:** Phase 5.5.3 Participation Dashboard MVP (pagination bug fixed, all 3,424 responses counted)
+- **NEEDS DEBUGGING:** Phase 5.5.4 Velocity Dashboard (bug reported by Max)
+- **STAGED:** Phase 5.6 Concept Brief created for remissvar content extraction
+- **COMPLETE:** Phase 5.5.1 Reference Resolution (76 references resolved)
 - **COMPLETE:** Phase 5.5.2 Directive-SOU Linking (8 links: 5 fulfills + 3 cites)
-- **Reclassified:** 3 weak semantic matches from `fulfills` → `cites` after review
-- **Corpus insight:** Low yield expected — legislative chains span 2-4 years, corpus covers recent docs only
-- **NEXT:** Phase 5.5.3 Minimal Insights MVP (participation dashboard, velocity metrics)
 
 ---
 
@@ -43,15 +44,17 @@ Maintained by: **Lovable (Architectural Authority)**
 |-----------|--------|
 | 5.5.1 Reference Resolution | ✅ 76 resolved (limited by corpus) |
 | 5.5.2 Directive-SOU Linking | ✅ 8 links (5 fulfills + 3 cites) |
-| 5.5.3 Insights MVP | 🔲 TODO |
+| 5.5.3 Participation Dashboard | ✅ COMPLETE |
+| 5.5.4 Velocity Dashboard | 🔧 NEEDS DEBUGGING |
 
 ---
 
 ## Next Steps
 
-1. **Phase 5.5.3:** Participation Dashboard + Velocity Metrics
-2. **Phase 5.4:** Committee Reports + Laws ingestion
-3. **Phase 6:** Relationship Inference & Case Reconstruction
+1. **Debug Phase 5.5.4:** Velocity Dashboard bug fix
+2. **Phase 5.6:** Remissvar Content Extraction + Insights (concept brief ready)
+3. **Phase 5.4:** Committee Reports + Laws ingestion
+4. **Phase 6:** Relationship Inference & Case Reconstruction
 
 ---
 

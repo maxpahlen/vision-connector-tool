@@ -143,9 +143,9 @@ Future corpus expansion (ingesting Dir. 2023-2024, more SOUs) will enable additi
 
 ---
 
-## Phase 5.5.3: Minimal Insights MVP
+## Phase 5.5.3: Participation Dashboard MVP
 
-**Status:** TODO  
+**Status:** ✅ COMPLETE (2026-01-20)  
 **Owner:** Lovable (implementation), Max (approval of metrics definitions)  
 **Prerequisite:** Phase 5.5.1 + 5.5.2 complete
 
@@ -211,10 +211,53 @@ Deliver 2 actionable insights for Erik using validated linkage.
 
 ### Success Criteria
 
-- [ ] Participation dashboard shows top 20 orgs with correct counts
-- [ ] Response rate calculation matches defined formula
-- [ ] Velocity metrics display for available processes
-- [ ] Both views render without errors
+- [x] Participation dashboard shows top 20 orgs with correct counts
+- [x] Response rate calculation matches defined formula
+- [x] Pagination bug fixed (all 3,424 responses, 4,321 invites counted)
+- [x] Dashboard renders without errors
+- [ ] Erik confirms metrics are understandable
+
+### Execution Results (2026-01-20)
+
+**Critical Bug Fixed:**
+- Edge function hit 1000-row Supabase limit, undercounting totals
+- Implemented pagination loop to fetch all rows before aggregation
+
+**Delivered:**
+- Route `/insights/participation` with organization participation table
+- Uninvited responses column with tooltip explanation
+- Response rate tooltips explaining formula
+- Organization search filter
+- "Insikter" navigation link in Header
+- Entity detail pages show remissvar + invitation history
+
+---
+
+## Phase 5.5.4: Velocity Dashboard
+
+**Status:** 🔧 NEEDS DEBUGGING  
+**Owner:** Lovable  
+**Prerequisite:** Phase 5.5.3 complete
+
+### Goal
+Display process velocity metrics (time between directive issued and remiss deadline) by ministry.
+
+### Implementation Status
+
+**Built:**
+- Edge function `get-velocity-metrics` with pagination
+- Route `/insights/velocity`
+- Ministry velocity comparison table
+
+**Bug Identified:**
+- Bug reported by Max on 2026-01-20, not yet debugged
+- Status changed from COMPLETE to NEEDS DEBUGGING
+
+### Success Criteria
+
+- [ ] Velocity metrics display correctly
+- [ ] Ministry averages are accurate
+- [ ] Edge cases (missing dates) handled gracefully
 - [ ] Erik confirms metrics are understandable
 
 ---
@@ -287,3 +330,5 @@ Phase 5.5.3: Minimal Insights MVP
 | 2026-01-19 | Phase 5.5.1 executed and completed | Lovable |
 | 2026-01-19 | Phase 5.5.2 executed: 8 directive→SOU links created (5 fulfills + 3 cites) | Lovable |
 | 2026-01-19 | Reclassified 3 weak semantic matches from fulfills→cites after review | Lovable |
+| 2026-01-20 | Phase 5.5.3 Participation Dashboard completed (pagination bug fixed) | Lovable |
+| 2026-01-20 | Phase 5.5.4 Velocity Dashboard: bug reported, marked NEEDS DEBUGGING | Lovable |

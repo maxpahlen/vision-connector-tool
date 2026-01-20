@@ -393,11 +393,11 @@ These were **NOT** implemented until MVP is validated:
 
 ---
 
-## Phase 5: Legislative Graph Expansion ✅ PHASE 5.3 COMPLETE
+## Phase 5: Legislative Graph Expansion
 
 **Goal:** Expand beyond SOUs to build comprehensive legislative process graph.
 
-### Current Database Metrics (2026-01-15)
+### Current Database Metrics (2026-01-20)
 
 | Table | Count | Notes |
 |-------|-------|-------|
@@ -405,18 +405,43 @@ These were **NOT** implemented until MVP is validated:
 | **Processes** | 127 | All with linked documents |
 | **Entities** | 1,473 | Organizations (cleaned, deduplicated) |
 | **Timeline Events** | 723 | Extracted with citations |
-| **Document References** | 494 | Cross-document citations |
+| **Document References** | 587 | Cross-document citations (76 resolved) |
 | **Remiss Documents** | 54 | All scraped with remissinstanser PDFs |
 | **Remiss Responses** | 3,424 | 99.91% linked to entities |
 | **Remiss Invitees** | 4,321 | 100% linked to entities |
 
 ### Completion Summary
 
-**Phase 5.1:** Database Schema + Timeline Agent v2.1 ✅  
-**Phase 5.2:** Propositions End-to-End ✅  
-**Phase 5.3:** Remisser + Remissvar + Entity Pipeline ✅  
+| Phase | Status | Description |
+|-------|--------|-------------|
+| **5.1** | ✅ COMPLETE | Database Schema + Timeline Agent v2.1 |
+| **5.2** | ✅ COMPLETE | Propositions End-to-End |
+| **5.3** | ✅ COMPLETE | Remisser + Remissvar + Entity Pipeline |
+| **5.5.1** | ✅ COMPLETE | Reference Resolution (76 resolved) |
+| **5.5.2** | ✅ COMPLETE | Directive-SOU Linking (8 links) |
+| **5.5.3** | ✅ COMPLETE | Participation Dashboard MVP |
+| **5.5.4** | 🔧 NEEDS DEBUG | Velocity Dashboard (bug reported) |
 
-All entity deduplication complete (0 duplicates, 0 truncated names). Ready for Phase 5.4.
+### Phase 5.5: Cross-Document Insights Foundation
+
+**Documentation:** `docs/development/branches/phase-5.5-cross-document-insights.md`
+
+**Delivered:**
+- Reference resolution: 76 citations matched to corpus documents
+- Directive-SOU linking: 8 explicit links (5 fulfills, 3 cites)
+- Participation Dashboard: `/insights/participation` with full aggregation
+- Velocity Dashboard: `/insights/velocity` (needs debugging)
+
+### Phase 5.6: Content Insights (Staged)
+
+**Status:** Concept Brief Ready  
+**Documentation:** `docs/development/branches/phase-5.6-content-insights.md`
+
+**Planned Deliverables:**
+- Remissvar PDF text extraction pipeline
+- Keyword-based stance detection (Swedish stance terms from SB PM 2021:1)
+- Response length metrics
+- Entity page content summaries
 
 ### Next: Phase 5.4 — Committee Reports + Laws
 
