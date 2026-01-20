@@ -1,5 +1,31 @@
 # Phase Deltas
 
+## 2026-01-20: Phase 5.5.4 Velocity Dashboard Bug Fix
+
+**Objective:** Fix "Okänt departement" bug in Velocity Dashboard
+
+**Root Cause:**
+- `processes.ministry` field was almost entirely NULL (1/127 populated)
+- `documents` table had correct ministry data for 56 directives
+
+**Solution:**
+- Modified `get-velocity-metrics` edge function to source ministry from directive documents
+- Lookup chain: `timeline_events.source_url` → `documents.ministry` (where doc_type='directive')
+- Fallback: `processes.ministry` → "Okänt departement"
+
+**UI Changes:**
+- Renamed dashboard title from "Processens Hastighet" to "Remissperioder"
+- Clarified description to "Tid från direktiv utfärdat till remissdeadline"
+
+**Files Modified:**
+- `supabase/functions/get-velocity-metrics/index.ts`
+- `src/pages/VelocityDashboard.tsx`
+- `docs/development/branches/phase-5.5-cross-document-insights.md`
+
+**Status:** Phase 5.5.4 now COMPLETE
+
+---
+
 ## 2026-01-20: Phase 5.5.3 Participation Dashboard MVP ✅ COMPLETE
 
 **Objective**: Deliver minimal, reliable participation metrics dashboard

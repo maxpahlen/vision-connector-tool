@@ -92,9 +92,9 @@ const VelocityDashboard = () => {
                 <ArrowLeft className="h-4 w-4 mr-1" />
                 Tillbaka
               </Button>
-              <h1 className="text-3xl font-bold">Processens Hastighet</h1>
+              <h1 className="text-3xl font-bold">Remissperioder</h1>
               <p className="text-muted-foreground mt-1">
-                Tid från direktiv till remissdeadline per departement
+                Tid från direktiv utfärdat till remissdeadline per departement
               </p>
             </div>
             <Button
