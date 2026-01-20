@@ -22,11 +22,50 @@ Running log of approved decisions for the Legislative Intelligence Platform.
 
 | Date | Change Title | PR/Issue | Data Risk | Max | Lovable | Codex |
 |------|--------------|----------|-----------|-----|---------|-------|
+| 2026-01-20 | Phase 5.5.3 Participation Dashboard MVP | N/A | NONE | AGREE | AGREE | AGREE |
 | 2026-01-05 | Operating agreement adopted | N/A | NONE | AGREE | AGREE | AGREE |
 
 ---
 
 ## Decision Details
+
+### 2026-01-20 — Phase 5.5.3 Participation Dashboard MVP
+
+**Description:** Implementation of the Participation Dashboard MVP with the following scope:
+
+**In Scope (Implemented):**
+- Edge function `get-participation-metrics` with pagination to bypass 1000-row limit
+- Entity page remiss participation display (Remissvar + Inbjudningar sections)
+- Uninvited response visibility metric ("Oinbjudna svar" column)
+- Participation rate formula clarity (tooltips explaining calculation)
+- Dashboard navigation entry ("Insikter" link in Header)
+- Organization search/filter functionality
+- Breadcrumb navigation fix (navigate(-1) for browser history)
+
+**Explicitly Out of Scope (Deferred to Phase 5.6+):**
+- Ministry filter
+- Export functionality
+- Response content extraction pipeline
+- NLP/sentiment analysis
+- Longitudinal trend analysis
+
+**Critical Bug Fixed:**
+- Edge function pagination: Original implementation hit Supabase's 1000-row default limit, causing undercounting. Fixed by implementing pagination loop to fetch all rows before aggregation.
+
+**Metrics Definition:**
+- Response Count: Raw row counts from `remiss_responses` (not distinct remiss_id)
+- Invite Count: Raw row counts from `remiss_invitees` (not distinct remiss_id)
+- Response Rate: (Responses / Invites) × 100% (null if no invites)
+- Uninvited Responses: Responses where remiss_id NOT IN org's invites (distinct remiss count)
+
+**Data Risk:** NONE — Read-only aggregation, no data modifications
+
+**Approvals:**
+- AGREE – Max ✓
+- AGREE – Lovable ✓
+- AGREE – Codex ✓
+
+---
 
 ### 2026-01-05 — Operating agreement adopted
 
