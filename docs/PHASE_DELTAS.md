@@ -1,5 +1,85 @@
 # Phase Deltas
 
+## 2026-01-20: Phase 5.5.3 Participation Dashboard MVP ✅ COMPLETE
+
+**Objective**: Deliver minimal, reliable participation metrics dashboard
+
+### Scope
+
+**In Scope:**
+- Fix 1000-row aggregation bug via edge function pagination
+- Entity page remiss participation display
+- Uninvited response visibility metric
+- Participation rate formula clarity in UI
+- Dashboard navigation entry in Header
+- Organization search/filter
+- Breadcrumb navigation fix
+
+**Explicitly Out of Scope (Phase 5.6+):**
+- Ministry filter, export functionality
+- Response content extraction pipeline, NLP/sentiment analysis
+- Longitudinal trend analysis
+
+### Implementation Summary
+
+| Task | Status | Details |
+|------|--------|---------|
+| Edge function pagination | ✅ | `get-participation-metrics` fetches all rows via pagination loop |
+| Entity participation display | ✅ | Remissvar + Inbjudningar sections on org entity pages |
+| Uninvited responses | ✅ | "Oinbjudna svar" column with tooltip explanation |
+| Formula clarity | ✅ | Tooltips: "Svarsfrekvens = Svar / Inbjudningar × 100%" |
+| Navigation entry | ✅ | "Insikter" link added to Header |
+| Organization search | ✅ | Case-insensitive filter with debounce |
+| Breadcrumb fix | ✅ | `navigate(-1)` for browser history navigation |
+
+### Critical Bug Fixed
+
+**Problem:** Edge function used direct Supabase queries limited to 1000 rows, causing:
+- Total responses: 1000 (actual: 3424)
+- Total invites: 1000 (actual: 4321)
+- Per-org counts: Truncated
+
+**Solution:** Implemented pagination loop in edge function:
+```typescript
+while (true) {
+  const { data } = await supabase
+    .from("remiss_responses")
+    .range(offset, offset + pageSize - 1);
+  if (!data || data.length === 0) break;
+  allResponses.push(...data);
+  offset += pageSize;
+}
+```
+
+### Validation Results
+
+| Metric | Before Fix | After Fix | DB Truth |
+|--------|------------|-----------|----------|
+| Total Responses | 1000 | 3424 | 3424 ✅ |
+| Total Invites | 1000 | 4321 | 4321 ✅ |
+| SKR Responses | ? | 38 | 38 ✅ |
+| SKR Invites | ? | 42 | 42 ✅ |
+
+### Files Changed
+
+- `supabase/functions/get-participation-metrics/index.ts` — New edge function with pagination
+- `src/hooks/useParticipationMetrics.ts` — Invoke edge function instead of direct queries
+- `src/pages/ParticipationDashboard.tsx` — Uninvited column, tooltips, search filter, Swedish strings
+- `src/pages/EntityDetail.tsx` — Remissvar + Inbjudningar sections for organizations
+- `src/pages/DocumentDetail.tsx` — Breadcrumb navigation fix
+- `src/components/layout/Header.tsx` — "Insikter" navigation link
+
+### Remaining Items (Non-blocking)
+
+- English UI strings in `DocumentDetail.tsx` (minor i18n issue, separate task)
+
+### Next Steps
+
+- Phase 5.5.4: Velocity Dashboard (optional)
+- Phase 5.6: Response Content Insights (requires PDF extraction pipeline)
+
+---
+
 ## 2026-01-19: Phase 5.5.2 Directive-SOU Linking ✅ COMPLETE
 
 **Objective**: Create explicit directive → SOU relationships by parsing citations
