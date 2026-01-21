@@ -65,3 +65,6 @@ verify_jwt = false
 
 [functions.link-invitee-entities]
 verify_jwt = false
+
+[functions.process-remissvar-pdf]
+verify_jwt = false

@@ -1,5 +1,35 @@
 # Phase Deltas
 
+## 2026-01-21: Phase 5.6.2 process-remissvar-pdf Edge Function Deployed
+
+**Phase 5.6.2 Complete:** Remissvar PDF text extraction edge function created and deployed.
+
+### New Edge Function
+- `supabase/functions/process-remissvar-pdf/index.ts`
+
+### Features
+- Extracts text from `remiss_responses` PDFs using shared `pdf-extractor.ts`
+- Sanitizes extracted text via `text-utils.ts`
+- Updates `extraction_status`, `raw_content`, `extracted_at` columns
+- Supports `response_id`, `remiss_id`, `limit`, and `dry_run` parameters
+- Skip logic for non-PDF files with proper status tracking
+
+### API Contract
+```typescript
+// Input
+{ response_id?: string, remiss_id?: string, limit?: number, dry_run?: boolean }
+
+// Output
+{ processed: number, extracted: number, skipped: number, errors: [], details: [] }
+```
+
+### Files Created/Modified
+- `supabase/functions/process-remissvar-pdf/index.ts` — New edge function
+- `supabase/config.toml` — Added function config
+- `docs/development/branches/phase-5.6-content-insights.md` — Updated status
+
+---
+
 ## 2026-01-21: Phase 5.6.1 Schema Deployed
 
 **Phase 5.6.1 Complete:** Remissvar extraction infrastructure added.

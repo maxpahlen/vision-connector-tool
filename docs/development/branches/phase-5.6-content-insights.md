@@ -1,5 +1,14 @@
 # Phase 5.6: Remissvar Content Insights
 
+## Phase Status
+
+| Step | Description | Status |
+|------|-------------|--------|
+| 5.6.1 | Schema updates (extraction_status, raw_content, extracted_at) | ✅ COMPLETE |
+| 5.6.2 | process-remissvar-pdf edge function | ✅ COMPLETE |
+| 5.6.3 | Keyword-based stance detection | 🔲 Not started |
+| 5.6.4 | Section extraction (Sammanfattning, Ställningstaganden) | 🔲 Not started |
+
 > **Status:** STAGED (Concept Brief)  
 > **Owner:** Lovable (Architectural Authority)  
 > **Created:** 2026-01-20  
