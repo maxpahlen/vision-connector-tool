@@ -1,5 +1,6 @@
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import Header from '@/components/layout/Header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -148,6 +149,28 @@ export default function ProcessDetail() {
     enabled: !!id,
   });
 
+  // Single source of truth: derive ministry from documents (directive > sou > proposition)
+  // Must be before any early returns to satisfy React hooks rules
+  const derivedMinistry = useMemo(() => {
+    if (!documents || documents.length === 0) return null;
+    
+    const directive = documents.find(d => (d.documents as any)?.doc_type === 'directive');
+    if ((directive?.documents as any)?.ministry) return (directive.documents as any).ministry;
+    
+    const sou = documents.find(d => (d.documents as any)?.doc_type === 'sou');
+    if ((sou?.documents as any)?.ministry) return (sou.documents as any).ministry;
+    
+    const prop = documents.find(d => (d.documents as any)?.doc_type === 'proposition');
+    if ((prop?.documents as any)?.ministry) return (prop.documents as any).ministry;
+    
+    return null;
+  }, [documents]);
+
+  // Derived document categorization
+  const directives = documents?.filter(d => (d.documents as any)?.doc_type === 'directive') || [];
+  const investigations = documents?.filter(d => (d.documents as any)?.doc_type === 'sou') || [];
+  const propositions = documents?.filter(d => (d.documents as any)?.doc_type === 'proposition') || [];
+
   if (processLoading) {
     return (
       <div className="min-h-screen bg-background">
@@ -185,10 +208,6 @@ export default function ProcessDetail() {
     );
   }
 
-  const directives = documents?.filter(d => (d.documents as any)?.doc_type === 'directive') || [];
-  const investigations = documents?.filter(d => (d.documents as any)?.doc_type === 'sou') || [];
-  const propositions = documents?.filter(d => (d.documents as any)?.doc_type === 'proposition') || [];
-
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -224,10 +243,10 @@ export default function ProcessDetail() {
               {process.stage_explanation && (
                 <p className="text-muted-foreground mb-2">{process.stage_explanation}</p>
               )}
-              {process.ministry && (
+              {derivedMinistry && (
                 <div className="flex items-center gap-2 text-sm">
                   <Building2 className="h-4 w-4 text-muted-foreground" />
-                  <span>{process.ministry}</span>
+                  <span>{derivedMinistry}</span>
                 </div>
               )}
             </div>

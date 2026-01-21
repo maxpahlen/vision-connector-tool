@@ -1,5 +1,39 @@
 # Phase Deltas
 
+## 2026-01-21: Ministry Single Source of Truth Fix
+
+**Objective:** Establish `documents.ministry` as the canonical source for ministry data across all pages
+
+**Problem:**
+- `/document/:id` displayed correct ministry (read from `documents.ministry`)
+- `/process/:id` displayed "Okänt departement" (read from stale `processes.ministry`)
+- `/insights/velocity` missed processes without `directive` role but with `main_sou`
+
+**Solution - Normalization (derive at query time):**
+
+**Frontend (`src/pages/ProcessDetail.tsx`):**
+- Added `useMemo` hook to derive ministry from linked documents
+- Priority chain: `directive.ministry` → `sou.ministry` → `proposition.ministry` → `null`
+- Removed dependency on `processes.ministry`
+
+**Backend (`supabase/functions/get-velocity-metrics/index.ts`):**
+- Expanded `process_documents` query to include roles: `directive`, `main_sou`, `sou`
+- Implemented priority-based selection (directive=1, main_sou=2, sou=3)
+- Fallback chain: document ministry → `processes.ministry` → "Okänt departement"
+
+**Architectural Decision:**
+- `documents.ministry` is the single source of truth
+- All consumers derive ministry via `process_documents` joins
+- `processes.ministry` is legacy; not updated, only used as last fallback
+
+**Files Modified:**
+- `src/pages/ProcessDetail.tsx` - derive ministry from documents
+- `supabase/functions/get-velocity-metrics/index.ts` - multi-role priority lookup
+
+**Status:** COMPLETE
+
+---
+
 ## 2026-01-20: Phase 5.5.4 Velocity Dashboard Bug Fix
 
 **Objective:** Fix "Okänt departement" bug in Velocity Dashboard
