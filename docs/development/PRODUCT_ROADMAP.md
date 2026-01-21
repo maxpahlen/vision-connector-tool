@@ -1,7 +1,7 @@
 # Product Roadmap — Legislative Intelligence Platform
 
-**Last Updated:** 2026-01-15  
-**Current Phase:** Phase 5.3 ✅ COMPLETE | Phase 5.4 Planned
+**Last Updated:** 2026-01-21  
+**Current Phase:** Phase 5.5 ✅ COMPLETE | Phase 5.6 In Progress
 
 ---
 
@@ -420,7 +420,8 @@ These were **NOT** implemented until MVP is validated:
 | **5.5.1** | ✅ COMPLETE | Reference Resolution (76 resolved) |
 | **5.5.2** | ✅ COMPLETE | Directive-SOU Linking (8 links) |
 | **5.5.3** | ✅ COMPLETE | Participation Dashboard MVP |
-| **5.5.4** | 🔧 NEEDS DEBUG | Velocity Dashboard (bug reported) |
+| **5.5.4** | ✅ COMPLETE | Velocity Dashboard (ministry bug fixed) |
+| **5.6.1** | 🚀 IN PROGRESS | Remissvar Extraction Schema |
 
 ### Phase 5.5: Cross-Document Insights Foundation
 
