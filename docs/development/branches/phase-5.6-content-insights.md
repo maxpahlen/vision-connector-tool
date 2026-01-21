@@ -25,10 +25,10 @@ Enable content-based analysis of remissvar by extracting PDF text and building a
 
 ### Phase 5.6.1: Database Schema Deployment
 
-**Status:** Ready to execute  
+**Status:** ✅ COMPLETE (2026-01-21)  
 **Risk:** NONE (additive columns only)
 
-Add extraction infrastructure columns to `remiss_responses`:
+Added extraction infrastructure columns to `remiss_responses`:
 
 ```sql
 ALTER TABLE remiss_responses 
