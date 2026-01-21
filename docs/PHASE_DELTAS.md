@@ -1,5 +1,48 @@
 # Phase Deltas
 
+## 2026-01-21: Phase 5.6.1 Schema Deployed
+
+**Phase 5.6.1 Complete:** Remissvar extraction infrastructure added.
+
+### Schema Changes
+- `remiss_responses.extraction_status` — TEXT, default 'not_started'
+- `remiss_responses.raw_content` — TEXT for extracted PDF text
+- `remiss_responses.extracted_at` — TIMESTAMPTZ
+- Index: `idx_remiss_responses_extraction_status`
+
+### Extraction Status Values
+- `not_started` — Default, never processed
+- `pending` — Queued for extraction
+- `ok` — Successfully extracted
+- `error` — Extraction failed
+- `skipped` — Intentionally skipped (non-PDF, empty)
+
+### Next Steps
+- Phase 5.6.2: Build `process-remissvar-pdf` edge function
+- Admin UI: `RemissvarTextExtractorTest.tsx`
+
+---
+
+## 2026-01-21: Ministry Single Source of Truth Fix
+
+**Architectural Decision:** `documents.ministry` is now the single source of truth for all ministry data.
+
+### Problem Solved
+- `/document/:id` showed correct ministry (from `documents.ministry`)
+- `/process/:id` showed "Okänt departement" (from stale `processes.ministry`)
+- `/insights/velocity` showed "Okänt departement" (only looked for `directive` role)
+
+### Solution Implemented
+1. **ProcessDetail.tsx:** Derives ministry from linked documents via `process_documents` with priority: directive > sou > proposition
+2. **get-velocity-metrics edge function:** Extended to query `directive`, `main_sou`, and `sou` roles with priority-based selection
+
+### Files Modified
+- `src/pages/ProcessDetail.tsx` — Added `derivedMinistry` useMemo
+- `supabase/functions/get-velocity-metrics/index.ts` — Extended ministry lookup
+- `docs/PHASE_DELTAS.md` — This entry
+
+---
+
 ## 2026-01-21: Ministry Single Source of Truth Fix
 
 **Objective:** Establish `documents.ministry` as the canonical source for ministry data across all pages

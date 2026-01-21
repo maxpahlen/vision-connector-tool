@@ -590,6 +590,8 @@ export type Database = {
           created_at: string | null
           document_id: string | null
           entity_id: string | null
+          extracted_at: string | null
+          extraction_status: string | null
           file_type: string | null
           file_url: string
           filename: string | null
@@ -597,6 +599,7 @@ export type Database = {
           match_confidence: string | null
           metadata: Json | null
           normalized_org_name: string | null
+          raw_content: string | null
           remiss_id: string
           responding_organization: string | null
           status: string | null
@@ -605,6 +608,8 @@ export type Database = {
           created_at?: string | null
           document_id?: string | null
           entity_id?: string | null
+          extracted_at?: string | null
+          extraction_status?: string | null
           file_type?: string | null
           file_url: string
           filename?: string | null
@@ -612,6 +617,7 @@ export type Database = {
           match_confidence?: string | null
           metadata?: Json | null
           normalized_org_name?: string | null
+          raw_content?: string | null
           remiss_id: string
           responding_organization?: string | null
           status?: string | null
@@ -620,6 +626,8 @@ export type Database = {
           created_at?: string | null
           document_id?: string | null
           entity_id?: string | null
+          extracted_at?: string | null
+          extraction_status?: string | null
           file_type?: string | null
           file_url?: string
           filename?: string | null
@@ -627,6 +635,7 @@ export type Database = {
           match_confidence?: string | null
           metadata?: Json | null
           normalized_org_name?: string | null
+          raw_content?: string | null
           remiss_id?: string
           responding_organization?: string | null
           status?: string | null
