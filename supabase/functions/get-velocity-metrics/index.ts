@@ -130,9 +130,16 @@ serve(async (req) => {
       }
     }
 
-    // Fetch ministry from directive documents via process_documents table
-    // This is the canonical link: process → process_documents(role='directive') → documents.ministry
-    const directiveMinistries: Map<string, string> = new Map();
+    // Fetch ministry from documents via process_documents table
+    // Single source of truth: directive > main_sou > sou > process.ministry > "Okänt departement"
+    const documentMinistries: Map<string, { ministry: string; priority: number }> = new Map();
+    
+    // Priority: 1 = directive (highest), 2 = main_sou, 3 = sou
+    const rolePriority: Record<string, number> = {
+      'directive': 1,
+      'main_sou': 2,
+      'sou': 3,
+    };
     
     for (let i = 0; i < matchedProcessIds.length; i += 100) {
       const chunk = matchedProcessIds.slice(i, i + 100);
@@ -140,29 +147,35 @@ serve(async (req) => {
         .from("process_documents")
         .select(`
           process_id,
+          role,
           documents!inner(ministry)
         `)
-        .eq("role", "directive")
+        .in("role", ["directive", "main_sou", "sou"])
         .in("process_id", chunk);
       
       if (error) throw error;
       if (data) {
         for (const pd of data) {
-          // documents is an object with ministry field
           const docs = pd.documents as unknown as { ministry: string | null } | { ministry: string | null }[];
           const ministry = Array.isArray(docs) ? docs[0]?.ministry : docs?.ministry;
+          const priority = rolePriority[pd.role] ?? 99;
+          
           if (ministry) {
-            directiveMinistries.set(pd.process_id, ministry);
+            const existing = documentMinistries.get(pd.process_id);
+            // Only update if no existing or current has higher priority (lower number)
+            if (!existing || priority < existing.priority) {
+              documentMinistries.set(pd.process_id, { ministry, priority });
+            }
           }
         }
       }
     }
     
-    // Merge ministry data: prefer directive document ministry, fallback to process ministry
+    // Merge ministry data: prefer document ministry (by priority), fallback to process ministry
     for (const [processId, details] of processDetails.entries()) {
-      const directiveMinistry = directiveMinistries.get(processId);
-      if (directiveMinistry) {
-        processDetails.set(processId, { ...details, ministry: directiveMinistry });
+      const docMinistry = documentMinistries.get(processId);
+      if (docMinistry) {
+        processDetails.set(processId, { ...details, ministry: docMinistry.ministry });
       } else if (!details.ministry) {
         processDetails.set(processId, { ...details, ministry: "Okänt departement" });
       }
