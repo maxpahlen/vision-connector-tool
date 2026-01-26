@@ -38,25 +38,19 @@ export function RemissvarTextExtractorTest() {
   const [loading, setLoading] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [batchSize, setBatchSize] = useState('10');
+  const [batchCount, setBatchCount] = useState('1');
+  const [currentBatch, setCurrentBatch] = useState(0);
   const [dryRun, setDryRun] = useState(false);
   const [lastResult, setLastResult] = useState<BatchResult | null>(null);
   const [totalProcessed, setTotalProcessed] = useState(0);
+  const [shouldStop, setShouldStop] = useState(false);
 
-  // Load extraction stats
+  // Load extraction stats with pagination to bypass 1000 row limit
   const loadStats = async () => {
     setLoading(true);
     try {
-      // Get counts by extraction_status
-      const { data, error } = await supabase
-        .from('remiss_responses')
-        .select('extraction_status')
-        .eq('file_type', 'pdf')
-        .not('file_url', 'is', null);
-
-      if (error) throw error;
-
       const counts: ExtractionStats = {
-        total: data?.length || 0,
+        total: 0,
         not_started: 0,
         ok: 0,
         error: 0,
@@ -64,15 +58,37 @@ export function RemissvarTextExtractorTest() {
         pending: 0,
       };
 
-      data?.forEach(row => {
-        const status = row.extraction_status || 'not_started';
-        if (status in counts) {
-          counts[status as keyof Omit<ExtractionStats, 'total'>]++;
+      const PAGE_SIZE = 1000;
+      let page = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('remiss_responses')
+          .select('extraction_status')
+          .eq('file_type', 'pdf')
+          .not('file_url', 'is', null)
+          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+          hasMore = false;
+        } else {
+          counts.total += data.length;
+          data.forEach(row => {
+            const status = row.extraction_status || 'not_started';
+            if (status in counts) {
+              counts[status as keyof Omit<ExtractionStats, 'total'>]++;
+            }
+          });
+          hasMore = data.length === PAGE_SIZE;
+          page++;
         }
-      });
+      }
 
       setStats(counts);
-      console.log('[Remissvar Extraction] Stats loaded:', counts);
+      console.log('[Remissvar Extraction] Stats loaded (paginated):', counts);
     } catch (err) {
       console.error('[Remissvar Extraction] Error loading stats:', err);
       toast.error('Failed to load extraction stats');
@@ -81,11 +97,8 @@ export function RemissvarTextExtractorTest() {
     }
   };
 
-  // Run batch extraction
-  const runBatchExtraction = async () => {
-    setExtracting(true);
-    setLastResult(null);
-
+  // Run a single batch extraction
+  const runSingleBatch = async (): Promise<BatchResult | null> => {
     try {
       const { data, error } = await supabase.functions.invoke('process-remissvar-pdf', {
         body: {
@@ -95,26 +108,85 @@ export function RemissvarTextExtractorTest() {
       });
 
       if (error) throw error;
-
-      setLastResult(data);
-      setTotalProcessed(prev => prev + (data?.processed || 0));
-
-      if (data?.processed > 0) {
-        toast.success(`Extracted ${data.extracted}/${data.processed} PDFs${dryRun ? ' (dry run)' : ''}`);
-      } else {
-        toast.info(data?.message || 'No PDFs to process');
-      }
-
-      // Refresh stats after extraction
-      if (!dryRun) {
-        await loadStats();
-      }
+      return data;
     } catch (err) {
       console.error('[Remissvar Extraction] Error:', err);
-      toast.error('Extraction failed');
-    } finally {
-      setExtracting(false);
+      throw err;
     }
+  };
+
+  // Run multiple batches sequentially with delay between each
+  const runBatchExtraction = async () => {
+    setExtracting(true);
+    setLastResult(null);
+    setShouldStop(false);
+    
+    const totalBatches = parseInt(batchCount, 10);
+    let accumulatedResult: BatchResult = {
+      processed: 0,
+      extracted: 0,
+      skipped: 0,
+      errors: [],
+      details: []
+    };
+
+    for (let i = 0; i < totalBatches; i++) {
+      if (shouldStop) {
+        toast.info(`Stopped after ${i} batches`);
+        break;
+      }
+
+      setCurrentBatch(i + 1);
+      
+      try {
+        const data = await runSingleBatch();
+        
+        if (data) {
+          accumulatedResult.processed += data.processed || 0;
+          accumulatedResult.extracted += data.extracted || 0;
+          accumulatedResult.skipped += data.skipped || 0;
+          accumulatedResult.errors = [...accumulatedResult.errors, ...(data.errors || [])];
+          accumulatedResult.details = [...accumulatedResult.details, ...(data.details || [])];
+          
+          setLastResult({ ...accumulatedResult });
+          setTotalProcessed(prev => prev + (data.processed || 0));
+          
+          // If no more items to process, stop early
+          if (data.processed === 0) {
+            toast.info(`No more PDFs to process after batch ${i + 1}`);
+            break;
+          }
+        }
+
+        // Wait 2 seconds between batches to ensure edge function shuts down
+        if (i < totalBatches - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+        
+      } catch {
+        toast.error(`Batch ${i + 1} failed`);
+        break;
+      }
+    }
+
+    if (accumulatedResult.processed > 0) {
+      toast.success(`Extracted ${accumulatedResult.extracted}/${accumulatedResult.processed} PDFs across ${currentBatch} batches${dryRun ? ' (dry run)' : ''}`);
+    } else {
+      toast.info('No PDFs to process');
+    }
+
+    // Refresh stats after extraction
+    if (!dryRun) {
+      await loadStats();
+    }
+    
+    setExtracting(false);
+    setCurrentBatch(0);
+  };
+
+  // Stop running batches
+  const stopExtraction = () => {
+    setShouldStop(true);
   };
 
   // Load stats on mount
@@ -186,10 +258,10 @@ export function RemissvarTextExtractorTest() {
         )}
 
         {/* Batch controls */}
-        <div className="flex items-center gap-4 pt-2 border-t">
+        <div className="flex flex-wrap items-center gap-4 pt-2 border-t">
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Batch size:</span>
-            <Select value={batchSize} onValueChange={setBatchSize}>
+            <Select value={batchSize} onValueChange={setBatchSize} disabled={extracting}>
               <SelectTrigger className="w-24">
                 <SelectValue />
               </SelectTrigger>
@@ -203,15 +275,38 @@ export function RemissvarTextExtractorTest() {
             </Select>
           </div>
 
-          <Button
-            onClick={runBatchExtraction}
-            disabled={extracting || (stats?.not_started === 0)}
-            variant={dryRun ? 'outline' : 'default'}
-          >
-            {extracting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            <Play className="mr-2 h-4 w-4" />
-            {dryRun ? 'Dry Run' : 'Extract Batch'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Batches:</span>
+            <Select value={batchCount} onValueChange={setBatchCount} disabled={extracting}>
+              <SelectTrigger className="w-24">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">1</SelectItem>
+                <SelectItem value="5">5</SelectItem>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="20">20</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {extracting ? (
+            <Button onClick={stopExtraction} variant="destructive" size="sm">
+              <XCircle className="mr-2 h-4 w-4" />
+              Stop (after batch {currentBatch})
+            </Button>
+          ) : (
+            <Button
+              onClick={runBatchExtraction}
+              disabled={stats?.not_started === 0}
+              variant={dryRun ? 'outline' : 'default'}
+            >
+              <Play className="mr-2 h-4 w-4" />
+              {dryRun ? 'Dry Run' : `Extract ${batchCount} Batch${parseInt(batchCount) > 1 ? 'es' : ''}`}
+            </Button>
+          )}
 
           <label className="flex items-center gap-2 text-sm">
             <input
@@ -219,16 +314,25 @@ export function RemissvarTextExtractorTest() {
               checked={dryRun}
               onChange={(e) => setDryRun(e.target.checked)}
               className="rounded"
+              disabled={extracting}
             />
             Dry run (no writes)
           </label>
-
-          {totalProcessed > 0 && (
-            <span className="text-sm text-muted-foreground">
-              Session total: {totalProcessed} processed
-            </span>
-          )}
         </div>
+
+        {/* Progress indicator during extraction */}
+        {extracting && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Running batch {currentBatch} of {batchCount}...
+          </div>
+        )}
+
+        {totalProcessed > 0 && (
+          <div className="text-sm text-muted-foreground">
+            Session total: {totalProcessed} processed
+          </div>
+        )}
 
         {/* Last batch results */}
         {lastResult && (
