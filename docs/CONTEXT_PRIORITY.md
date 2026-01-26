@@ -1,7 +1,7 @@
 # Context Priority
 
-**Last Updated:** 2026-01-20  
-**Current Phase:** 5.5 (Cross-Document Insights Foundation) — ✅ ALL COMPLETE
+**Last Updated:** 2026-01-26  
+**Current Phase:** 5.6 (Remissvar Content Insights) — IN PROGRESS
 
 ---
 
@@ -19,42 +19,53 @@ Maintained by: **Lovable (Architectural Authority)**
 |---|------|-------------------|
 | 1 | `docs/WORKFLOW.md` | Operating agreement: roles, phases, message discipline |
 | 2 | `docs/PHASE_DELTAS.md` | Most recent changes since last sync |
-| 3 | `docs/development/branches/phase-5.5-cross-document-insights.md` | **COMPLETE** - Cross-document linking & insights |
-| 4 | `docs/development/branches/phase-5.6-content-insights.md` | **STAGED** - Remissvar content extraction (Phase 5.6) |
-| 5 | `docs/development/PHASE_5.6_REMISSVAR_TEXT_EXTRACTION_GUIDANCE.md` | Structural guidance for Phase 5.6 |
+| 3 | `docs/development/branches/phase-5.6-content-insights.md` | **IN PROGRESS** - Remissvar content extraction + stance detection |
+| 4 | `docs/development/PHASE_5.6_REMISSVAR_TEXT_EXTRACTION_GUIDANCE.md` | Swedish stance keywords, structural anchors from SB PM 2021:1 |
+| 5 | `docs/development/branches/phase-5.5-cross-document-insights.md` | **COMPLETE** - Cross-document linking & insights |
 | 6 | `docs/CHECKLISTS.md` | Verification requirements before sign-off |
 | 7 | `docs/DECISION_LOG.md` | Approved decisions with triple sign-off |
 | 8 | `docs/development/PRODUCT_ROADMAP.md` | Overall progress and metrics |
 
 ---
 
-## Recent Changes (2026-01-20)
+## Recent Changes (2026-01-26)
 
-- **COMPLETE:** Phase 5.5.4 Velocity Dashboard (bug fixed: ministry now sourced from directive documents)
-- **COMPLETE:** Phase 5.5.3 Participation Dashboard MVP (pagination bug fixed, all 3,424 responses counted)
-- **STAGED:** Phase 5.6 Concept Brief created for remissvar content extraction
-- **COMPLETE:** Phase 5.5.1 Reference Resolution (76 references resolved)
-- **COMPLETE:** Phase 5.5.2 Directive-SOU Linking (8 links: 5 fulfills + 3 cites)
+- **IN PROGRESS:** Phase 5.6.2 extraction validated (~467 ok, 8 errors, ~2,949 remaining)
+- **ANALYZED:** Extraction errors are scanned/image PDFs (OCR limitation, not pipeline bug)
+- **IMPROVED:** Admin UI with multi-batch extraction + pagination beyond 1000-row limit
+- **NEXT:** Phase 5.6.3 keyword-based stance detection (planning)
 
 ---
 
-## Phase 5.5 Status
+## Phase 5.6 Status
 
-| Component | Status |
-|-----------|--------|
-| 5.5.1 Reference Resolution | ✅ 76 resolved (limited by corpus) |
-| 5.5.2 Directive-SOU Linking | ✅ 8 links (5 fulfills + 3 cites) |
-| 5.5.3 Participation Dashboard | ✅ COMPLETE |
-| 5.5.4 Velocity Dashboard | ✅ COMPLETE (bug fixed 2026-01-20) |
+| Component | Status | Notes |
+|-----------|--------|-------|
+| 5.6.1 Schema | ✅ COMPLETE | extraction_status, raw_content, extracted_at |
+| 5.6.2 Extraction Pipeline | ✅ COMPLETE | Edge function + admin UI deployed |
+| 5.6.2 Batch Processing | 🔄 IN PROGRESS | ~14% extracted, 86% remaining |
+| 5.6.3 Stance Detection | 🔲 PLANNING | Keyword-based Swedish stance terms |
+| 5.6.4 Section Extraction | 🔲 NOT STARTED | Sammanfattning, Ställningstaganden |
+
+---
+
+## Known Limitations
+
+### Scanned PDF Extraction (8 documents)
+- **Cause:** Image-based PDFs without text layer
+- **Organizations affected:** Sametinget (5), SMHI (1), Uppsala universitet (1), other (1)
+- **Resolution:** Future OCR capability (Tesseract.js, Google Vision API)
+- **Impact:** 0.2% error rate, acceptable for current phase
 
 ---
 
 ## Next Steps
 
-1. **Plan Phase 5.6:** Remissvar Content Extraction + Insights (concept brief ready)
-2. **Future: Direktiv→Lag metric:** Track full legislative cycle when proposition/law data available
-3. **Phase 5.4:** Committee Reports + Laws ingestion
-4. **Phase 6:** Relationship Inference & Case Reconstruction
+1. **Complete extraction:** Run remaining ~2,949 remissvar through batch processor
+2. **Phase 5.6.3:** Implement keyword-based stance detection
+3. **Phase 5.6.4:** Section extraction (Sammanfattning, Ställningstaganden)
+4. **Phase 5.4:** Committee Reports + Laws ingestion
+5. **Phase 6:** Relationship Inference & Case Reconstruction
 
 ---
 
