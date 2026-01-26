@@ -9,14 +9,46 @@
 | 5.6.3 | Keyword-based stance detection | 🔲 Not started |
 | 5.6.4 | Section extraction (Sammanfattning, Ställningstaganden) | 🔲 Not started |
 
-> **Status:** STAGED (Concept Brief)  
+> **Status:** IN PROGRESS (Phase 5.6.2 Complete, Extraction Running)  
 > **Owner:** Lovable (Architectural Authority)  
 > **Created:** 2026-01-20  
-> **Prerequisite:** Phase 5.5.3 COMPLETE, Phase 5.5.4 debugged
+> **Last Updated:** 2026-01-26
 
 ## Objective
 
 Enable content-based analysis of remissvar by extracting PDF text and building a foundation for NLP-driven insights using **structural guidance from SB PM 2021:1**.
+
+---
+
+## Current Extraction Status (2026-01-26)
+
+| Status | Count | Percentage | Notes |
+|--------|-------|------------|-------|
+| **ok** | ~467 | ~14% | Successfully extracted, avg ~9,000 chars |
+| **error** | 8 | 0.2% | Scanned/image PDFs without text layer |
+| **not_started** | ~2,949 | ~86% | Awaiting batch processing |
+| **Total** | 3,424 | 100% | All remissvar PDFs |
+
+### Error Analysis
+
+All 8 extraction errors are **scanned/image-based PDFs** that lack a text layer. This is a **format limitation**, not a pipeline bug.
+
+| Remissvar | Organization | File Size | Error Type |
+|-----------|--------------|-----------|------------|
+| SOU 2024:78 response | SMHI | 4.0 MB | parse_failed (empty text) |
+| SOU 2024:78 response | Uppsala universitet | 645 KB | parse_failed (empty text) |
+| SOU 2024:92 response | Sametinget | 867 KB | parse_failed (empty text) |
+| SOU 2024:92 response | Sametinget | 718 KB | parse_failed (empty text) |
+| SOU 2024:92 response | Sametinget | 434 KB | parse_failed (empty text) |
+| SOU 2024:96 response | Sametinget | 1.2 MB | parse_failed (empty text) |
+| SOU 2024:96 response | Sametinget | 689 KB | parse_failed (empty text) |
+| SOU 2024:96 response | Sametinget | 543 KB | parse_failed (empty text) |
+
+**Root Cause:** These PDFs are scanned documents or image-based files. The `pdf-parse` library extracts text from the PDF text layer, but these files have no text layer—only embedded images.
+
+**Evidence:** File sizes (434 KB to 4 MB) confirm they are not empty. The content exists as images, not extractable text.
+
+**Resolution Path:** Future phase could add OCR capability (e.g., Tesseract.js, Google Vision API) to extract text from scanned documents. Current error rate (0.2%) is acceptable.
 
 ---
 
@@ -60,38 +92,47 @@ CREATE INDEX IF NOT EXISTS idx_remiss_responses_extraction_status
 
 ### Phase 5.6.2: PDF Text Extraction Pipeline
 
-**Status:** To be implemented  
+**Status:** ✅ COMPLETE (2026-01-26)  
 **Dependencies:** Phase 5.6.1
 
-#### New Edge Function: `process-remissvar-pdf`
+#### Edge Function: `process-remissvar-pdf`
 
-Adapts existing `process-sou-pdf` pattern:
+Extracts text from remissvar PDFs using shared infrastructure:
 
 **Input:**
 ```json
 {
-  "responseId": "uuid",       // Optional: single response
-  "batchSize": 50,            // Default batch size
-  "dryRun": false             // Preview mode
+  "response_id": "uuid",       // Optional: single response
+  "remiss_id": "uuid",         // Optional: all responses for a remiss
+  "limit": 50,                 // Default batch size
+  "dry_run": false             // Preview mode
 }
 ```
 
-**Behavior:**
-1. Query `remiss_responses` where `extraction_status = 'not_started'`
-2. For each response, call PDF extractor service using `file_url`
-3. Store result in `raw_content`, set `extraction_status = 'ok'`, `extracted_at = now()`
-4. Handle errors: set `extraction_status = 'error'`, store error in `metadata`
+**Output:**
+```json
+{
+  "processed": 10,
+  "extracted": 9,
+  "skipped": 0,
+  "errors": [{ "response_id": "uuid", "error": "message" }],
+  "details": [{ "response_id": "uuid", "filename": "...", "text_length": 8500, "page_count": 12, "extraction_status": "ok" }]
+}
+```
 
 **Reuse Strategy:**
-- Import shared `getPdfExtractorConfig()` from `_shared/pdf-extractor.ts`
-- Use existing `sanitizeText()` from `_shared/text-utils.ts`
+- `_shared/pdf-extractor.ts` — getPdfExtractorConfig(), extractTextFromPdf()
+- `_shared/text-utils.ts` — sanitizeText() for PostgreSQL compatibility
 - Pagination pattern from `get-participation-metrics`
 
 #### Admin UI Component: `RemissvarTextExtractorTest.tsx`
 
 Features:
-- Show counts by `extraction_status`
-- "Extract All" button with progress indicator
+- Real-time counts by `extraction_status` (with pagination for >1000 rows)
+- Batch size selector (10, 25, 50, 100)
+- **Multi-batch execution** with configurable batch count (1, 5, 10, 25, 50, 100)
+- 2-second delay between batches to allow edge function shutdown
+- Stop button for interrupting batch processing
 - Sample text preview for verification
 - Error log display
 

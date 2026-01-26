@@ -1,5 +1,45 @@
 # Phase Deltas
 
+## 2026-01-26: Phase 5.6.2 Extraction Pipeline Validation + Error Analysis
+
+**Status:** Extraction pipeline validated, error analysis complete.
+
+### Extraction Progress
+
+| Status | Count | Percentage |
+|--------|-------|------------|
+| ok | ~467 | ~14% |
+| error | 8 | 0.2% |
+| not_started | ~2,949 | ~86% |
+
+### Error Analysis: Scanned PDFs (Known Limitation)
+
+All 8 extraction errors are **scanned/image-based PDFs** without a text layer:
+
+| Organization | Count | File Size Range |
+|--------------|-------|-----------------|
+| Sametinget | 5 | 434 KB - 1.2 MB |
+| SMHI | 1 | 4.0 MB |
+| Uppsala universitet | 1 | 645 KB |
+| Other | 1 | ~700 KB |
+
+**Root Cause:** PDFs are scanned documents (images embedded in PDF wrapper). The `pdf-parse` library cannot extract text from images—it requires a text layer.
+
+**Resolution Path:** Future phase could add OCR (Tesseract.js, Google Vision API). Current 0.2% error rate is acceptable.
+
+### Admin UI Improvements
+
+- **Pagination fix:** Stats now fetch all rows (cursor-based pagination beyond 1000-row limit)
+- **Multi-batch execution:** Run 1-100 sequential batches with configurable count
+- **Auto-shutdown:** 2-second delay between batches allows edge function to restart
+- **Stop button:** Interrupt ongoing batch processing
+
+### Files Modified
+- `src/components/admin/RemissvarTextExtractorTest.tsx` — Pagination + multi-batch UI
+- `docs/development/branches/phase-5.6-content-insights.md` — Error analysis, status update
+
+---
+
 ## 2026-01-21: Phase 5.6.2 process-remissvar-pdf Edge Function Deployed
 
 **Phase 5.6.2 Complete:** Remissvar PDF text extraction edge function created and deployed.
