@@ -1,5 +1,97 @@
 # Phase Deltas
 
+## 2026-01-27: Phase 5.6.4 AI Stance Classification — Paginated Accumulation Fix
+
+**Status:** COMPLETE — Windowing bug root cause identified and fixed
+
+### Problem: "No responses to classify" despite 1,018 pending
+
+The Admin UI showed ~1,018 pending AI classification items, but running the classifier returned "No eligible responses found" or processed only 1 item when batch size was 10-20.
+
+### Root Cause: Deterministic Windowing Bug
+
+The edge function fetched candidates ordered by `created_at ASC` with a fixed overfetch factor (`limit * 3`). However:
+
+| Finding | Value |
+|---------|-------|
+| First 60 candidates | 60/60 were neutral WITH keywords (ineligible) |
+| First eligible row | Position 62 in ordered dataset |
+| Batch size 20 | Fetches 60 candidates → 0 eligible |
+| Batch size 10 | Fetches 30 candidates → 0 eligible |
+
+**Eligibility rules (client-side):**
+- `stance_summary = 'mixed'` (always eligible)
+- OR `stance_summary = 'neutral'` with `keywords_found.length = 0`
+- AND `metadata.ai_review` is null
+
+The ineligible neutral rows (with keywords_found > 0) formed a blocking prefix that the fixed overfetch factor couldn't bridge.
+
+### Prior Attempts (and why they failed)
+
+| Attempt | Change | Result |
+|---------|--------|--------|
+| Remove `.is("metadata->ai_review", null)` | Removed PostgREST nested JSONB filter | Fixed one bug, but didn't address windowing |
+| Add stance_summary prefilter | Added `.in("stance_summary", ["neutral","mixed"])` | Reduced candidate pool but still hit blocking prefix |
+| Increase overfetch to `limit * 3` | Fetched 3x requested limit | Still insufficient when eligible starts at row 62+ |
+
+### Solution: Paginated Accumulation Loop
+
+Replaced fixed overfetch with a pagination loop:
+
+```typescript
+const MAX_PAGES = 10;
+const PAGE_SIZE = 100;
+
+while (eligibleResponses.length < effectiveLimit && page < MAX_PAGES) {
+  const candidates = await fetchPage(page * PAGE_SIZE, PAGE_SIZE);
+  for (const row of candidates) {
+    if (isEligible(row)) eligibleResponses.push(row);
+    else skippedIneligible++;
+    if (eligibleResponses.length >= effectiveLimit) break;
+  }
+  page++;
+}
+```
+
+**Constants:**
+- `MAX_PAGES = 10` — Hard cap to prevent runaway scans
+- `PAGE_SIZE = 100` — Candidates per page
+- `maxScanned = 1000` — Total rows scanned before stopping
+
+### Telemetry Added
+
+Response now includes visibility into the scanning process:
+
+```json
+{
+  "telemetry": {
+    "scanned_total": 100,
+    "eligible_found": 10,
+    "skipped_ineligible": 62,
+    "pages_fetched": 1
+  }
+}
+```
+
+### Validation Results
+
+Dry-run with `limit=5`:
+- Scanned: 100 candidates
+- Skipped: 62 ineligible (neutral with keywords)
+- Found: 5 eligible
+- Pages: 1
+
+### Files Changed
+
+- `supabase/functions/classify-stance-ai/index.ts` — Pagination loop + telemetry
+- `supabase/functions/classify-stance-ai/index.test.ts` — Unit test outline (7 tests)
+
+### Future Improvement (Medium-term)
+
+Add `keywords_found_count INTEGER` column to `remiss_responses` (computed during analysis step) to make eligibility fully indexable at the database level, eliminating client-side filtering entirely.
+
+---
+
 ## 2026-01-27: Phase 5.6.3 Plan Approved with Corrections
 
 **Status:** APPROVED — Ready for implementation
