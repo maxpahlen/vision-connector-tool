@@ -618,10 +618,10 @@ export function StanceManualReview() {
                         value={decision.corrected_stance || ''} 
                         onValueChange={(v) => setDecision(prev => ({ ...prev, corrected_stance: v }))}
                       >
-                        <SelectTrigger className="w-48">
+                        <SelectTrigger className="w-48 bg-background">
                           <SelectValue placeholder="Select stance..." />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="z-[100] bg-background border shadow-lg">
                           <SelectItem value="support">Support</SelectItem>
                           <SelectItem value="oppose">Oppose</SelectItem>
                           <SelectItem value="conditional">Conditional</SelectItem>
