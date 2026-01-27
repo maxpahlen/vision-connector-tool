@@ -36,6 +36,7 @@ interface ClassificationDetail {
   confidence: string;
   reasoning: string;
   auto_applied: boolean;
+  input_text?: string;  // Text sent to AI for transparency
 }
 
 interface ClassificationResult {
@@ -54,6 +55,7 @@ interface ClassificationResult {
 }
 
 // Confidence threshold ordering for comparison
+// Default: only 'high' confidence auto-applies; medium/low go to manual review
 const CONFIDENCE_ORDER = { high: 3, medium: 2, low: 1 };
 
 function meetsThreshold(
@@ -235,7 +237,7 @@ Deno.serve(async (req) => {
       response_id, 
       limit = 20, 
       dry_run = false,
-      confidence_threshold = 'medium',
+      confidence_threshold = 'high',  // Default to high - only auto-apply high confidence
     } = body;
 
     // Clamp limit
@@ -355,7 +357,7 @@ Deno.serve(async (req) => {
           result.low_confidence++;
         }
 
-        // Build AI review metadata
+        // Build AI review metadata (include input text for transparency/audit)
         const aiReview = {
           stance: classification.stance,
           confidence: classification.confidence,
@@ -365,6 +367,7 @@ Deno.serve(async (req) => {
           classified_at: new Date().toISOString(),
           original_stance: response.stance_summary,
           auto_applied: autoApply,
+          input_text: text,  // Store the text sent to AI for transparency
         };
 
         // Add to details
@@ -376,6 +379,7 @@ Deno.serve(async (req) => {
           confidence: classification.confidence,
           reasoning: classification.reasoning,
           auto_applied: autoApply,
+          input_text: text,  // Include in response for UI display
         });
 
         // Update database (unless dry run)

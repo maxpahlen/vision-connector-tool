@@ -4,12 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Loader2, Brain, CheckCircle2, XCircle, RefreshCw, Play, BarChart3, ThumbsUp, ThumbsDown, HelpCircle, Scale, Minus, Sparkles, ChevronDown, AlertTriangle } from 'lucide-react';
+import { Loader2, Brain, CheckCircle2, XCircle, RefreshCw, Play, BarChart3, ThumbsUp, ThumbsDown, HelpCircle, Scale, Minus, Sparkles, ChevronDown, AlertTriangle, Eye } from 'lucide-react';
 import { StanceManualReview } from './StanceManualReview';
 import { KeywordSuggestionsManager } from './KeywordSuggestionsManager';
 import { Progress } from '@/components/ui/progress';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface AnalysisStats {
   eligible: number;  // extraction_status = 'ok'
@@ -63,6 +65,7 @@ interface AIClassificationDetail {
   confidence: string;
   reasoning: string;
   auto_applied: boolean;
+  input_text?: string;  // Text sent to AI for transparency
 }
 
 interface AIBatchResult {
@@ -110,10 +113,11 @@ export function RemissvarStanceAnalyzerTest() {
   const [aiBatchCount, setAIBatchCount] = useState('1');
   const [aiCurrentBatch, setAICurrentBatch] = useState(0);
   const [aiDryRun, setAIDryRun] = useState(true);
-  const [aiThreshold, setAIThreshold] = useState<'high' | 'medium' | 'low'>('medium');
+  const [aiThreshold, setAIThreshold] = useState<'high' | 'medium' | 'low'>('high');  // Default to high
   const [aiLastResult, setAILastResult] = useState<AIBatchResult | null>(null);
   const [aiTotalProcessed, setAITotalProcessed] = useState(0);
   const [aiShouldStop, setAIShouldStop] = useState(false);
+  const [selectedAIDetail, setSelectedAIDetail] = useState<AIClassificationDetail | null>(null);
 
   // Load analysis stats with pagination
   const loadStats = async () => {
@@ -954,6 +958,7 @@ export function RemissvarStanceAnalyzerTest() {
                           <th className="p-2 text-center">Auto</th>
                           <th className="p-2 text-left">Organization</th>
                           <th className="p-2 text-left">Reasoning</th>
+                          <th className="p-2 text-center">Inspect</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -981,9 +986,9 @@ export function RemissvarStanceAnalyzerTest() {
                               </td>
                               <td className="p-2 text-center">
                                 {detail.auto_applied ? (
-                                  <CheckCircle2 className="h-4 w-4 text-green-500 inline" />
+                                  <CheckCircle2 className="h-4 w-4 text-primary inline" />
                                 ) : (
-                                  <AlertTriangle className="h-4 w-4 text-yellow-500 inline" />
+                                  <AlertTriangle className="h-4 w-4 text-accent-foreground inline" />
                                 )}
                               </td>
                               <td className="p-2 truncate max-w-xs" title={detail.organization || undefined}>
@@ -991,6 +996,16 @@ export function RemissvarStanceAnalyzerTest() {
                               </td>
                               <td className="p-2 text-muted-foreground truncate max-w-xs" title={detail.reasoning}>
                                 {detail.reasoning}
+                              </td>
+                              <td className="p-2 text-center">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setSelectedAIDetail(detail)}
+                                  className="h-6 w-6 p-0"
+                                >
+                                  <Eye className="h-3 w-3" />
+                                </Button>
                               </td>
                             </tr>
                           );
@@ -1018,8 +1033,8 @@ export function RemissvarStanceAnalyzerTest() {
 
             {/* All done message */}
             {aiStats?.pending === 0 && (aiStats.ai_classified + aiStats.ai_low_confidence) > 0 && (
-              <div className="text-sm text-muted-foreground p-4 border rounded-lg bg-purple-50 flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-purple-500" />
+              <div className="text-sm text-muted-foreground p-4 border rounded-lg bg-secondary flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-secondary-foreground" />
                 All uncertain stances have been AI-classified!
               </div>
             )}
@@ -1027,6 +1042,86 @@ export function RemissvarStanceAnalyzerTest() {
         </CollapsibleContent>
       </Collapsible>
     </Card>
+
+    {/* AI Detail Inspection Dialog */}
+    <Dialog open={!!selectedAIDetail} onOpenChange={(open) => !open && setSelectedAIDetail(null)}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5" />
+            AI Classification Details: {selectedAIDetail?.organization?.replace(/\s*\(pdf.*\)$/i, '') || 'Unknown'}
+          </DialogTitle>
+          <DialogDescription>
+            Full AI reasoning and input text for transparency and verification
+          </DialogDescription>
+        </DialogHeader>
+
+        <ScrollArea className="flex-1 pr-4">
+          <div className="space-y-6 py-4">
+            {/* Classification Summary */}
+            {selectedAIDetail && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="p-3 rounded-lg border bg-muted/30">
+                  <div className="text-xs text-muted-foreground">Original Stance</div>
+                  <Badge variant="outline" className="mt-1">{selectedAIDetail.original_stance}</Badge>
+                </div>
+                <div className="p-3 rounded-lg border bg-muted/30">
+                  <div className="text-xs text-muted-foreground">AI Classification</div>
+                  {STANCE_CONFIG[selectedAIDetail.ai_stance as keyof typeof STANCE_CONFIG] && (
+                    <Badge variant="outline" className={`mt-1 ${STANCE_CONFIG[selectedAIDetail.ai_stance as keyof typeof STANCE_CONFIG].badgeClass}`}>
+                      {STANCE_CONFIG[selectedAIDetail.ai_stance as keyof typeof STANCE_CONFIG].label}
+                    </Badge>
+                  )}
+                </div>
+                <div className="p-3 rounded-lg border bg-muted/30">
+                  <div className="text-xs text-muted-foreground">Confidence</div>
+                  <Badge variant="outline" className={`mt-1 ${CONFIDENCE_COLORS[selectedAIDetail.confidence as keyof typeof CONFIDENCE_COLORS]}`}>
+                    {selectedAIDetail.confidence}
+                  </Badge>
+                </div>
+                <div className="p-3 rounded-lg border bg-muted/30">
+                  <div className="text-xs text-muted-foreground">Auto-Applied</div>
+                  <div className="mt-1 flex items-center gap-1">
+                    {selectedAIDetail.auto_applied ? (
+                      <>
+                        <CheckCircle2 className="h-4 w-4 text-primary" />
+                        <span className="text-sm">Yes</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertTriangle className="h-4 w-4 text-accent-foreground" />
+                        <span className="text-sm">No (needs review)</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Full Reasoning */}
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium">AI Reasoning</h4>
+              <div className="p-4 rounded-lg border bg-secondary/50 text-sm">
+                {selectedAIDetail?.reasoning || 'No reasoning provided'}
+              </div>
+            </div>
+
+            {/* Input Text Sent to AI */}
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                Text Sent to AI
+                <span className="text-xs text-muted-foreground font-normal">
+                  ({selectedAIDetail?.input_text?.length?.toLocaleString() || 0} characters)
+                </span>
+              </h4>
+              <div className="p-4 rounded-lg border bg-muted/30 text-sm font-mono whitespace-pre-wrap max-h-96 overflow-auto">
+                {selectedAIDetail?.input_text || 'No input text available'}
+              </div>
+            </div>
+          </div>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
 
     {/* Manual Review Section */}
     <StanceManualReview />
