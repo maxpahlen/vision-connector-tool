@@ -220,11 +220,10 @@ Add new collapsible section: "AI Classification (Phase 5.6.4)"
 
 | File | Action | Lines | Description |
 |------|--------|-------|-------------|
-| `supabase/functions/classify-stance-ai/index.ts` | Create | ~180 | New AI classification edge function |
+| `supabase/functions/classify-stance-ai/index.ts` | Create | ~300 | New AI classification edge function |
 | `supabase/config.toml` | Modify | +3 | Add function config |
-| `src/components/admin/RemissvarStanceAnalyzerTest.tsx` | Modify | +120 | Add AI classification section |
-| `src/components/admin/StanceManualReview.tsx` | Modify | +60 | Add AI filter and reasoning display |
-| `docs/development/branches/phase-5.6-content-insights.md` | Update | +20 | Document Phase 5.6.4 completion |
+| `src/components/admin/RemissvarStanceAnalyzerTest.tsx` | Modify | +200 | Add AI classification section |
+| `src/components/admin/StanceManualReview.tsx` | Modify | +80 | Add AI filter and reasoning display |
 
 ---
 
@@ -263,13 +262,13 @@ Recommendation: Start with `gpt-4o-2024-08-06` (default in `openai-client.ts`) f
 
 ## Execution Order
 
-1. Create `classify-stance-ai` edge function
-2. Update `supabase/config.toml` with function config
-3. Add AI classification section to `RemissvarStanceAnalyzerTest.tsx`
-4. Update `StanceManualReview.tsx` with AI filter and reasoning display
-5. Deploy and run dry-run test on 10 items
-6. Run full batch processing (961 items in ~50 batches of 20)
-7. Update documentation
+1. ✅ Create `classify-stance-ai` edge function
+2. ✅ Update `supabase/config.toml` with function config
+3. ✅ Add AI classification section to `RemissvarStanceAnalyzerTest.tsx`
+4. ✅ Update `StanceManualReview.tsx` with AI filter and reasoning display
+5. 🔄 Deploy and run dry-run test on 10 items
+6. ⏳ Run full batch processing (961 items in ~50 batches of 20)
+7. ⏳ Update documentation
 
 ---
 

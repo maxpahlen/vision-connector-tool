@@ -71,3 +71,6 @@ verify_jwt = false
 
 [functions.analyze-remissvar-stance]
 verify_jwt = false
+
+[functions.classify-stance-ai]
+verify_jwt = false
