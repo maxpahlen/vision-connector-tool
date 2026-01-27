@@ -587,6 +587,8 @@ export type Database = {
       }
       remiss_responses: {
         Row: {
+          analysis_status: string | null
+          analyzed_at: string | null
           created_at: string | null
           document_id: string | null
           entity_id: string | null
@@ -602,9 +604,13 @@ export type Database = {
           raw_content: string | null
           remiss_id: string
           responding_organization: string | null
+          stance_signals: Json | null
+          stance_summary: string | null
           status: string | null
         }
         Insert: {
+          analysis_status?: string | null
+          analyzed_at?: string | null
           created_at?: string | null
           document_id?: string | null
           entity_id?: string | null
@@ -620,9 +626,13 @@ export type Database = {
           raw_content?: string | null
           remiss_id: string
           responding_organization?: string | null
+          stance_signals?: Json | null
+          stance_summary?: string | null
           status?: string | null
         }
         Update: {
+          analysis_status?: string | null
+          analyzed_at?: string | null
           created_at?: string | null
           document_id?: string | null
           entity_id?: string | null
@@ -638,6 +648,8 @@ export type Database = {
           raw_content?: string | null
           remiss_id?: string
           responding_organization?: string | null
+          stance_signals?: Json | null
+          stance_summary?: string | null
           status?: string | null
         }
         Relationships: [
