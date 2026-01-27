@@ -290,6 +290,21 @@ export function parseRemissPage(html: string, remissUrl: string): RemissPageResu
       continue;
     }
 
+    // GATE: Skip remissinstans cover letters that leaked through
+    // These are NOT remissvar responses - they're invitation/distribution lists
+    const lowerFilename = filename.toLowerCase();
+    const lowerUrl = fullUrl.toLowerCase();
+    if (
+      lowerFilename.startsWith('remiss-av-') ||
+      lowerFilename.includes('remissinstans') ||
+      lowerUrl.includes('remissinstans') ||
+      lowerFilename.includes('sandlista') ||
+      lowerFilename.includes('remiss-och-')
+    ) {
+      log.push(`Skipping cover letter/remissinstanser: ${filename}`);
+      continue;
+    }
+
     // Check if this looks like a remissvar
     const isRemissvar = 
       linkText.toLowerCase().includes('remissvar') ||
