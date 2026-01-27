@@ -676,6 +676,67 @@ export type Database = {
           },
         ]
       }
+      stance_keyword_suggestions: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          keyword: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          reviewer_notes: string | null
+          source_response_id: string | null
+          status: string
+          suggested_by: string | null
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          id?: string
+          keyword: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reviewer_notes?: string | null
+          source_response_id?: string | null
+          status?: string
+          suggested_by?: string | null
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          keyword?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reviewer_notes?: string | null
+          source_response_id?: string | null
+          status?: string
+          suggested_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stance_keyword_suggestions_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stance_keyword_suggestions_source_response_id_fkey"
+            columns: ["source_response_id"]
+            isOneToOne: false
+            referencedRelation: "remiss_responses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stance_keyword_suggestions_suggested_by_fkey"
+            columns: ["suggested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       timeline_events: {
         Row: {
           actors: Json | null
