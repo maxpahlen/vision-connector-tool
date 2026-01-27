@@ -47,8 +47,24 @@ interface ReviewItem {
   file_url: string;
   raw_content: string | null;
   extraction_status: string | null;
+  analysis_status: string | null;
   remiss_id: string;
-  metadata: Record<string, unknown> | null;
+  metadata: {
+    manual_review?: ReviewDecision;
+    ai_review?: AIReview;
+    [key: string]: unknown;
+  } | null;
+}
+
+interface AIReview {
+  stance: 'support' | 'oppose' | 'conditional' | 'neutral';
+  confidence: 'high' | 'medium' | 'low';
+  reasoning: string;
+  key_phrases: string[];
+  model: string;
+  classified_at: string;
+  original_stance: string;
+  auto_applied: boolean;
 }
 
 interface ReviewDecision {
@@ -65,6 +81,7 @@ interface ReviewStats {
   pending: number;
   neutral_count: number;
   mixed_count: number;
+  ai_low_confidence: number;
 }
 
 const STANCE_CONFIG = {
@@ -77,13 +94,19 @@ const STANCE_CONFIG = {
 
 const PAGE_SIZE = 20;
 
+const CONFIDENCE_BADGE_COLORS = {
+  high: 'bg-green-100 text-green-800 border-green-200',
+  medium: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+  low: 'bg-red-100 text-red-800 border-red-200',
+};
+
 export function StanceManualReview() {
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [stats, setStats] = useState<ReviewStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
-  const [filterStance, setFilterStance] = useState<'all' | 'neutral' | 'mixed'>('all');
+  const [filterStance, setFilterStance] = useState<'all' | 'neutral' | 'mixed' | 'ai_low_confidence'>('all');
   const [selectedItem, setSelectedItem] = useState<ReviewItem | null>(null);
   const [decision, setDecision] = useState<ReviewDecision>({
     is_correct: null,
@@ -112,15 +135,20 @@ export function StanceManualReview() {
         .eq('analysis_status', 'ok')
         .eq('stance_summary', 'mixed');
 
+      // Count AI low confidence
+      const { count: aiLowConfCount } = await supabase
+        .from('remiss_responses')
+        .select('*', { count: 'exact', head: true })
+        .eq('analysis_status', 'ai_low_confidence');
+
       // Count reviewed (those with manual_review metadata)
       const { count: reviewedCount } = await supabase
         .from('remiss_responses')
         .select('*', { count: 'exact', head: true })
-        .eq('analysis_status', 'ok')
-        .in('stance_summary', ['neutral', 'mixed'])
+        .in('analysis_status', ['ok', 'ai_low_confidence'])
         .not('metadata->manual_review', 'is', null);
 
-      const total = (neutralCount || 0) + (mixedCount || 0);
+      const total = (neutralCount || 0) + (mixedCount || 0) + (aiLowConfCount || 0);
       
       setStats({
         total_uncertain: total,
@@ -128,6 +156,7 @@ export function StanceManualReview() {
         pending: total - (reviewedCount || 0),
         neutral_count: neutralCount || 0,
         mixed_count: mixedCount || 0,
+        ai_low_confidence: aiLowConfCount || 0,
       });
     } catch (err) {
       console.error('[StanceReview] Error loading stats:', err);
@@ -140,13 +169,18 @@ export function StanceManualReview() {
     try {
       let query = supabase
         .from('remiss_responses')
-        .select('id, responding_organization, stance_summary, stance_signals, file_url, raw_content, extraction_status, remiss_id, metadata')
-        .eq('analysis_status', 'ok');
+        .select('id, responding_organization, stance_summary, stance_signals, file_url, raw_content, extraction_status, analysis_status, remiss_id, metadata');
 
-      if (filterStance === 'all') {
-        query = query.in('stance_summary', ['neutral', 'mixed']);
+      if (filterStance === 'ai_low_confidence') {
+        query = query.eq('analysis_status', 'ai_low_confidence');
+      } else if (filterStance === 'all') {
+        query = query
+          .in('analysis_status', ['ok', 'ai_low_confidence'])
+          .or('stance_summary.eq.neutral,stance_summary.eq.mixed,analysis_status.eq.ai_low_confidence');
       } else {
-        query = query.eq('stance_summary', filterStance);
+        query = query
+          .eq('analysis_status', 'ok')
+          .eq('stance_summary', filterStance);
       }
 
       // Prioritize unreviewed items first
@@ -157,9 +191,14 @@ export function StanceManualReview() {
 
       const { data, error, count } = await supabase
         .from('remiss_responses')
-        .select('id, responding_organization, stance_summary, stance_signals, file_url, raw_content, extraction_status, remiss_id, metadata', { count: 'exact' })
-        .eq('analysis_status', 'ok')
-        .in('stance_summary', filterStance === 'all' ? ['neutral', 'mixed'] : [filterStance])
+        .select('id, responding_organization, stance_summary, stance_signals, file_url, raw_content, extraction_status, analysis_status, remiss_id, metadata', { count: 'exact' })
+        .or(
+          filterStance === 'ai_low_confidence' 
+            ? 'analysis_status.eq.ai_low_confidence'
+            : filterStance === 'all'
+              ? 'and(analysis_status.in.(ok,ai_low_confidence),or(stance_summary.eq.neutral,stance_summary.eq.mixed,analysis_status.eq.ai_low_confidence))'
+              : `and(analysis_status.eq.ok,stance_summary.eq.${filterStance})`
+        )
         .order('responding_organization', { ascending: true })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
@@ -183,7 +222,7 @@ export function StanceManualReview() {
   const openReview = (item: ReviewItem) => {
     setSelectedItem(item);
     // Pre-populate if already reviewed
-    const existingReview = item.metadata?.manual_review as ReviewDecision | undefined;
+    const existingReview = item.metadata?.manual_review;
     if (existingReview) {
       setDecision({
         is_correct: existingReview.is_correct ?? null,
@@ -193,9 +232,11 @@ export function StanceManualReview() {
         notes: existingReview.notes ?? '',
       });
     } else {
+      // If AI classified with low confidence, pre-populate with AI's suggestion
+      const aiReview = item.metadata?.ai_review;
       setDecision({
         is_correct: null,
-        corrected_stance: null,
+        corrected_stance: aiReview ? aiReview.stance : null,
         missed_keywords: [],
         suggest_keyword_rule: false,
         notes: '',
@@ -373,7 +414,7 @@ export function StanceManualReview() {
       <CardContent className="space-y-4">
         {/* Stats summary */}
         {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
             <div className="p-3 rounded-lg border bg-muted/30 text-center">
               <div className="text-2xl font-bold">{stats.total_uncertain}</div>
               <div className="text-xs text-muted-foreground">Total Uncertain</div>
@@ -385,6 +426,10 @@ export function StanceManualReview() {
             <div className="p-3 rounded-lg border bg-secondary text-center">
               <div className="text-2xl font-bold text-secondary-foreground">{stats.mixed_count}</div>
               <div className="text-xs text-muted-foreground">Mixed</div>
+            </div>
+            <div className="p-3 rounded-lg border bg-yellow-50 text-center">
+              <div className="text-2xl font-bold text-yellow-600">{stats.ai_low_confidence}</div>
+              <div className="text-xs text-muted-foreground">AI Low Conf</div>
             </div>
             <div className="p-3 rounded-lg border bg-primary/10 text-center">
               <div className="text-2xl font-bold text-primary">{stats.reviewed}</div>
@@ -402,13 +447,14 @@ export function StanceManualReview() {
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Filter:</span>
             <Select value={filterStance} onValueChange={(v) => { setFilterStance(v as typeof filterStance); setPage(0); }}>
-              <SelectTrigger className="w-32">
+              <SelectTrigger className="w-40">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Uncertain</SelectItem>
                 <SelectItem value="neutral">Neutral only</SelectItem>
                 <SelectItem value="mixed">Mixed only</SelectItem>
+                <SelectItem value="ai_low_confidence">AI Low Confidence</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -430,17 +476,20 @@ export function StanceManualReview() {
                   <th className="p-3 text-left w-8">Status</th>
                   <th className="p-3 text-left">Organization</th>
                   <th className="p-3 text-left w-24">Stance</th>
-                  <th className="p-3 text-left">Keywords Found</th>
+                  <th className="p-3 text-left w-20">Source</th>
+                  <th className="p-3 text-left">Keywords / AI Reasoning</th>
                   <th className="p-3 text-center w-20">Words</th>
                   <th className="p-3 text-center w-32">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {items.map((item) => {
+              {items.map((item) => {
                   const signals = item.stance_signals || {};
                   const keywords = signals.keywords_found || [];
                   const stanceConfig = STANCE_CONFIG[item.stance_summary as keyof typeof STANCE_CONFIG];
                   const reviewed = isReviewed(item);
+                  const aiReview = item.metadata?.ai_review;
+                  const isAIClassified = item.analysis_status === 'ai_classified' || item.analysis_status === 'ai_low_confidence';
                   
                   return (
                     <tr key={item.id} className={`hover:bg-muted/30 ${reviewed ? 'opacity-60' : ''}`}>
@@ -462,19 +511,38 @@ export function StanceManualReview() {
                         )}
                       </td>
                       <td className="p-3">
+                        {isAIClassified ? (
+                          <Badge variant="outline" className={CONFIDENCE_BADGE_COLORS[aiReview?.confidence || 'low']}>
+                            AI {aiReview?.confidence || '?'}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-muted">
+                            Keyword
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="p-3">
                         <div className="flex flex-wrap gap-1">
-                          {keywords.slice(0, 3).map((kw, i) => (
-                            <Badge key={i} variant="secondary" className="text-xs">
-                              {kw}
-                            </Badge>
-                          ))}
-                          {keywords.length > 3 && (
-                            <Badge variant="outline" className="text-xs">
-                              +{keywords.length - 3}
-                            </Badge>
-                          )}
-                          {keywords.length === 0 && (
-                            <span className="text-muted-foreground text-xs italic">No keywords</span>
+                          {isAIClassified && aiReview ? (
+                            <span className="text-xs text-muted-foreground italic truncate max-w-xs" title={aiReview.reasoning}>
+                              {aiReview.reasoning.slice(0, 60)}{aiReview.reasoning.length > 60 ? '...' : ''}
+                            </span>
+                          ) : (
+                            <>
+                              {keywords.slice(0, 3).map((kw, i) => (
+                                <Badge key={i} variant="secondary" className="text-xs">
+                                  {kw}
+                                </Badge>
+                              ))}
+                              {keywords.length > 3 && (
+                                <Badge variant="outline" className="text-xs">
+                                  +{keywords.length - 3}
+                                </Badge>
+                              )}
+                              {keywords.length === 0 && (
+                                <span className="text-muted-foreground text-xs italic">No keywords</span>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>
@@ -506,7 +574,7 @@ export function StanceManualReview() {
                 })}
                 {items.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                    <td colSpan={7} className="p-8 text-center text-muted-foreground">
                       {loading ? 'Loading...' : 'No items to review'}
                     </td>
                   </tr>
@@ -515,7 +583,6 @@ export function StanceManualReview() {
             </table>
           </div>
         </div>
-
         {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between pt-2">
@@ -572,6 +639,40 @@ export function StanceManualReview() {
 
             <ScrollArea className="flex-1 pr-4">
               <div className="space-y-6 py-4">
+                {/* AI Classification Info (if available) */}
+                {selectedItem?.metadata?.ai_review && (
+                  <div className="p-4 rounded-lg border-2 border-purple-200 bg-purple-50/50 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-purple-800">AI Classification</span>
+                        <Badge variant="outline" className={STANCE_CONFIG[selectedItem.metadata.ai_review.stance]?.bgColor}>
+                          {STANCE_CONFIG[selectedItem.metadata.ai_review.stance]?.label}
+                        </Badge>
+                        <Badge variant="outline" className={CONFIDENCE_BADGE_COLORS[selectedItem.metadata.ai_review.confidence]}>
+                          {selectedItem.metadata.ai_review.confidence} confidence
+                        </Badge>
+                      </div>
+                      {selectedItem.metadata.ai_review.auto_applied ? (
+                        <Badge className="bg-green-100 text-green-800 border-green-200">Auto-applied</Badge>
+                      ) : (
+                        <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Needs Review</Badge>
+                      )}
+                    </div>
+                    <p className="text-sm text-purple-900 italic">"{selectedItem.metadata.ai_review.reasoning}"</p>
+                    <div className="flex flex-wrap gap-1">
+                      <span className="text-xs text-muted-foreground">Key phrases:</span>
+                      {selectedItem.metadata.ai_review.key_phrases.map((phrase, i) => (
+                        <Badge key={i} variant="secondary" className="text-xs bg-purple-100">
+                          {phrase}
+                        </Badge>
+                      ))}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Original: {selectedItem.metadata.ai_review.original_stance} • Model: {selectedItem.metadata.ai_review.model}
+                    </div>
+                  </div>
+                )}
+
                 {/* Keywords found */}
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">Keywords Detected</Label>

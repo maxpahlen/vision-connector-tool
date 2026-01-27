@@ -3,9 +3,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Loader2, Brain, CheckCircle2, XCircle, RefreshCw, Play, BarChart3, ThumbsUp, ThumbsDown, HelpCircle, Scale, Minus } from 'lucide-react';
+import { Loader2, Brain, CheckCircle2, XCircle, RefreshCw, Play, BarChart3, ThumbsUp, ThumbsDown, HelpCircle, Scale, Minus, Sparkles, ChevronDown, AlertTriangle } from 'lucide-react';
 import { StanceManualReview } from './StanceManualReview';
 import { KeywordSuggestionsManager } from './KeywordSuggestionsManager';
 import { Progress } from '@/components/ui/progress';
@@ -45,12 +46,47 @@ interface BatchResult {
   dry_run: boolean;
 }
 
+// AI Classification types
+interface AIClassificationStats {
+  neutral_no_keywords: number;
+  mixed: number;
+  ai_classified: number;
+  ai_low_confidence: number;
+  pending: number;
+}
+
+interface AIClassificationDetail {
+  response_id: string;
+  organization: string | null;
+  original_stance: string;
+  ai_stance: string;
+  confidence: string;
+  reasoning: string;
+  auto_applied: boolean;
+}
+
+interface AIBatchResult {
+  processed: number;
+  classified: number;
+  low_confidence: number;
+  errors: Array<{ response_id: string; error: string }>;
+  summary: { support: number; oppose: number; conditional: number; neutral: number };
+  details: AIClassificationDetail[];
+  dry_run: boolean;
+}
+
 const STANCE_CONFIG = {
   support: { icon: ThumbsUp, color: 'bg-green-500', label: 'Support', badgeClass: 'bg-green-100 text-green-800 border-green-200' },
   oppose: { icon: ThumbsDown, color: 'bg-red-500', label: 'Oppose', badgeClass: 'bg-red-100 text-red-800 border-red-200' },
   conditional: { icon: Scale, color: 'bg-yellow-500', label: 'Conditional', badgeClass: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
   neutral: { icon: Minus, color: 'bg-gray-400', label: 'Neutral', badgeClass: 'bg-gray-100 text-gray-700 border-gray-200' },
   mixed: { icon: HelpCircle, color: 'bg-purple-500', label: 'Mixed', badgeClass: 'bg-purple-100 text-purple-800 border-purple-200' },
+};
+
+const CONFIDENCE_COLORS = {
+  high: 'bg-green-100 text-green-800 border-green-200',
+  medium: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+  low: 'bg-red-100 text-red-800 border-red-200',
 };
 
 export function RemissvarStanceAnalyzerTest() {
@@ -65,6 +101,19 @@ export function RemissvarStanceAnalyzerTest() {
   const [lastResult, setLastResult] = useState<BatchResult | null>(null);
   const [totalProcessed, setTotalProcessed] = useState(0);
   const [shouldStop, setShouldStop] = useState(false);
+
+  // AI Classification state
+  const [aiStats, setAIStats] = useState<AIClassificationStats | null>(null);
+  const [aiOpen, setAIOpen] = useState(false);
+  const [aiAnalyzing, setAIAnalyzing] = useState(false);
+  const [aiBatchSize, setAIBatchSize] = useState('10');
+  const [aiBatchCount, setAIBatchCount] = useState('1');
+  const [aiCurrentBatch, setAICurrentBatch] = useState(0);
+  const [aiDryRun, setAIDryRun] = useState(true);
+  const [aiThreshold, setAIThreshold] = useState<'high' | 'medium' | 'low'>('medium');
+  const [aiLastResult, setAILastResult] = useState<AIBatchResult | null>(null);
+  const [aiTotalProcessed, setAITotalProcessed] = useState(0);
+  const [aiShouldStop, setAIShouldStop] = useState(false);
 
   // Load analysis stats with pagination
   const loadStats = async () => {
@@ -133,6 +182,171 @@ export function RemissvarStanceAnalyzerTest() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Load AI classification stats
+  const loadAIStats = async () => {
+    try {
+      const PAGE_SIZE = 1000;
+      let page = 0;
+      let hasMore = true;
+
+      const counts: AIClassificationStats = {
+        neutral_no_keywords: 0,
+        mixed: 0,
+        ai_classified: 0,
+        ai_low_confidence: 0,
+        pending: 0,
+      };
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('remiss_responses')
+          .select('stance_summary, stance_signals, analysis_status, metadata')
+          .eq('extraction_status', 'ok')
+          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+          hasMore = false;
+        } else {
+          for (const row of data) {
+            const signals = row.stance_signals as { keywords_found?: string[] } | null;
+            const keywordsFound = signals?.keywords_found || [];
+            const metadata = row.metadata as { ai_review?: unknown } | null;
+
+            // Count AI classification statuses
+            if (row.analysis_status === 'ai_classified') {
+              counts.ai_classified++;
+            } else if (row.analysis_status === 'ai_low_confidence') {
+              counts.ai_low_confidence++;
+            }
+
+            // Count eligible for AI (not yet processed)
+            if (row.analysis_status === 'ok' && !metadata?.ai_review) {
+              if (row.stance_summary === 'neutral' && keywordsFound.length === 0) {
+                counts.neutral_no_keywords++;
+              } else if (row.stance_summary === 'mixed') {
+                counts.mixed++;
+              }
+            }
+          }
+
+          hasMore = data.length === PAGE_SIZE;
+          page++;
+        }
+      }
+
+      counts.pending = counts.neutral_no_keywords + counts.mixed;
+      setAIStats(counts);
+      console.log('[AI Classification] Stats loaded:', counts);
+    } catch (err) {
+      console.error('[AI Classification] Error loading stats:', err);
+    }
+  };
+
+  // Run a single AI classification batch
+  const runSingleAIBatch = async (): Promise<AIBatchResult | null> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('classify-stance-ai', {
+        body: {
+          limit: parseInt(aiBatchSize, 10),
+          dry_run: aiDryRun,
+          confidence_threshold: aiThreshold,
+        }
+      });
+
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      console.error('[AI Classification] Error:', err);
+      throw err;
+    }
+  };
+
+  // Run multiple AI batches sequentially
+  const runAIBatchAnalysis = async () => {
+    setAIAnalyzing(true);
+    setAILastResult(null);
+    setAIShouldStop(false);
+
+    const totalBatches = parseInt(aiBatchCount, 10);
+    let accumulatedResult: AIBatchResult = {
+      processed: 0,
+      classified: 0,
+      low_confidence: 0,
+      errors: [],
+      summary: { support: 0, oppose: 0, conditional: 0, neutral: 0 },
+      details: [],
+      dry_run: aiDryRun,
+    };
+
+    for (let i = 0; i < totalBatches; i++) {
+      if (aiShouldStop) {
+        toast.info(`Stopped after ${i} batches`);
+        break;
+      }
+
+      setAICurrentBatch(i + 1);
+
+      try {
+        const data = await runSingleAIBatch();
+
+        if (data) {
+          accumulatedResult.processed += data.processed || 0;
+          accumulatedResult.classified += data.classified || 0;
+          accumulatedResult.low_confidence += data.low_confidence || 0;
+          accumulatedResult.errors = [...accumulatedResult.errors, ...(data.errors || [])];
+          accumulatedResult.details = [...accumulatedResult.details, ...(data.details || [])];
+
+          // Accumulate stance counts
+          if (data.summary) {
+            accumulatedResult.summary.support += data.summary.support || 0;
+            accumulatedResult.summary.oppose += data.summary.oppose || 0;
+            accumulatedResult.summary.conditional += data.summary.conditional || 0;
+            accumulatedResult.summary.neutral += data.summary.neutral || 0;
+          }
+
+          setAILastResult({ ...accumulatedResult });
+          setAITotalProcessed(prev => prev + (data.processed || 0));
+
+          // If no more items to process, stop early
+          if (data.processed === 0) {
+            toast.info(`No more responses to classify after batch ${i + 1}`);
+            break;
+          }
+        }
+
+        // Wait 2 seconds between batches (rate limiting)
+        if (i < totalBatches - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+
+      } catch {
+        toast.error(`AI batch ${i + 1} failed`);
+        break;
+      }
+    }
+
+    if (accumulatedResult.processed > 0) {
+      toast.success(`AI classified ${accumulatedResult.classified}/${accumulatedResult.processed} responses${aiDryRun ? ' (dry run)' : ''}`);
+    } else {
+      toast.info('No responses to classify');
+    }
+
+    // Refresh all stats after AI classification
+    if (!aiDryRun) {
+      await loadStats();
+      await loadAIStats();
+    }
+
+    setAIAnalyzing(false);
+    setAICurrentBatch(0);
+  };
+
+  const stopAIAnalysis = () => {
+    setAIShouldStop(true);
   };
 
   // Run a single batch analysis
@@ -239,10 +453,15 @@ export function RemissvarStanceAnalyzerTest() {
 
   useEffect(() => {
     loadStats();
+    loadAIStats();
   }, []);
 
   const progressPercentage = stats && stats.eligible > 0
     ? Math.round(((stats.ok + stats.error + stats.skipped) / stats.eligible) * 100)
+    : 0;
+
+  const aiProgressPercentage = aiStats && aiStats.pending + aiStats.ai_classified + aiStats.ai_low_confidence > 0
+    ? Math.round(((aiStats.ai_classified + aiStats.ai_low_confidence) / (aiStats.pending + aiStats.ai_classified + aiStats.ai_low_confidence)) * 100)
     : 0;
 
   // Calculate bar widths for stance distribution
@@ -534,6 +753,279 @@ export function RemissvarStanceAnalyzerTest() {
           </div>
         )}
       </CardContent>
+    </Card>
+
+    {/* AI Classification Section */}
+    <Card>
+      <Collapsible open={aiOpen} onOpenChange={setAIOpen}>
+        <CollapsibleTrigger asChild>
+          <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-purple-500" />
+              AI-Assisted Stance Classification (Phase 5.6.4)
+              <ChevronDown className={`ml-auto h-4 w-4 transition-transform ${aiOpen ? 'rotate-180' : ''}`} />
+            </CardTitle>
+            <CardDescription>
+              Use AI to classify uncertain stances (neutral with no keywords + mixed)
+            </CardDescription>
+          </CardHeader>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="space-y-4 pt-0">
+            {/* AI Stats */}
+            <div className="flex items-center gap-4 mb-4">
+              <Button onClick={() => { loadAIStats(); loadStats(); }} disabled={loading || aiAnalyzing} variant="outline" size="sm">
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Refresh Stats
+              </Button>
+            </div>
+
+            {aiStats && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <div className="p-3 rounded-lg border bg-gray-50 text-center">
+                    <div className="text-2xl font-bold text-gray-600">{aiStats.neutral_no_keywords}</div>
+                    <div className="text-xs text-muted-foreground">Neutral (0 keywords)</div>
+                  </div>
+                  <div className="p-3 rounded-lg border bg-purple-50 text-center">
+                    <div className="text-2xl font-bold text-purple-600">{aiStats.mixed}</div>
+                    <div className="text-xs text-muted-foreground">Mixed</div>
+                  </div>
+                  <div className="p-3 rounded-lg border bg-blue-50 text-center">
+                    <div className="text-2xl font-bold text-blue-600">{aiStats.ai_classified}</div>
+                    <div className="text-xs text-muted-foreground">AI Classified</div>
+                  </div>
+                  <div className="p-3 rounded-lg border bg-yellow-50 text-center">
+                    <div className="text-2xl font-bold text-yellow-600">{aiStats.ai_low_confidence}</div>
+                    <div className="text-xs text-muted-foreground">Low Confidence</div>
+                  </div>
+                  <div className="p-3 rounded-lg border bg-accent text-center">
+                    <div className="text-2xl font-bold text-accent-foreground">{aiStats.pending}</div>
+                    <div className="text-xs text-muted-foreground">Pending AI</div>
+                  </div>
+                </div>
+
+                {/* Progress bar */}
+                {(aiStats.ai_classified + aiStats.ai_low_confidence + aiStats.pending) > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>AI Classification Progress</span>
+                      <span>{aiProgressPercentage}%</span>
+                    </div>
+                    <Progress value={aiProgressPercentage} className="h-2" />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* AI Batch controls */}
+            <div className="flex flex-wrap items-center gap-4 pt-2 border-t">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Batch:</span>
+                <Select value={aiBatchSize} onValueChange={setAIBatchSize} disabled={aiAnalyzing}>
+                  <SelectTrigger className="w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5">5</SelectItem>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="30">30</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">×</span>
+                <Select value={aiBatchCount} onValueChange={setAIBatchCount} disabled={aiAnalyzing}>
+                  <SelectTrigger className="w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1</SelectItem>
+                    <SelectItem value="5">5</SelectItem>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Threshold:</span>
+                <Select value={aiThreshold} onValueChange={(v) => setAIThreshold(v as 'high' | 'medium' | 'low')} disabled={aiAnalyzing}>
+                  <SelectTrigger className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="high">High only</SelectItem>
+                    <SelectItem value="medium">Medium+</SelectItem>
+                    <SelectItem value="low">All</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {aiAnalyzing ? (
+                <Button onClick={stopAIAnalysis} variant="destructive" size="sm">
+                  <XCircle className="mr-2 h-4 w-4" />
+                  Stop
+                </Button>
+              ) : (
+                <Button
+                  onClick={runAIBatchAnalysis}
+                  disabled={aiStats?.pending === 0}
+                  variant={aiDryRun ? 'outline' : 'default'}
+                  className={!aiDryRun ? 'bg-purple-600 hover:bg-purple-700' : ''}
+                >
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  {aiDryRun ? 'Dry Run' : 'Run AI Classification'}
+                </Button>
+              )}
+
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={aiDryRun}
+                  onChange={(e) => setAIDryRun(e.target.checked)}
+                  className="rounded"
+                  disabled={aiAnalyzing}
+                />
+                Dry run
+              </label>
+            </div>
+
+            {/* AI Progress indicator */}
+            {aiAnalyzing && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Running AI batch {aiCurrentBatch} of {aiBatchCount}...
+              </div>
+            )}
+
+            {aiTotalProcessed > 0 && (
+              <div className="text-sm text-muted-foreground">
+                Session total: {aiTotalProcessed} processed
+              </div>
+            )}
+
+            {/* AI Results */}
+            {aiLastResult && (
+              <div className="space-y-2 pt-2 border-t">
+                <h4 className="font-medium text-sm flex items-center gap-2">
+                  AI Classification Results
+                  {aiLastResult.dry_run && <Badge variant="outline" className="text-xs">DRY RUN</Badge>}
+                </h4>
+
+                <div className="flex gap-4 text-sm">
+                  <span>Processed: {aiLastResult.processed}</span>
+                  <span className="text-purple-600">Classified: {aiLastResult.classified}</span>
+                  <span className="text-yellow-600">Low Confidence: {aiLastResult.low_confidence}</span>
+                  {aiLastResult.errors.length > 0 && (
+                    <span className="text-destructive">Errors: {aiLastResult.errors.length}</span>
+                  )}
+                </div>
+
+                {/* AI stance summary */}
+                {aiLastResult.summary && (
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(aiLastResult.summary).map(([stance, count]) => {
+                      const config = STANCE_CONFIG[stance as keyof typeof STANCE_CONFIG];
+                      if (!config || count === 0) return null;
+                      return (
+                        <Badge key={stance} variant="outline" className={config.badgeClass}>
+                          {config.label}: {count}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* AI detailed results table */}
+                {aiLastResult.details.length > 0 && (
+                  <div className="rounded-lg border max-h-64 overflow-auto">
+                    <table className="w-full text-xs">
+                      <thead className="border-b bg-muted/50 sticky top-0">
+                        <tr>
+                          <th className="p-2 text-left">Original</th>
+                          <th className="p-2 text-left">AI Stance</th>
+                          <th className="p-2 text-left">Confidence</th>
+                          <th className="p-2 text-center">Auto</th>
+                          <th className="p-2 text-left">Organization</th>
+                          <th className="p-2 text-left">Reasoning</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {aiLastResult.details.map((detail) => {
+                          const aiStanceConfig = STANCE_CONFIG[detail.ai_stance as keyof typeof STANCE_CONFIG];
+                          const confColor = CONFIDENCE_COLORS[detail.confidence as keyof typeof CONFIDENCE_COLORS];
+                          return (
+                            <tr key={detail.response_id} className="border-b hover:bg-muted/30">
+                              <td className="p-2">
+                                <Badge variant="outline" className="text-xs">
+                                  {detail.original_stance}
+                                </Badge>
+                              </td>
+                              <td className="p-2">
+                                {aiStanceConfig && (
+                                  <Badge variant="outline" className={aiStanceConfig.badgeClass}>
+                                    {aiStanceConfig.label}
+                                  </Badge>
+                                )}
+                              </td>
+                              <td className="p-2">
+                                <Badge variant="outline" className={confColor}>
+                                  {detail.confidence}
+                                </Badge>
+                              </td>
+                              <td className="p-2 text-center">
+                                {detail.auto_applied ? (
+                                  <CheckCircle2 className="h-4 w-4 text-green-500 inline" />
+                                ) : (
+                                  <AlertTriangle className="h-4 w-4 text-yellow-500 inline" />
+                                )}
+                              </td>
+                              <td className="p-2 truncate max-w-xs" title={detail.organization || undefined}>
+                                {detail.organization?.replace(/\s*\(pdf.*\)$/i, '') || 'Unknown'}
+                              </td>
+                              <td className="p-2 text-muted-foreground truncate max-w-xs" title={detail.reasoning}>
+                                {detail.reasoning}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* AI Errors */}
+                {aiLastResult.errors.length > 0 && (
+                  <div className="rounded-lg border border-destructive/50 p-3 space-y-1 max-h-32 overflow-auto">
+                    <h5 className="text-xs font-medium text-destructive">Errors</h5>
+                    {aiLastResult.errors.map((err, i) => (
+                      <div key={i} className="flex items-center gap-2 text-xs">
+                        <XCircle className="h-3 w-3 text-destructive flex-shrink-0" />
+                        <span className="font-mono">{err.response_id.substring(0, 8)}...</span>
+                        <span className="text-muted-foreground">{err.error}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* All done message */}
+            {aiStats?.pending === 0 && (aiStats.ai_classified + aiStats.ai_low_confidence) > 0 && (
+              <div className="text-sm text-muted-foreground p-4 border rounded-lg bg-purple-50 flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-purple-500" />
+                All uncertain stances have been AI-classified!
+              </div>
+            )}
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
     </Card>
 
     {/* Manual Review Section */}
