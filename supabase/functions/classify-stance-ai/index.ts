@@ -248,14 +248,15 @@ Deno.serve(async (req) => {
     // Build query for eligible responses
     // Eligible = extraction ok, keyword analysis ok, (neutral with 0 keywords OR mixed), not yet AI processed
     // NOTE: Cannot use .is("metadata->ai_review", null) as PostgREST doesn't support nested JSONB path checks
-    // Instead, we fetch all and filter client-side via metadata?.ai_review check below
+    // Instead, we filter by stance_summary IN (neutral, mixed) at DB level, then do fine-grained filtering client-side
     let query = supabase
       .from("remiss_responses")
       .select("id, responding_organization, raw_content, stance_summary, stance_signals, metadata")
       .eq("extraction_status", "ok")
       .eq("analysis_status", "ok")
+      .in("stance_summary", ["neutral", "mixed"])  // Pre-filter at DB level to get candidates
       .order("created_at", { ascending: true })
-      .limit(effectiveLimit * 2);  // Fetch extra to compensate for client-side filtering
+      .limit(effectiveLimit * 3);  // Fetch 3x to compensate for client-side ai_review and keywords filtering
 
     if (response_id) {
       // Single response mode
