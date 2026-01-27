@@ -68,3 +68,6 @@ verify_jwt = false
 
 [functions.process-remissvar-pdf]
 verify_jwt = false
+
+[functions.analyze-remissvar-stance]
+verify_jwt = false
