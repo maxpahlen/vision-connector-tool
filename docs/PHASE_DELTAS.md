@@ -1,5 +1,32 @@
 # Phase Deltas
 
+## 2026-01-27: Phase 5.6.3 Plan Approved with Corrections
+
+**Status:** APPROVED — Ready for implementation
+
+### Key Corrections Applied (per Max feedback)
+
+| Area | Original | Corrected |
+|------|----------|-----------|
+| **State transitions** | Implicit dependency | Explicit: `extraction_status = ok` → eligible for `analysis_status` |
+| **Negation patterns** | Not included | Added: `inte tillstyrker`, `kan inte stödja`, `inte instämmer` → classified as opposition |
+| **Section-scoping** | Flat text matching | Keywords in "Sammanfattning"/"Ställningstaganden" receive 2x weight |
+| **UI performance** | `raw_content` in entity lists | Excerpt/on-demand fetch only; no full text in lists |
+| **Success criteria** | "Keyword detection >50%" | Removed arbitrary threshold; `neutral` is valid, not failure |
+
+### Implementation Components
+
+1. **Schema:** Add `stance_summary`, `stance_signals`, `analysis_status`, `analyzed_at` to `remiss_responses`
+2. **Shared module:** `_shared/stance-analyzer.ts` with negation patterns + section weighting
+3. **Edge function:** `analyze-remissvar-stance` (only processes `extraction_status = ok`)
+4. **Admin UI:** `RemissvarStanceAnalyzerTest.tsx` with batch controls
+5. **Entity page:** Stance summary card + badges (no raw_content rendering)
+
+### Files Modified
+- `docs/development/branches/phase-5.6-content-insights.md` — Full plan update
+
+---
+
 ## 2026-01-26: Phase 5.6.2 Extraction Pipeline Validation + Error Analysis
 
 **Status:** Extraction pipeline validated, error analysis complete.
