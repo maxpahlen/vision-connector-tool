@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Loader2, Brain, CheckCircle2, XCircle, RefreshCw, Play, BarChart3, ThumbsUp, ThumbsDown, HelpCircle, Scale, Minus } from 'lucide-react';
+import { StanceManualReview } from './StanceManualReview';
 import { Progress } from '@/components/ui/progress';
 
 interface AnalysisStats {
@@ -252,6 +253,7 @@ export function RemissvarStanceAnalyzerTest() {
     totalAnalyzed > 0 ? Math.round((count / totalAnalyzed) * 100) : 0;
 
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
@@ -532,5 +534,9 @@ export function RemissvarStanceAnalyzerTest() {
         )}
       </CardContent>
     </Card>
+
+    {/* Manual Review Section */}
+    <StanceManualReview />
+    </>
   );
 }
