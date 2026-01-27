@@ -79,9 +79,8 @@ interface ReviewStats {
   total_uncertain: number;
   reviewed: number;
   pending: number;
-  neutral_count: number;
-  mixed_count: number;
   ai_low_confidence: number;
+  ai_medium_confidence: number;
 }
 
 const STANCE_CONFIG = {
@@ -106,7 +105,7 @@ export function StanceManualReview() {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
-  const [filterStance, setFilterStance] = useState<'all' | 'neutral' | 'mixed' | 'ai_low_confidence'>('all');
+  const [filterStance, setFilterStance] = useState<'all' | 'ai_low_confidence' | 'ai_medium_confidence'>('all');
   const [selectedItem, setSelectedItem] = useState<ReviewItem | null>(null);
   const [decision, setDecision] = useState<ReviewDecision>({
     is_correct: null,
@@ -119,93 +118,101 @@ export function StanceManualReview() {
   const [missedKeywordInput, setMissedKeywordInput] = useState('');
   const [showTextPreview, setShowTextPreview] = useState(false);
 
-  // Load stats
+  // Load stats - only count AI low/medium confidence items
   const loadStats = useCallback(async () => {
     try {
-      // Count neutral and mixed stances
-      const { count: neutralCount } = await supabase
-        .from('remiss_responses')
-        .select('*', { count: 'exact', head: true })
-        .eq('analysis_status', 'ok')
-        .eq('stance_summary', 'neutral');
-
-      const { count: mixedCount } = await supabase
-        .from('remiss_responses')
-        .select('*', { count: 'exact', head: true })
-        .eq('analysis_status', 'ok')
-        .eq('stance_summary', 'mixed');
-
       // Count AI low confidence
       const { count: aiLowConfCount } = await supabase
         .from('remiss_responses')
         .select('*', { count: 'exact', head: true })
         .eq('analysis_status', 'ai_low_confidence');
 
+      // Count AI medium confidence (stored in metadata)
+      // We need to query for medium confidence that wasn't auto-applied
+      const PAGE_SIZE = 1000;
+      let page = 0;
+      let hasMore = true;
+      let aiMediumCount = 0;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('remiss_responses')
+          .select('metadata')
+          .eq('analysis_status', 'ai_low_confidence')
+          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+          hasMore = false;
+        } else {
+          for (const row of data) {
+            const metadata = row.metadata as { ai_review?: { confidence?: string } } | null;
+            if (metadata?.ai_review?.confidence === 'medium') {
+              aiMediumCount++;
+            }
+          }
+          hasMore = data.length === PAGE_SIZE;
+          page++;
+        }
+      }
+
       // Count reviewed (those with manual_review metadata)
       const { count: reviewedCount } = await supabase
         .from('remiss_responses')
         .select('*', { count: 'exact', head: true })
-        .in('analysis_status', ['ok', 'ai_low_confidence'])
+        .eq('analysis_status', 'ai_low_confidence')
         .not('metadata->manual_review', 'is', null);
 
-      const total = (neutralCount || 0) + (mixedCount || 0) + (aiLowConfCount || 0);
+      const total = aiLowConfCount || 0;
       
       setStats({
         total_uncertain: total,
         reviewed: reviewedCount || 0,
         pending: total - (reviewedCount || 0),
-        neutral_count: neutralCount || 0,
-        mixed_count: mixedCount || 0,
-        ai_low_confidence: aiLowConfCount || 0,
+        ai_low_confidence: (aiLowConfCount || 0) - aiMediumCount,
+        ai_medium_confidence: aiMediumCount,
       });
     } catch (err) {
       console.error('[StanceReview] Error loading stats:', err);
     }
   }, []);
 
-  // Load items for review
+  // Load items for review - ONLY AI low/medium confidence items
   const loadItems = useCallback(async () => {
     setLoading(true);
     try {
       let query = supabase
         .from('remiss_responses')
-        .select('id, responding_organization, stance_summary, stance_signals, file_url, raw_content, extraction_status, analysis_status, remiss_id, metadata');
-
-      if (filterStance === 'ai_low_confidence') {
-        query = query.eq('analysis_status', 'ai_low_confidence');
-      } else if (filterStance === 'all') {
-        query = query
-          .in('analysis_status', ['ok', 'ai_low_confidence'])
-          .or('stance_summary.eq.neutral,stance_summary.eq.mixed,analysis_status.eq.ai_low_confidence');
-      } else {
-        query = query
-          .eq('analysis_status', 'ok')
-          .eq('stance_summary', filterStance);
-      }
+        .select('id, responding_organization, stance_summary, stance_signals, file_url, raw_content, extraction_status, analysis_status, remiss_id, metadata', { count: 'exact' })
+        .eq('analysis_status', 'ai_low_confidence');  // Only AI low confidence items
 
       // Prioritize unreviewed items first
       query = query
-        .order('metadata->manual_review', { ascending: true, nullsFirst: true })
         .order('responding_organization', { ascending: true })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-      const { data, error, count } = await supabase
-        .from('remiss_responses')
-        .select('id, responding_organization, stance_summary, stance_signals, file_url, raw_content, extraction_status, analysis_status, remiss_id, metadata', { count: 'exact' })
-        .or(
-          filterStance === 'ai_low_confidence' 
-            ? 'analysis_status.eq.ai_low_confidence'
-            : filterStance === 'all'
-              ? 'and(analysis_status.in.(ok,ai_low_confidence),or(stance_summary.eq.neutral,stance_summary.eq.mixed,analysis_status.eq.ai_low_confidence))'
-              : `and(analysis_status.eq.ok,stance_summary.eq.${filterStance})`
-        )
-        .order('responding_organization', { ascending: true })
-        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+      const { data, error, count } = await query;
 
       if (error) throw error;
 
-      setItems((data || []) as unknown as ReviewItem[]);
-      setTotalCount(count || 0);
+      // Filter by confidence level if needed
+      let filteredData = (data || []) as unknown as ReviewItem[];
+      
+      if (filterStance === 'ai_low_confidence') {
+        filteredData = filteredData.filter(item => {
+          const confidence = item.metadata?.ai_review?.confidence;
+          return confidence === 'low';
+        });
+      } else if (filterStance === 'ai_medium_confidence') {
+        filteredData = filteredData.filter(item => {
+          const confidence = item.metadata?.ai_review?.confidence;
+          return confidence === 'medium';
+        });
+      }
+
+      setItems(filteredData);
+      setTotalCount(filterStance === 'all' ? (count || 0) : filteredData.length);
     } catch (err) {
       console.error('[StanceReview] Error loading items:', err);
       toast.error('Failed to load review items');
@@ -408,36 +415,28 @@ export function StanceManualReview() {
           Manual Stance Review
         </CardTitle>
         <CardDescription>
-          Review uncertain stances (neutral/mixed) and correct misclassifications
+          Review AI classifications with low/medium confidence that need human verification
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Stats summary */}
         {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="p-3 rounded-lg border bg-muted/30 text-center">
               <div className="text-2xl font-bold">{stats.total_uncertain}</div>
-              <div className="text-xs text-muted-foreground">Total Uncertain</div>
+              <div className="text-xs text-muted-foreground">Total Needs Review</div>
             </div>
-            <div className="p-3 rounded-lg border bg-muted text-center">
-              <div className="text-2xl font-bold text-muted-foreground">{stats.neutral_count}</div>
-              <div className="text-xs text-muted-foreground">Neutral</div>
+            <div className="p-3 rounded-lg border bg-destructive/10 text-center">
+              <div className="text-2xl font-bold text-destructive">{stats.ai_low_confidence}</div>
+              <div className="text-xs text-muted-foreground">Low Confidence</div>
             </div>
-            <div className="p-3 rounded-lg border bg-secondary text-center">
-              <div className="text-2xl font-bold text-secondary-foreground">{stats.mixed_count}</div>
-              <div className="text-xs text-muted-foreground">Mixed</div>
-            </div>
-            <div className="p-3 rounded-lg border bg-yellow-50 text-center">
-              <div className="text-2xl font-bold text-yellow-600">{stats.ai_low_confidence}</div>
-              <div className="text-xs text-muted-foreground">AI Low Conf</div>
+            <div className="p-3 rounded-lg border bg-accent text-center">
+              <div className="text-2xl font-bold text-accent-foreground">{stats.ai_medium_confidence}</div>
+              <div className="text-xs text-muted-foreground">Medium Confidence</div>
             </div>
             <div className="p-3 rounded-lg border bg-primary/10 text-center">
               <div className="text-2xl font-bold text-primary">{stats.reviewed}</div>
               <div className="text-xs text-muted-foreground">Reviewed</div>
-            </div>
-            <div className="p-3 rounded-lg border bg-accent text-center">
-              <div className="text-2xl font-bold text-accent-foreground">{stats.pending}</div>
-              <div className="text-xs text-muted-foreground">Pending</div>
             </div>
           </div>
         )}
@@ -447,14 +446,13 @@ export function StanceManualReview() {
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Filter:</span>
             <Select value={filterStance} onValueChange={(v) => { setFilterStance(v as typeof filterStance); setPage(0); }}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-44">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Uncertain</SelectItem>
-                <SelectItem value="neutral">Neutral only</SelectItem>
-                <SelectItem value="mixed">Mixed only</SelectItem>
-                <SelectItem value="ai_low_confidence">AI Low Confidence</SelectItem>
+                <SelectItem value="all">All AI Uncertain</SelectItem>
+                <SelectItem value="ai_low_confidence">Low Confidence</SelectItem>
+                <SelectItem value="ai_medium_confidence">Medium Confidence</SelectItem>
               </SelectContent>
             </Select>
           </div>
