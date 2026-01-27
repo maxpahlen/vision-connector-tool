@@ -1,5 +1,70 @@
 # Phase Deltas
 
+## 2026-01-27: Phase 5.4 Research — riksdagen.se API Patterns
+
+**Status:** RESEARCH COMPLETE — Ready for Implementation
+
+### Summary
+
+Researched riksdagen.se Open Data API for Committee Reports (betänkanden) and Laws (SFS).
+
+### Key Findings
+
+| Aspect | Committee Reports | Laws (SFS) |
+|--------|------------------|------------|
+| Query param | `doktyp=bet` | `doktyp=sfs` |
+| Session format | `rm=2024/25` | `rm=2024` |
+| Volume (sample) | 333 docs (2024/25) | 161 docs (2024) |
+| dok_id format | `HC01SkU18` | `sfs-2024-1373` |
+| PDF available | Yes, via `filbilaga.fil[].url` | Text via URL |
+
+### API Structure
+
+**Base URL:** `https://data.riksdagen.se/dokumentlista/?doktyp={type}&rm={session}&utformat=json`
+
+**Response includes:**
+- `@traffar` — Total hits
+- `@sidor` — Total pages
+- `dokument[]` — Array of documents with full metadata
+- `dokreferens` — Cross-references to related documents (propositions, etc.)
+
+### Implementation Plan
+
+Created `docs/development/branches/phase-5.4-committee-reports-laws.md` with:
+- Complete API documentation
+- Sample response structures
+- Scraper implementation plan
+- Success criteria
+
+### Files Created
+
+- `docs/development/branches/phase-5.4-committee-reports-laws.md`
+
+---
+
+## 2026-01-27: Phase 5.6.3 Stance Detection — COMPLETE
+
+**Status:** COMPLETE — Keyword-based stance detection deployed and validated
+
+### Summary
+
+Implemented Swedish keyword-based stance detection for remissvar documents using SB PM 2021:1 guidance.
+
+### Implementation
+
+- Edge function: `analyze-remissvar-stance`
+- Keywords: Swedish stance terms (instämmer, tillstyrker, avstyrker, etc.)
+- Outputs: `stance_summary` (support/oppose/mixed/neutral), `stance_signals` (JSONB)
+- Admin UI: Batch controls with live distribution chart
+
+### Validation
+
+- Live batch of 50 processed successfully
+- Distribution: 23 Support, 19 Neutral, 5 Mixed, 3 Oppose
+- `analysis_status = 'ok'` for all processed
+
+---
+
 ## 2026-01-27: Phase 5.6.4 AI Stance Classification — Paginated Accumulation Fix
 
 **Status:** COMPLETE — Windowing bug root cause identified and fixed
