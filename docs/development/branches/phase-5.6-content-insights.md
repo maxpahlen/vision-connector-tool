@@ -6,13 +6,13 @@
 |------|-------------|--------|
 | 5.6.1 | Schema updates (extraction_status, raw_content, extracted_at) | ✅ COMPLETE |
 | 5.6.2 | process-remissvar-pdf edge function | ✅ COMPLETE |
-| 5.6.3 | Keyword-based stance detection | 🔲 Not started |
-| 5.6.4 | Section extraction (Sammanfattning, Ställningstaganden) | 🔲 Not started |
+| 5.6.3 | Keyword-based stance detection (with negation + section-scoping) | ✅ APPROVED |
+| 5.6.4 | NLP Analysis Pipeline (LLM-based) | 🔲 Deferred |
 
-> **Status:** IN PROGRESS (Phase 5.6.2 Complete, Extraction Running)  
+> **Status:** IN PROGRESS (Phase 5.6.3 Approved, Ready for Implementation)  
 > **Owner:** Lovable (Architectural Authority)  
 > **Created:** 2026-01-20  
-> **Last Updated:** 2026-01-26
+> **Last Updated:** 2026-01-27
 
 ## Objective
 
@@ -138,66 +138,139 @@ Features:
 
 ---
 
-### Phase 5.6.3: Content Analysis Foundation (MVP)
+### Phase 5.6.3: Keyword-Based Stance Detection
 
-**Status:** Planning  
-**Dependencies:** Phase 5.6.2 complete with >50% extraction
+**Status:** APPROVED (2026-01-27)  
+**Dependencies:** Phase 5.6.2 complete with `extraction_status = 'ok'`
 
-#### Structural Anchors (from SB PM 2021:1 Guidance)
+#### State Transition Model
 
-| Section | Detection Pattern | Use |
-|---------|-------------------|-----|
-| Header Block | First lines: date, "Dnr", department | Metadata extraction |
-| Sammanfattning | First heading containing "sammanfattning" | Summary candidate |
-| Ställningstaganden | Section header or inline stance keywords | Position detection |
-| Section References | "avsnitt X.Y", "betänkandet" | Proposal alignment |
+Analysis **only runs** on responses where `extraction_status = 'ok'`. Clear dependency chain:
 
-#### Stance Detection Keywords (Swedish)
+```
+extraction_status: not_started → ok/error/skipped
+                        ↓
+                   (if ok)
+                        ↓
+analysis_status:   not_started → ok/error/skipped
+```
 
-| Position | Keywords |
-|----------|----------|
-| **Support** | `instämmer`, `tillstyrker`, `välkomnar`, `stödjer`, `positivt` |
-| **Opposition** | `motsätter`, `avstyrker`, `avråder`, `invänder`, `kritiskt` |
-| **Conditional** | `med förbehåll`, `under förutsättning` |
-| **No Opinion** | `inga synpunkter`, `avstår` |
+**Analysis Status Values:**
+- `not_started` — Default, never analyzed (only eligible if `extraction_status = 'ok'`)
+- `ok` — Successfully analyzed, stance determined
+- `error` — Analysis failed (logged to metadata)
+- `skipped` — Intentionally skipped (text too short, non-Swedish)
 
-#### Extraction Interface
+#### Schema Extension
+
+```sql
+ALTER TABLE remiss_responses 
+  ADD COLUMN IF NOT EXISTS stance_summary TEXT,
+  ADD COLUMN IF NOT EXISTS stance_signals JSONB DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS analysis_status TEXT DEFAULT 'not_started',
+  ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_remiss_responses_analysis_status 
+  ON remiss_responses(analysis_status);
+```
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `stance_summary` | TEXT | Overall stance: support, oppose, conditional, neutral, mixed |
+| `stance_signals` | JSONB | Detailed match data: counts, keywords found, section context |
+| `analysis_status` | TEXT | Processing state (dependent on extraction_status = ok) |
+| `analyzed_at` | TIMESTAMPTZ | Timestamp of analysis completion |
+
+#### Stance Detection Keywords (Swedish) — With Negation Patterns
+
+| Position | Keywords | Negation Patterns |
+|----------|----------|-------------------|
+| **Support** | `instämmer`, `tillstyrker`, `välkomnar`, `stödjer`, `ställer sig positiv` | — |
+| **Opposition** | `motsätter`, `avstyrker`, `avråder`, `invänder`, `ställer sig kritisk` | `inte tillstyrker`, `kan inte stödja`, `inte instämmer` |
+| **Conditional** | `med förbehåll`, `under förutsättning`, `i huvudsak positiv`, `villkorat` | — |
+| **No Opinion** | `inga synpunkter`, `avstår`, `lämnar inget att erinra`, `ingen erinran` | — |
+
+**Negation Handling:**
+- Patterns like `inte tillstyrker` or `kan inte stödja` are classified as **opposition**
+- Negation patterns are checked **before** positive patterns to avoid false positives
+
+#### Section-Scoping (SB PM 2021:1 Guidance)
+
+Keywords found in high-priority sections receive **2x weight**:
+
+| Section | Detection Pattern | Weight Multiplier |
+|---------|-------------------|-------------------|
+| Sammanfattning | `/sammanfattning/i` in heading/first 500 chars | 2.0 |
+| Ställningstaganden | `/ställningstagande/i` section header | 2.0 |
+| Body text | All other content | 1.0 |
+
+**Implementation:** Extract section boundaries first, then apply weighted keyword matching.
+
+#### Stance Classification Logic
+
+| Condition | Classification |
+|-----------|----------------|
+| Only `no_opinion` keywords | `neutral` |
+| `support` > `oppose` × 2 (weighted) | `support` |
+| `oppose` > `support` × 2 (weighted) | `oppose` |
+| `conditional` >= both | `conditional` |
+| Both `support` AND `oppose` present | `mixed` |
+| No keywords found | `neutral` |
+
+**Important:** `neutral` is a **valid output**, not a failure. Many responses legitimately have no opinion or use non-standard phrasing.
+
+#### Shared Module: `_shared/stance-analyzer.ts`
 
 ```typescript
-interface RemissvarAnalysis {
-  // From SB PM 2021:1 guidance
-  summary: string | null;              // First "Sammanfattning" section
-  stance_summary: 'support' | 'oppose' | 'conditional' | 'neutral' | 'mixed' | null;
-  section_references: string[];        // "avsnitt 4.3" patterns
-  arguments: string | null;            // Key rationale paragraphs
-  metadata_header: {
-    date: string | null;
-    dnr: string | null;
-    department: string | null;
-  };
-  
-  // Computed fields
+export interface StanceSignals {
+  support_count: number;
+  oppose_count: number;
+  conditional_count: number;
+  no_opinion_count: number;
+  keywords_found: string[];
+  section_context: 'summary' | 'stance' | 'body';
   word_count: number;
-  position_signals: {
-    support_count: number;
-    oppose_count: number;
-    conditional_count: number;
-  };
+}
+
+export type StanceSummary = 'support' | 'oppose' | 'conditional' | 'neutral' | 'mixed';
+```
+
+#### Edge Function: `analyze-remissvar-stance`
+
+**Query Filter (enforces state dependency):**
+```sql
+SELECT * FROM remiss_responses
+WHERE extraction_status = 'ok'
+  AND analysis_status = 'not_started'
+LIMIT :limit
+```
+
+**Output:**
+```json
+{
+  "processed": 50,
+  "analyzed": 48,
+  "skipped": 2,
+  "summary": { "support": 12, "oppose": 8, "conditional": 15, "neutral": 10, "mixed": 3 }
 }
 ```
 
-#### Heuristics (from guidance doc)
+#### Admin UI: `RemissvarStanceAnalyzerTest.tsx`
 
-1. **First heading "Sammanfattning"** → candidate summary
-2. **Sentences containing "instämmer/motsätter"** → stance detection
-3. **Pattern "avsnitt X.Y"** → section reference extraction
+Features:
+- Analysis progress stats (only shows responses with `extraction_status = 'ok'`)
+- Stance distribution chart (support/oppose/mixed/neutral/conditional)
+- Batch controls (reuse pattern from extraction UI)
+- Sample keyword matches for verification
 
-#### Entity Page Enhancement
+#### Entity Page Enhancement (Performance-Aware)
 
 On organization entity pages (`/entity/:id`), show:
-- Total response word count
-- Position signal summary
-- "Read Response" links to extracted text
+- **Stance Summary Card** — Aggregated stance distribution (no raw_content in list)
+- **Response List** — Stance badge (color-coded), word count, organization name
+- **Expandable "View Analysis"** — Fetches `stance_signals` on demand (not raw_content)
+
+**Performance Rule:** Never render `raw_content` in lists. Use excerpts or on-demand fetch.
 
 ---
 
@@ -219,19 +292,22 @@ On organization entity pages (`/entity/:id`), show:
 ## Success Criteria
 
 ### Phase 5.6.1 (Schema)
-- [ ] Columns deployed without data loss
-- [ ] Indexes created for query performance
+- [x] Columns deployed without data loss
+- [x] Indexes created for query performance
 
 ### Phase 5.6.2 (Extraction)
 - [ ] >90% of 3,424 responses successfully extracted
-- [ ] Error rate <5%
-- [ ] Extraction time <30 seconds per PDF average
-- [ ] Admin UI shows extraction progress
+- [x] Error rate <5% (currently 0.2%)
+- [x] Extraction time <30 seconds per PDF average
+- [x] Admin UI shows extraction progress
 
-### Phase 5.6.3 (Content MVP)
-- [ ] Word count metrics displayed on entity pages
-- [ ] Position signals detected for >50% of responses
-- [ ] Erik confirms insights are useful
+### Phase 5.6.3 (Stance Detection)
+- [ ] Analysis coverage >90% of extracted responses (`analysis_status = 'ok'`)
+- [ ] Manual spot-check (10 random samples) matches expectation
+- [ ] Entity pages display stance badges (no raw_content in lists)
+- [ ] `neutral` classification treated as valid, not failure
+
+**Note:** "Keyword detection >50%" is NOT a success metric. Many valid responses are `neutral` (no opinion) or use non-standard phrasing.
 
 ### Phase 5.6.4 (NLP - Future)
 - [ ] Sentiment analysis accuracy >80% vs manual review
@@ -301,6 +377,7 @@ On organization entity pages (`/entity/:id`), show:
 | Date | Decision | Approved By |
 |------|----------|-------------|
 | 2026-01-20 | Phase 5.6 concept brief created | Max, Lovable, Codex |
+| 2026-01-27 | Phase 5.6.3 plan approved with corrections | Max |
 
 ---
 
@@ -309,3 +386,5 @@ On organization entity pages (`/entity/:id`), show:
 | Date | Change | Author |
 |------|--------|--------|
 | 2026-01-20 | Initial concept brief created from guidance doc | Lovable |
+| 2026-01-26 | Phase 5.6.2 marked complete, error analysis documented | Lovable |
+| 2026-01-27 | Phase 5.6.3 plan refined: added state transitions, negation patterns, section-scoping, UI performance rules, revised success criteria per Max feedback | Lovable |
