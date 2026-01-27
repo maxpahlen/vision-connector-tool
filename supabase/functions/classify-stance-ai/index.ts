@@ -3,6 +3,9 @@
  * 
  * Processes uncertain remissvar stances (neutral with 0 keywords + mixed)
  * using OpenAI tool calling for structured stance classification.
+ * 
+ * Uses paginated accumulation to reliably find eligible rows regardless of
+ * data distribution (fixes windowing bug where early candidates were ineligible).
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -18,7 +21,7 @@ interface RequestBody {
   response_id?: string;     // Optional: classify single response
   limit?: number;           // Batch size (default 20, max 50)
   dry_run?: boolean;        // Preview mode
-  confidence_threshold?: 'high' | 'medium' | 'low';  // Auto-apply threshold (default: medium)
+  confidence_threshold?: 'high' | 'medium' | 'low';  // Auto-apply threshold (default: high)
 }
 
 interface AIClassification {
@@ -52,7 +55,18 @@ interface ClassificationResult {
   };
   details: ClassificationDetail[];
   dry_run: boolean;
+  // Telemetry fields for debugging pagination/eligibility issues
+  telemetry: {
+    scanned_total: number;      // Total candidates fetched from DB
+    eligible_found: number;     // Rows that passed eligibility filter
+    skipped_ineligible: number; // Rows skipped (ai_review exists OR neutral with keywords)
+    pages_fetched: number;      // Number of pagination pages used
+  };
 }
+
+// Pagination constants
+const MAX_PAGES = 10;       // Safety cap to prevent runaway scans
+const PAGE_SIZE = 100;      // Candidates per page
 
 // Confidence threshold ordering for comparison
 // Default: only 'high' confidence auto-applies; medium/low go to manual review
@@ -209,6 +223,133 @@ async function classifyDocument(text: string): Promise<AIClassification | null> 
   }
 }
 
+/**
+ * Check if a response row is eligible for AI classification.
+ * Eligible = (neutral with 0 keywords_found) OR mixed, AND no ai_review yet
+ */
+function isEligible(row: {
+  stance_summary: string | null;
+  stance_signals: { keywords_found?: string[] } | null;
+  metadata: { ai_review?: unknown } | null;
+}): boolean {
+  // Already AI processed?
+  if (row.metadata?.ai_review) return false;
+  
+  const keywordsFound = row.stance_signals?.keywords_found || [];
+  
+  // Mixed stance is always eligible
+  if (row.stance_summary === 'mixed') return true;
+  
+  // Neutral with no keywords is eligible
+  if (row.stance_summary === 'neutral' && keywordsFound.length === 0) return true;
+  
+  return false;
+}
+
+/**
+ * Paginated accumulation: fetch candidates in pages until we have enough eligible rows.
+ * This fixes the windowing bug where early candidates were ineligible.
+ */
+// Response row type for eligible responses
+interface ResponseRow {
+  id: string;
+  responding_organization: string | null;
+  raw_content: string | null;
+  stance_summary: string | null;
+  stance_signals: { keywords_found?: string[] } | null;
+  metadata: { ai_review?: unknown } | null;
+}
+
+/**
+ * Paginated accumulation: fetch candidates in pages until we have enough eligible rows.
+ * This fixes the windowing bug where early candidates were ineligible.
+ */
+// deno-lint-ignore no-explicit-any
+async function fetchEligibleResponses(
+  supabase: any,
+  effectiveLimit: number
+): Promise<{
+  eligible: ResponseRow[];
+  telemetry: {
+    scanned_total: number;
+    eligible_found: number;
+    skipped_ineligible: number;
+    pages_fetched: number;
+  };
+}> {
+  const eligible: ResponseRow[] = [];
+  
+  let scannedTotal = 0;
+  let skippedIneligible = 0;
+  let pagesFetched = 0;
+  
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const offset = page * PAGE_SIZE;
+    
+    const { data: candidates, error } = await supabase
+      .from("remiss_responses")
+      .select("id, responding_organization, raw_content, stance_summary, stance_signals, metadata")
+      .eq("extraction_status", "ok")
+      .eq("analysis_status", "ok")
+      .in("stance_summary", ["neutral", "mixed"])
+      .order("created_at", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+    
+    pagesFetched++;
+    
+    if (error) {
+      console.error(`[classify-stance-ai] Page ${page} fetch error: ${error.message}`);
+      break;
+    }
+    
+    if (!candidates || candidates.length === 0) {
+      // No more candidates in DB
+      console.log(`[classify-stance-ai] Page ${page}: exhausted candidates`);
+      break;
+    }
+    
+    scannedTotal += candidates.length;
+    
+    // Filter to eligible rows
+    for (const row of candidates) {
+      const rowTyped = row as ResponseRow;
+      
+      if (isEligible(rowTyped)) {
+        eligible.push(rowTyped);
+        
+        // Stop once we have enough
+        if (eligible.length >= effectiveLimit) {
+          console.log(`[classify-stance-ai] Page ${page}: collected ${eligible.length} eligible (target: ${effectiveLimit})`);
+          break;
+        }
+      } else {
+        skippedIneligible++;
+      }
+    }
+    
+    // Check if we have enough
+    if (eligible.length >= effectiveLimit) {
+      break;
+    }
+    
+    // If this page had fewer than PAGE_SIZE, we've exhausted candidates
+    if (candidates.length < PAGE_SIZE) {
+      console.log(`[classify-stance-ai] Page ${page}: last page (${candidates.length} rows)`);
+      break;
+    }
+  }
+  
+  return {
+    eligible,
+    telemetry: {
+      scanned_total: scannedTotal,
+      eligible_found: eligible.length,
+      skipped_ineligible: skippedIneligible,
+      pages_fetched: pagesFetched,
+    },
+  };
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -245,70 +386,7 @@ Deno.serve(async (req) => {
 
     console.log(`[classify-stance-ai] Starting: limit=${effectiveLimit}, dry_run=${dry_run}, threshold=${confidence_threshold}`);
 
-    // Build query for eligible responses
-    // Eligible = extraction ok, keyword analysis ok, (neutral with 0 keywords OR mixed), not yet AI processed
-    // NOTE: Cannot use .is("metadata->ai_review", null) as PostgREST doesn't support nested JSONB path checks
-    // Instead, we filter by stance_summary IN (neutral, mixed) at DB level, then do fine-grained filtering client-side
-    let query = supabase
-      .from("remiss_responses")
-      .select("id, responding_organization, raw_content, stance_summary, stance_signals, metadata")
-      .eq("extraction_status", "ok")
-      .eq("analysis_status", "ok")
-      .in("stance_summary", ["neutral", "mixed"])  // Pre-filter at DB level to get candidates
-      .order("created_at", { ascending: true })
-      .limit(effectiveLimit * 3);  // Fetch 3x to compensate for client-side ai_review and keywords filtering
-
-    if (response_id) {
-      // Single response mode
-      query = supabase
-        .from("remiss_responses")
-        .select("id, responding_organization, raw_content, stance_summary, stance_signals, metadata")
-        .eq("id", response_id);
-    }
-
-    const { data: responses, error: fetchError } = await query;
-
-    if (fetchError) {
-      throw new Error(`Failed to fetch responses: ${fetchError.message}`);
-    }
-
-    // Filter to eligible responses (neutral with 0 keywords OR mixed)
-    const eligibleResponses = (responses || []).filter(r => {
-      const signals = r.stance_signals as { keywords_found?: string[] } | null;
-      const keywordsFound = signals?.keywords_found || [];
-      
-      // Already AI processed?
-      const metadata = r.metadata as { ai_review?: unknown } | null;
-      if (metadata?.ai_review) return false;
-      
-      // Neutral with no keywords
-      if (r.stance_summary === 'neutral' && keywordsFound.length === 0) return true;
-      
-      // Mixed stance
-      if (r.stance_summary === 'mixed') return true;
-      
-      return false;
-    }).slice(0, effectiveLimit);  // Apply actual limit after filtering
-
-    if (eligibleResponses.length === 0) {
-      console.log("[classify-stance-ai] No eligible responses found");
-      return new Response(
-        JSON.stringify({
-          processed: 0,
-          classified: 0,
-          low_confidence: 0,
-          errors: [],
-          summary: { support: 0, oppose: 0, conditional: 0, neutral: 0 },
-          details: [],
-          dry_run,
-          message: "No eligible responses (neutral with 0 keywords or mixed) found",
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log(`[classify-stance-ai] Found ${eligibleResponses.length} eligible responses`);
-
+    // Initialize result with telemetry
     const result: ClassificationResult = {
       processed: 0,
       classified: 0,
@@ -317,7 +395,59 @@ Deno.serve(async (req) => {
       summary: { support: 0, oppose: 0, conditional: 0, neutral: 0 },
       details: [],
       dry_run,
+      telemetry: {
+        scanned_total: 0,
+        eligible_found: 0,
+        skipped_ineligible: 0,
+        pages_fetched: 0,
+      },
     };
+
+    let eligibleResponses: ResponseRow[] = [];
+
+    // Single response mode vs batch mode
+    if (response_id) {
+      // Single response mode - direct fetch
+      const { data: singleResponse, error: fetchError } = await supabase
+        .from("remiss_responses")
+        .select("id, responding_organization, raw_content, stance_summary, stance_signals, metadata")
+        .eq("id", response_id)
+        .maybeSingle();
+
+      if (fetchError) {
+        throw new Error(`Failed to fetch response: ${fetchError.message}`);
+      }
+
+      if (singleResponse) {
+        eligibleResponses = [singleResponse as typeof eligibleResponses[0]];
+        result.telemetry = {
+          scanned_total: 1,
+          eligible_found: 1,
+          skipped_ineligible: 0,
+          pages_fetched: 1,
+        };
+      }
+    } else {
+      // Batch mode - use paginated accumulation
+      const fetchResult = await fetchEligibleResponses(supabase, effectiveLimit);
+      eligibleResponses = fetchResult.eligible;
+      result.telemetry = fetchResult.telemetry;
+    }
+
+    console.log(`[classify-stance-ai] Telemetry: scanned=${result.telemetry.scanned_total}, eligible=${result.telemetry.eligible_found}, skipped=${result.telemetry.skipped_ineligible}, pages=${result.telemetry.pages_fetched}`);
+
+    if (eligibleResponses.length === 0) {
+      console.log("[classify-stance-ai] No eligible responses found");
+      return new Response(
+        JSON.stringify({
+          ...result,
+          message: "No eligible responses (neutral with 0 keywords or mixed, without ai_review) found",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log(`[classify-stance-ai] Processing ${eligibleResponses.length} eligible responses`);
 
     for (const response of eligibleResponses) {
       result.processed++;
