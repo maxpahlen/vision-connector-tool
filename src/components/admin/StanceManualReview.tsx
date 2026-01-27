@@ -264,11 +264,39 @@ export function StanceManualReview() {
 
       toast.success('Review saved');
       
-      // If suggesting keyword rule, show toast with the keywords
+      // If suggesting keyword rule, save keywords to database
       if (decision.suggest_keyword_rule && decision.missed_keywords.length > 0) {
+        // Determine category based on corrected stance or original
+        const targetStance = decision.corrected_stance || selectedItem.stance_summary;
+        let category: 'support' | 'oppose' | 'conditional' | 'no_opinion' = 'support';
+        
+        if (targetStance === 'oppose') category = 'oppose';
+        else if (targetStance === 'conditional') category = 'conditional';
+        else if (targetStance === 'neutral') category = 'no_opinion';
+        else if (targetStance === 'support') category = 'support';
+        
+        // Insert each keyword as a suggestion
+        for (const keyword of decision.missed_keywords) {
+          const { error: insertError } = await supabase
+            .from('stance_keyword_suggestions')
+            .insert({
+              keyword: keyword.toLowerCase().trim(),
+              category,
+              source_response_id: selectedItem.id,
+              status: 'pending',
+            });
+          
+          if (insertError) {
+            // Ignore duplicate constraint errors
+            if (!insertError.message.includes('duplicate')) {
+              console.error('[StanceReview] Error saving keyword:', insertError);
+            }
+          }
+        }
+        
         toast.info(
-          `Suggested keywords for addition: ${decision.missed_keywords.join(', ')}`,
-          { duration: 5000 }
+          `${decision.missed_keywords.length} keyword(s) submitted for review`,
+          { duration: 3000 }
         );
       }
 
