@@ -43,10 +43,24 @@ Maintained by: **Lovable (Architectural Authority)**
 | Component | Status | Notes |
 |-----------|--------|-------|
 | 5.6.1 Schema | ✅ COMPLETE | extraction_status, raw_content, extracted_at |
-| 5.6.2 Extraction Pipeline | ✅ COMPLETE | Edge function + admin UI deployed |
-| 5.6.2 Batch Processing | 🔄 IN PROGRESS | ~14% extracted, 86% remaining |
-| 5.6.3 Stance Detection | ✅ COMPLETE | Keyword-based Swedish stance terms |
-| 5.6.4 AI Classification | 🔄 IN PROGRESS | Paginated accumulation fix deployed |
+| 5.6.2 Extraction Pipeline | ✅ COMPLETE | 3,366 ok, 55 errors (scanned PDFs) |
+| 5.6.3 Stance Detection | ✅ COMPLETE | 3,363 analyzed (keyword-based) |
+| 5.6.4 AI Classification | 🔄 IN PROGRESS | 548 AI-classified, ~1,019 pending |
+
+### Current Database Metrics (verified 2026-01-27)
+
+| Metric | Count |
+|--------|-------|
+| Total remiss_responses | 3,421 |
+| Extraction: ok | 3,366 (98.4%) |
+| Extraction: error | 55 (1.6%) |
+| Stance: support | 1,557 |
+| Stance: conditional | 290 |
+| Stance: oppose | 284 |
+| Stance: neutral | 1,072 |
+| Stance: mixed | 160 |
+| AI classified | 548 |
+| Pending AI review | ~1,019 |
 
 ---
 
