@@ -33,10 +33,16 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+const FETCH_HEADERS = {
+  'User-Agent': 'LagstiftningsBevakning/1.0 (https://lovable.dev; contact@lovable.dev)',
+  'Accept': 'application/json',
+  'Accept-Language': 'sv-SE,sv;q=0.9,en;q=0.8',
+};
+
 async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { headers: FETCH_HEADERS });
       if (response.status === 429 || response.status === 503) {
         const backoff = Math.pow(2, attempt) * 1000;
         console.log(`Rate limited, backing off ${backoff}ms`);
@@ -45,8 +51,9 @@ async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
       }
       return response;
     } catch (error) {
+      console.error(`Fetch attempt ${attempt + 1} failed:`, error);
       if (attempt === retries - 1) throw error;
-      await delay(1000);
+      await delay(2000 * (attempt + 1)); // Longer delay between retries
     }
   }
   throw new Error("Max retries exceeded");
