@@ -7,9 +7,19 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { User, Building2, Users, FileText, Link2, Calendar, ArrowLeft, Mail, MessageSquare } from 'lucide-react';
+import { User, Building2, Users, FileText, Link2, Calendar, ArrowLeft, Mail, MessageSquare, ThumbsUp, ThumbsDown, Scale, Minus, HelpCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { sv } from 'date-fns/locale';
+
+// Stance badge configuration for remissvar
+const STANCE_BADGE_CONFIG = {
+  support: { label: 'Stöd', className: 'bg-primary/10 text-primary border-primary/20' },
+  oppose: { label: 'Mot', className: 'bg-destructive/10 text-destructive border-destructive/20' },
+  conditional: { label: 'Villkorat', className: 'bg-accent text-accent-foreground border-accent' },
+  neutral: { label: 'Neutral', className: 'bg-muted text-muted-foreground border-muted' },
+  mixed: { label: 'Blandad', className: 'bg-secondary text-secondary-foreground border-secondary' },
+  no_position: { label: 'Ingen ställning', className: 'bg-muted/50 text-muted-foreground border-muted/50' },
+} as const;
 
 const ENTITY_TYPE_ICONS = {
   person: User,
@@ -182,6 +192,7 @@ export default function EntityDetail() {
           file_url,
           filename,
           responding_organization,
+          stance_summary,
           created_at,
           remiss_documents!remiss_responses_remiss_id_fkey (
             id,
@@ -399,6 +410,8 @@ export default function EntityDetail() {
                     {remissResponses.slice(0, 20).map((resp) => {
                       const remiss = resp.remiss_documents as any;
                       const parentDoc = remiss?.documents;
+                      const stanceConfig = resp.stance_summary ? STANCE_BADGE_CONFIG[resp.stance_summary as keyof typeof STANCE_BADGE_CONFIG] : null;
+                      
                       return (
                         <div
                           key={resp.id}
@@ -406,8 +419,13 @@ export default function EntityDetail() {
                         >
                           <div className="flex items-start justify-between gap-4">
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
                                 <Badge variant="outline" className="text-xs">Remissvar</Badge>
+                                {stanceConfig && (
+                                  <Badge variant="outline" className={`text-xs ${stanceConfig.className}`}>
+                                    {stanceConfig.label}
+                                  </Badge>
+                                )}
                                 {parentDoc?.doc_number && (
                                   <Link
                                     to={`/document/${parentDoc.id}`}
