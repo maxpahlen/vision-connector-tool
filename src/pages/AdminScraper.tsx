@@ -25,7 +25,9 @@ import { SouLagstiftningskedjaScraper } from '@/components/admin/SouLagstiftning
 import { SouUrlRepairTool } from '@/components/admin/SouUrlRepairTool';
 import { DirectiveMetadataScraper } from '@/components/admin/DirectiveMetadataScraper';
 import { ValidationDashboard } from '@/components/admin/ValidationDashboard';
-import { FileText, Bot, Database, Settings, Play, FileSearch, BarChart3 } from 'lucide-react';
+import { CommitteeReportsScraperTest } from '@/components/admin/CommitteeReportsScraperTest';
+import { LawsScraperTest } from '@/components/admin/LawsScraperTest';
+import { FileText, Bot, Database, Settings, Play, FileSearch, BarChart3, Landmark } from 'lucide-react';
 
 export default function AdminScraper() {
   return (
@@ -38,10 +40,14 @@ export default function AdminScraper() {
       </div>
 
       <Tabs defaultValue="validation" className="w-full">
-        <TabsList className="grid w-full grid-cols-7">
+        <TabsList className="grid w-full grid-cols-8">
           <TabsTrigger value="validation" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
             Validation
+          </TabsTrigger>
+          <TabsTrigger value="parliament" className="flex items-center gap-2">
+            <Landmark className="h-4 w-4" />
+            Parliament
           </TabsTrigger>
           <TabsTrigger value="remiss" className="flex items-center gap-2">
             <FileSearch className="h-4 w-4" />
@@ -53,15 +59,15 @@ export default function AdminScraper() {
           </TabsTrigger>
           <TabsTrigger value="batch" className="flex items-center gap-2">
             <Play className="h-4 w-4" />
-            Batch Process
+            Batch
           </TabsTrigger>
           <TabsTrigger value="sou" className="flex items-center gap-2">
             <Bot className="h-4 w-4" />
-            SOUs & Directives
+            SOUs
           </TabsTrigger>
           <TabsTrigger value="data" className="flex items-center gap-2">
             <Database className="h-4 w-4" />
-            Data Explorer
+            Data
           </TabsTrigger>
           <TabsTrigger value="system" className="flex items-center gap-2">
             <Settings className="h-4 w-4" />
@@ -72,6 +78,24 @@ export default function AdminScraper() {
         {/* Validation Dashboard Tab - Phase Reset */}
         <TabsContent value="validation" className="space-y-6 mt-6">
           <ValidationDashboard />
+        </TabsContent>
+
+        {/* Parliament Tab - Phase 5.4 */}
+        <TabsContent value="parliament" className="space-y-6 mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Phase 5.4: Committee Reports + Laws</CardTitle>
+              <CardDescription>
+                Scrape betänkanden (committee reports) and SFS (laws) from riksdagen.se Open Data API.
+                Committee reports include proposition cross-references and parliament decision timeline events.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+          
+          <div className="grid gap-6">
+            <CommitteeReportsScraperTest />
+            <LawsScraperTest />
+          </div>
         </TabsContent>
 
         {/* Remisser Tab - Phase 5.3 */}

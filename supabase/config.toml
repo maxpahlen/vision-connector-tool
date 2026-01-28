@@ -74,3 +74,9 @@ verify_jwt = false
 
 [functions.classify-stance-ai]
 verify_jwt = false
+
+[functions.scrape-committee-reports]
+verify_jwt = false
+
+[functions.scrape-laws]
+verify_jwt = false
