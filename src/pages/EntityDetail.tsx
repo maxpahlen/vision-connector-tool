@@ -7,9 +7,11 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { User, Building2, Users, FileText, Link2, Calendar, ArrowLeft, Mail, MessageSquare, ThumbsUp, ThumbsDown, Scale, Minus, HelpCircle } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { User, Building2, Users, FileText, Link2, Calendar, ArrowLeft, Mail, MessageSquare, ChevronDown, Paperclip } from 'lucide-react';
 import { format } from 'date-fns';
 import { sv } from 'date-fns/locale';
+import { useMemo, useState } from 'react';
 
 // Stance badge configuration for remissvar
 const STANCE_BADGE_CONFIG = {
@@ -35,9 +37,21 @@ const ENTITY_TYPE_LABELS = {
   organization: 'Organisation',
 } as const;
 
+// Type for grouped remissvar
+interface GroupedRemissvar {
+  remiss_id: string;
+  remiss: any;
+  parentDoc: any;
+  responses: any[];
+  primaryResponse: any;
+  primaryStance: string | null;
+  attachments: any[];
+}
+
 export default function EntityDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // Fetch entity details
   const { data: entity, isLoading: entityLoading, error: entityError } = useQuery({
@@ -181,7 +195,7 @@ export default function EntityDetail() {
     enabled: !!id && !!documents && documents.length > 0,
   });
 
-  // Fetch remiss responses for organizations
+  // Fetch remiss responses for organizations - now includes remiss_deadline
   const { data: remissResponses, isLoading: responsesLoading } = useQuery({
     queryKey: ['entity-remiss-responses', id],
     queryFn: async () => {
@@ -194,9 +208,11 @@ export default function EntityDetail() {
           responding_organization,
           stance_summary,
           created_at,
+          remiss_id,
           remiss_documents!remiss_responses_remiss_id_fkey (
             id,
             title,
+            remiss_deadline,
             parent_document_id,
             documents!remiss_documents_parent_document_id_fkey (
               id,
@@ -213,6 +229,77 @@ export default function EntityDetail() {
     },
     enabled: !!id && entity?.entity_type === 'organization',
   });
+
+  // Group remissvar by remiss_id with stable ordering
+  const groupedRemissvar = useMemo((): GroupedRemissvar[] => {
+    if (!remissResponses || remissResponses.length === 0) return [];
+
+    const groups = new Map<string, GroupedRemissvar>();
+
+    // Sort responses by filename for stable ordering within groups
+    const sortedResponses = [...remissResponses].sort((a, b) => {
+      const filenameA = a.filename || '';
+      const filenameB = b.filename || '';
+      return filenameA.localeCompare(filenameB, 'sv');
+    });
+
+    sortedResponses.forEach(resp => {
+      const remissId = resp.remiss_id;
+      if (!remissId) return;
+
+      const remiss = resp.remiss_documents as any;
+      const parentDoc = remiss?.documents;
+
+      if (!groups.has(remissId)) {
+        groups.set(remissId, {
+          remiss_id: remissId,
+          remiss,
+          parentDoc,
+          responses: [],
+          primaryResponse: null,
+          primaryStance: null,
+          attachments: [],
+        });
+      }
+
+      const group = groups.get(remissId)!;
+      group.responses.push(resp);
+    });
+
+    // Determine primary response and attachments for each group
+    groups.forEach(group => {
+      // Sort responses: non-no_position first, then by filename
+      const sorted = [...group.responses].sort((a, b) => {
+        const aHasStance = a.stance_summary && a.stance_summary !== 'no_position';
+        const bHasStance = b.stance_summary && b.stance_summary !== 'no_position';
+        
+        // Prefer items with a stance
+        if (aHasStance && !bHasStance) return -1;
+        if (!aHasStance && bHasStance) return 1;
+        
+        // Check for "bilaga" in filename (likely attachment)
+        const aIsBilaga = a.filename?.toLowerCase().includes('bilaga') || false;
+        const bIsBilaga = b.filename?.toLowerCase().includes('bilaga') || false;
+        
+        if (!aIsBilaga && bIsBilaga) return -1;
+        if (aIsBilaga && !bIsBilaga) return 1;
+        
+        // Fall back to filename ordering
+        return (a.filename || '').localeCompare(b.filename || '', 'sv');
+      });
+
+      group.primaryResponse = sorted[0];
+      group.primaryStance = sorted[0]?.stance_summary || null;
+      group.attachments = sorted.slice(1);
+    });
+
+    // Sort groups by remiss_deadline descending (newest first)
+    return Array.from(groups.values()).sort((a, b) => {
+      const dateA = a.remiss?.remiss_deadline || '';
+      const dateB = b.remiss?.remiss_deadline || '';
+      return dateB.localeCompare(dateA);
+    });
+  }, [remissResponses]);
 
   // Fetch remiss invitations for organizations
   const { data: remissInvites, isLoading: invitesLoading } = useQuery({
@@ -244,6 +331,18 @@ export default function EntityDetail() {
     },
     enabled: !!id && entity?.entity_type === 'organization',
   });
+
+  const toggleGroup = (remissId: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(remissId)) {
+        next.delete(remissId);
+      } else {
+        next.add(remissId);
+      }
+      return next;
+    });
+  };
 
   if (entityLoading) {
     return (
@@ -388,7 +487,7 @@ export default function EntityDetail() {
             </CardContent>
           </Card>
 
-          {/* Remiss Responses - only for organizations */}
+          {/* Remiss Responses - only for organizations, now grouped */}
           {entity.entity_type === 'organization' && (
             <Card className="lg:col-span-2">
               <CardHeader>
@@ -405,16 +504,18 @@ export default function EntityDetail() {
                   <div className="space-y-4">
                     {[1, 2, 3].map(i => <Skeleton key={i} className="h-16" />)}
                   </div>
-                ) : remissResponses && remissResponses.length > 0 ? (
+                ) : groupedRemissvar.length > 0 ? (
                   <div className="space-y-3">
-                    {remissResponses.slice(0, 20).map((resp) => {
-                      const remiss = resp.remiss_documents as any;
-                      const parentDoc = remiss?.documents;
-                      const stanceConfig = resp.stance_summary ? STANCE_BADGE_CONFIG[resp.stance_summary as keyof typeof STANCE_BADGE_CONFIG] : null;
+                    {groupedRemissvar.slice(0, 20).map((group) => {
+                      const stanceConfig = group.primaryStance 
+                        ? STANCE_BADGE_CONFIG[group.primaryStance as keyof typeof STANCE_BADGE_CONFIG] 
+                        : null;
+                      const hasAttachments = group.attachments.length > 0;
+                      const isExpanded = expandedGroups.has(group.remiss_id);
                       
                       return (
                         <div
-                          key={resp.id}
+                          key={group.remiss_id}
                           className="p-3 rounded-lg border hover:bg-muted/50 transition-colors"
                         >
                           <div className="flex items-start justify-between gap-4">
@@ -426,41 +527,90 @@ export default function EntityDetail() {
                                     {stanceConfig.label}
                                   </Badge>
                                 )}
-                                {parentDoc?.doc_number && (
+                                {group.responses.length > 1 && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    {group.responses.length} filer
+                                  </Badge>
+                                )}
+                                {group.parentDoc?.doc_number && (
                                   <Link
-                                    to={`/document/${parentDoc.id}`}
+                                    to={`/document/${group.parentDoc.id}`}
                                     className="text-sm font-medium hover:underline"
                                   >
-                                    {parentDoc.doc_number}
+                                    {group.parentDoc.doc_number}
                                   </Link>
                                 )}
                               </div>
                               <p className="text-sm line-clamp-2">
-                                {remiss?.title || parentDoc?.title || 'Okänd remiss'}
+                                {group.remiss?.title || group.parentDoc?.title || 'Okänd remiss'}
                               </p>
-                              {resp.filename && (
+                              
+                              {/* Primary response file */}
+                              {group.primaryResponse?.filename && (
                                 <a
-                                  href={resp.file_url}
+                                  href={group.primaryResponse.file_url}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="text-xs text-primary hover:underline mt-1 inline-block"
                                 >
-                                  📄 {resp.filename}
+                                  📄 {group.primaryResponse.filename}
                                 </a>
                               )}
+
+                              {/* Attachments (bilagor) */}
+                              {hasAttachments && (
+                                <Collapsible open={isExpanded} onOpenChange={() => toggleGroup(group.remiss_id)}>
+                                  <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-2 cursor-pointer">
+                                    <ChevronDown className={`h-3 w-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                    <Paperclip className="h-3 w-3" />
+                                    {group.attachments.length} bilaga{group.attachments.length > 1 ? 'or' : ''}
+                                  </CollapsibleTrigger>
+                                  <CollapsibleContent className="mt-2 space-y-1 pl-4 border-l-2 border-muted">
+                                    {group.attachments.map((att) => {
+                                      const attStance = att.stance_summary 
+                                        ? STANCE_BADGE_CONFIG[att.stance_summary as keyof typeof STANCE_BADGE_CONFIG]
+                                        : null;
+                                      return (
+                                        <div key={att.id} className="flex items-center gap-2">
+                                          <a
+                                            href={att.file_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-xs text-primary hover:underline"
+                                          >
+                                            📎 {att.filename || 'Bilaga'}
+                                          </a>
+                                          {attStance && att.stance_summary !== 'no_position' && (
+                                            <Badge variant="outline" className={`text-xs ${attStance.className}`}>
+                                              {attStance.label}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </CollapsibleContent>
+                                </Collapsible>
+                              )}
                             </div>
-                            {resp.created_at && (
-                              <div className="text-xs text-muted-foreground whitespace-nowrap">
-                                {format(new Date(resp.created_at), 'yyyy-MM-dd')}
-                              </div>
-                            )}
+                            <div className="text-right flex-shrink-0">
+                              {group.remiss?.remiss_deadline ? (
+                                <div className="text-xs text-muted-foreground whitespace-nowrap">
+                                  <span className="block text-muted-foreground/70">Svarsfrist</span>
+                                  {format(new Date(group.remiss.remiss_deadline), 'yyyy-MM-dd')}
+                                </div>
+                              ) : (
+                                <div className="text-xs text-muted-foreground/50 whitespace-nowrap">
+                                  Svarsfrist okänd
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
                     })}
-                    {remissResponses.length > 20 && (
+                    {groupedRemissvar.length > 20 && (
                       <p className="text-sm text-muted-foreground text-center py-2">
-                        +{remissResponses.length - 20} fler remissvar
+                        +{groupedRemissvar.length - 20} fler remissvar
                       </p>
                     )}
                   </div>
@@ -516,17 +666,19 @@ export default function EntityDetail() {
                               <p className="text-sm line-clamp-2">
                                 {remiss?.title || parentDoc?.title || 'Okänd remiss'}
                               </p>
-                              {remiss?.remiss_deadline && (
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  Svarsdatum: {format(new Date(remiss.remiss_deadline), 'yyyy-MM-dd')}
-                                </p>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              {remiss?.remiss_deadline ? (
+                                <div className="text-xs text-muted-foreground whitespace-nowrap">
+                                  <span className="block text-muted-foreground/70">Svarsfrist</span>
+                                  {format(new Date(remiss.remiss_deadline), 'yyyy-MM-dd')}
+                                </div>
+                              ) : (
+                                <div className="text-xs text-muted-foreground/50 whitespace-nowrap">
+                                  Svarsfrist okänd
+                                </div>
                               )}
                             </div>
-                            {invite.invited_at && (
-                              <div className="text-xs text-muted-foreground whitespace-nowrap">
-                                {format(new Date(invite.invited_at), 'yyyy-MM-dd')}
-                              </div>
-                            )}
                           </div>
                         </div>
                       );

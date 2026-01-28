@@ -546,22 +546,44 @@ CREATE TABLE case_documents (
 
 **Goal:** Provide intelligence layer for strategic decision-making.
 
-### Stakeholder Influence Mapping
+### 7.1 Entity Stance Heat Map 🆕
+
+**What:** Visualization showing how each organization's stance distribution varies across subjects/themes.
+
+**Why Valuable:**
+- Quickly identify which organizations are generally supportive vs oppositional
+- Discover thematic patterns in stakeholder positions
+- Support strategic stakeholder engagement
+
+**Prerequisites:**
+- [x] Phase 5.6.4 stance classification complete
+- [ ] Theme/subject categorization of SOUs (main risk/dependency)
+
+**Implementation Notes:**
+- Heat map using subject categories derived from SOU titles or ministry
+- Color coding: green (support), red (oppose), yellow (conditional)
+- Filterable by ministry, time period, organization type
+- May require time window filters (e.g., "last 2 years")
+- Category normalization (ministries vs. subject taxonomy) TBD
+
+**Status:** Roadmap item; prioritize only after taxonomy/theme tagging infrastructure is available.
+
+### 7.2 Stakeholder Influence Mapping
 - Which organizations appear most frequently across cases
 - Which organizations submit remissvar most often
 - Which organizations' recommendations are adopted
 
-### Entity Co-Occurrence Networks
+### 7.3 Entity Co-Occurrence Networks
 - Visualize which entities work together
 - Identify clusters of frequent collaborators
 - Detect new vs recurring relationships
 
-### Change Tracking
+### 7.4 Change Tracking
 - Track amendments to directives over time
 - Identify patterns in SOU recommendations that lead to legislation
 - Measure time between directive → SOU → proposition → law
 
-### Predicted Impact Monitoring
+### 7.5 Predicted Impact Monitoring
 - Which sectors are most affected by pending legislation
 - Which ministries are most active in which policy areas
 - Forecasting: when will [Case] reach [Stage]
@@ -586,13 +608,25 @@ CREATE TABLE case_predictions (
   rationale TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE entity_stance_themes (
+  id UUID PRIMARY KEY,
+  entity_id UUID REFERENCES entities(id),
+  theme TEXT, -- e.g., 'miljö', 'skatter', 'utbildning'
+  support_count INTEGER DEFAULT 0,
+  oppose_count INTEGER DEFAULT 0,
+  conditional_count INTEGER DEFAULT 0,
+  neutral_count INTEGER DEFAULT 0,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 ```
 
 ### Success Criteria
-- [ ] Stakeholder influence scores calculated
-- [ ] Entity co-occurrence network visualized
-- [ ] Change tracking dashboard operational
-- [ ] Prediction model validated against historical data
+- [ ] Entity stance heat map visualized (Phase 7.1)
+- [ ] Stakeholder influence scores calculated (Phase 7.2)
+- [ ] Entity co-occurrence network visualized (Phase 7.3)
+- [ ] Change tracking dashboard operational (Phase 7.4)
+- [ ] Prediction model validated against historical data (Phase 7.5)
 
 ---
 
