@@ -37,23 +37,34 @@ const FETCH_HEADERS = {
   'User-Agent': 'LagstiftningsBevakning/1.0 (https://lovable.dev; contact@lovable.dev)',
   'Accept': 'application/json',
   'Accept-Language': 'sv-SE,sv;q=0.9,en;q=0.8',
+  'Connection': 'keep-alive',
 };
 
-async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
+const INITIAL_DELAY_MS = 1000; // Delay before first request to let connection stabilize
+
+async function fetchWithRetry(url: string, retries = 5): Promise<Response> {
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
+      // Add jitter to avoid thundering herd
+      if (attempt > 0) {
+        const jitter = Math.random() * 500;
+        await delay(jitter);
+      }
       const response = await fetch(url, { headers: FETCH_HEADERS });
       if (response.status === 429 || response.status === 503) {
-        const backoff = Math.pow(2, attempt) * 1000;
+        const backoff = Math.pow(2, attempt) * 2000;
         console.log(`Rate limited, backing off ${backoff}ms`);
         await delay(backoff);
         continue;
       }
       return response;
     } catch (error) {
-      console.error(`Fetch attempt ${attempt + 1} failed:`, error);
+      console.error(`Fetch attempt ${attempt + 1}/${retries} failed:`, error);
       if (attempt === retries - 1) throw error;
-      await delay(2000 * (attempt + 1)); // Longer delay between retries
+      // Exponential backoff: 3s, 6s, 12s, 24s
+      const backoff = 3000 * Math.pow(2, attempt);
+      console.log(`Retrying in ${backoff}ms...`);
+      await delay(backoff);
     }
   }
   throw new Error("Max retries exceeded");
@@ -94,6 +105,10 @@ Deno.serve(async (req) => {
     const { year = "2024", limit = 10, page = 1, fetchText = true } = await req.json().catch(() => ({}));
     
     console.log(`Scraping laws for year ${year}, limit ${limit}, page ${page}, fetchText ${fetchText}`);
+
+    // Initial delay to let edge function connection stabilize
+    console.log(`Waiting ${INITIAL_DELAY_MS}ms before first request...`);
+    await delay(INITIAL_DELAY_MS);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
