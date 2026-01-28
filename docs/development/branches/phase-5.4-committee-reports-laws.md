@@ -21,8 +21,8 @@ The Swedish Parliament provides a comprehensive REST API for accessing legislati
 
 **Key Endpoints:**
 - Document list: `https://data.riksdagen.se/dokumentlista/?doktyp={type}&rm={session}&utformat=json`
-- Single document: `https://data.riksdagen.se/dokument/{dok_id}.json`
-- Document status: `https://data.riksdagen.se/dokumentstatus/{dok_id}.xml`
+- Single document (raw content formats): `https://data.riksdagen.se/dokument/{dok_id}.text` / `.html` / `.json`
+- Document status (enriched metadata + refs + attachments): `https://data.riksdagen.se/dokumentstatus/{dok_id}.json`
 
 **Formats:** JSON, XML, CSV, HTML, text
 
@@ -112,9 +112,9 @@ The Swedish Parliament provides a comprehensive REST API for accessing legislati
 2. Fetch from `data.riksdagen.se/dokumentlista/?doktyp=bet&rm={session}&utformat=json`
 3. Parse response and insert into `documents` table:
    - `doc_type = 'committee_report'`
-   - `doc_number = beteckning` (e.g., "SkU18")
+   - `doc_number = dok_id` (e.g., "HC01SkU18")
    - `lifecycle_stage = 'parliament'`
-4. Extract PDF URLs from `filbilaga.fil[].url`
+4. Extract PDF URLs from `dokumentstatus.dokbilaga.bilaga[].fil_url`
 5. Store `dokreferens` for linking to propositions
 
 ### Phase 5.4.2: Laws Scraper
@@ -175,6 +175,15 @@ ALTER TABLE documents
 
 ### Rate Limiting
 - API appears to have no strict rate limit, but implement 500ms delay between requests
+
+### Intermittent Connection Resets (Backend Functions)
+
+The API occasionally closes connections with `Connection reset by peer (os error 104)` when called from backend functions.
+
+Mitigations:
+- Browser-like request headers (`User-Agent`, `Accept`, `Accept-Language`)
+- Increased retries with exponential backoff + jitter
+- Treat as upstream availability (`503 upstream_unavailable`) to encourage retry
 
 ### Document IDs
 - `dok_id` format varies: `HC01SkU18` (committee) vs `sfs-2024-1373` (laws)
