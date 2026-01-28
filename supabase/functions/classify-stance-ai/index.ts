@@ -4,6 +4,12 @@
  * Processes uncertain remissvar stances (neutral with 0 keywords + mixed)
  * using OpenAI tool calling for structured stance classification.
  * 
+ * Auto-apply rules:
+ * - High confidence: auto-apply stance_summary
+ * - Medium confidence: auto-apply stance_summary (default threshold)
+ * - Low confidence + "no stance" pattern: auto-apply as 'no_position'
+ * - Low confidence (other): route to manual review queue
+ * 
  * Uses paginated accumulation to reliably find eligible rows regardless of
  * data distribution (fixes windowing bug where early candidates were ineligible).
  */
@@ -25,10 +31,29 @@ interface RequestBody {
 }
 
 interface AIClassification {
-  stance: 'support' | 'oppose' | 'conditional' | 'neutral';
+  stance: 'support' | 'oppose' | 'conditional' | 'neutral' | 'no_position';
   confidence: 'high' | 'medium' | 'low';
   reasoning: string;
   key_phrases: string[];
+}
+
+// Patterns indicating "no stance found" in AI reasoning - these get flagged as no_position
+const NO_STANCE_PATTERNS = [
+  /ingen (tydlig )?information om.*ställningstagande/i,
+  /innehåller ingen tydlig/i,
+  /saknar (tydlig|explicit)/i,
+  /ingen (klar|tydlig) ställning/i,
+  /endast kontaktinformation/i,
+  /endast sidnumrering/i,
+  /saknas.*ställningstagande/i,
+];
+
+/**
+ * Detect if AI reasoning indicates no stance was found in the document.
+ * These cases should be flagged as 'no_position' regardless of AI's neutral classification.
+ */
+function detectNoStancePattern(reasoning: string): boolean {
+  return NO_STANCE_PATTERNS.some(pattern => pattern.test(reasoning));
 }
 
 interface ClassificationDetail {
@@ -69,7 +94,7 @@ const MAX_PAGES = 10;       // Safety cap to prevent runaway scans
 const PAGE_SIZE = 100;      // Candidates per page
 
 // Confidence threshold ordering for comparison
-// Default: only 'high' confidence auto-applies; medium/low go to manual review
+// Default: 'medium' - high and medium confidence auto-apply; low goes to manual review (unless no-stance pattern)
 const CONFIDENCE_ORDER = { high: 3, medium: 2, low: 1 };
 
 function meetsThreshold(
@@ -378,7 +403,7 @@ Deno.serve(async (req) => {
       response_id, 
       limit = 20, 
       dry_run = false,
-      confidence_threshold = 'high',  // Default to high - only auto-apply high confidence
+      confidence_threshold = 'medium',  // Default to medium - auto-apply high + medium confidence
     } = body;
 
     // Clamp limit
@@ -476,12 +501,28 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Check if meets confidence threshold for auto-apply
-        const autoApply = meetsThreshold(classification.confidence, confidence_threshold);
+        // Check for "no stance found" pattern in reasoning
+        // If detected, override stance to 'no_position' and auto-apply regardless of confidence
+        const isNoStancePattern = detectNoStancePattern(classification.reasoning);
+        
+        let finalStance = classification.stance;
+        let autoApply = meetsThreshold(classification.confidence, confidence_threshold);
+        
+        if (isNoStancePattern) {
+          // Override: document has no stance content - auto-apply as 'no_position'
+          finalStance = 'no_position';
+          autoApply = true;
+          console.log(`[classify-stance-ai] Detected no-stance pattern in ${response.id}, flagging as no_position`);
+        }
+        
         const newAnalysisStatus = autoApply ? 'ai_classified' : 'ai_low_confidence';
 
-        // Update summary counts
-        result.summary[classification.stance]++;
+        // Update summary counts (for no_position, count under neutral for backwards compatibility)
+        if (finalStance === 'no_position') {
+          result.summary.neutral++;
+        } else {
+          result.summary[finalStance as keyof typeof result.summary]++;
+        }
         
         if (autoApply) {
           result.classified++;
@@ -491,7 +532,8 @@ Deno.serve(async (req) => {
 
         // Build AI review metadata (include input text for transparency/audit)
         const aiReview = {
-          stance: classification.stance,
+          stance: finalStance,
+          original_ai_stance: classification.stance,  // Preserve AI's original classification
           confidence: classification.confidence,
           reasoning: classification.reasoning,
           key_phrases: classification.key_phrases,
@@ -499,6 +541,7 @@ Deno.serve(async (req) => {
           classified_at: new Date().toISOString(),
           original_stance: response.stance_summary,
           auto_applied: autoApply,
+          no_stance_pattern_detected: isNoStancePattern,  // Flag for audit trail
           input_text: text,  // Store the text sent to AI for transparency
         };
 
@@ -507,9 +550,11 @@ Deno.serve(async (req) => {
           response_id: response.id,
           organization: response.responding_organization,
           original_stance: response.stance_summary || 'unknown',
-          ai_stance: classification.stance,
+          ai_stance: finalStance,
           confidence: classification.confidence,
-          reasoning: classification.reasoning,
+          reasoning: isNoStancePattern 
+            ? `[NO_POSITION] ${classification.reasoning}` 
+            : classification.reasoning,
           auto_applied: autoApply,
           input_text: text,  // Include in response for UI display
         });
@@ -526,9 +571,9 @@ Deno.serve(async (req) => {
             analysis_status: newAnalysisStatus,
           };
           
-          // If auto-apply, also update stance_summary
+          // If auto-apply, also update stance_summary with final stance (may be overridden to no_position)
           if (autoApply) {
-            updateData.stance_summary = classification.stance;
+            updateData.stance_summary = finalStance;
           }
 
           const { error: updateError } = await supabase
