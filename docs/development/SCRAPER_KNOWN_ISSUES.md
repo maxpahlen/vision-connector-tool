@@ -162,3 +162,40 @@ WHERE doc_type = 'proposition'
 ```
 
 3. **Monitor scraper logs** for skip statistics during production runs.
+
+---
+
+## Issue 4: riksdagen.se Open Data API — intermittent connection resets
+
+### Description
+
+The riksdagen.se Open Data API (`https://data.riksdagen.se`) intermittently resets connections when called from backend functions, resulting in errors like:
+
+`connection error: Connection reset by peer (os error 104)`
+
+This has been observed on both:
+- `dokumentlista` (listing)
+- `dokumentstatus` / `dokument/*.text` (detail content)
+
+### Impact Assessment
+
+| Factor | Assessment |
+|--------|------------|
+| Data Correctness | ✅ Not affected |
+| Completeness | ⚠️ Transient failures can reduce throughput |
+| MVP Readiness | ✅ Acceptable with retries |
+| User Experience | ⚠️ Admin test runs may need retry |
+
+### Mitigation Implemented
+
+1. Browser-like request headers (explicit `User-Agent`, `Accept`, `Accept-Language`)
+2. Increased retries with exponential backoff and jitter
+3. Initial delay before the first upstream request to avoid early handshake instability
+4. Upstream errors are surfaced as `503 upstream_unavailable` (not `500`) to reflect transient availability issues
+
+### Recommended Operator Workflow
+
+If you hit a run of 503s:
+1. Wait ~30–60 seconds
+2. Retry the same batch (scrapers are idempotent via deduplication)
+

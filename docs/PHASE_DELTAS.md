@@ -1,5 +1,31 @@
 # Phase Deltas
 
+## 2026-01-28: Phase 5.4 Scrapers — Upstream connection reset mitigation
+
+**Status:** IN PROGRESS — Reliability hardening
+
+### Problem
+
+Backend scrapers calling `https://data.riksdagen.se` intermittently fail with:
+
+- `connection error: Connection reset by peer (os error 104)`
+
+This presents as `500 scraper_error` and can interrupt pilot runs.
+
+### Fix
+
+- Added browser-like fetch headers (`User-Agent`, `Accept`, `Accept-Language`)
+- Hardened upstream fetching with retries + exponential backoff + jitter
+- Classified upstream connection resets as `503 upstream_unavailable` (not 500)
+- Documented operational retry workflow
+
+### Files Changed
+
+- `supabase/functions/scrape-laws/index.ts`
+- `supabase/functions/scrape-committee-reports/index.ts`
+- `docs/development/SCRAPER_KNOWN_ISSUES.md`
+- `docs/development/branches/phase-5.4-committee-reports-laws.md`
+
 ## 2026-01-27: Phase 5.4 Research — riksdagen.se API Patterns
 
 **Status:** RESEARCH COMPLETE — Ready for Implementation
