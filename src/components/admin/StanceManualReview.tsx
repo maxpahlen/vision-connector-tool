@@ -89,6 +89,7 @@ const STANCE_CONFIG = {
   conditional: { icon: Scale, color: 'text-accent-foreground', bgColor: 'bg-accent', label: 'Conditional' },
   neutral: { icon: Minus, color: 'text-muted-foreground', bgColor: 'bg-muted', label: 'Neutral' },
   mixed: { icon: HelpCircle, color: 'text-secondary-foreground', bgColor: 'bg-secondary', label: 'Mixed' },
+  no_position: { icon: FileText, color: 'text-muted-foreground', bgColor: 'bg-muted/50', label: 'No Position' },
 };
 
 const PAGE_SIZE = 20;
@@ -572,8 +573,21 @@ export function StanceManualReview() {
                 })}
                 {items.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                      {loading ? 'Loading...' : 'No items to review'}
+                    <td colSpan={7} className="p-12 text-center">
+                      {loading ? (
+                        <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                          Loading...
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <CheckCircle2 className="h-12 w-12 mx-auto text-primary" />
+                          <div className="text-lg font-semibold text-foreground">All caught up!</div>
+                          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                            The manual review queue is empty. All AI classifications have been processed or auto-approved.
+                          </p>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 )}
@@ -754,6 +768,7 @@ export function StanceManualReview() {
                           <SelectItem value="conditional">Conditional</SelectItem>
                           <SelectItem value="neutral">Neutral (confirmed)</SelectItem>
                           <SelectItem value="mixed">Mixed (confirmed)</SelectItem>
+                          <SelectItem value="no_position">No Position (empty/procedural)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
