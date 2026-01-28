@@ -84,12 +84,31 @@ async function fetchDocumentText(dokId: string): Promise<string | null> {
   try {
     const url = `${RIKSDAGEN_API_BASE}/dokument/${dokId}.text`;
     console.log(`Fetching text: ${url}`);
-    const response = await fetchWithRetry(url);
+    
+    // Text endpoint needs different Accept header
+    const textHeaders = {
+      ...FETCH_HEADERS,
+      'Accept': 'text/plain, text/html, */*',
+    };
+    
+    const response = await fetch(url, { headers: textHeaders });
+    console.log(`Text response for ${dokId}: status=${response.status}, content-type=${response.headers.get('content-type')}`);
+    
     if (!response.ok) {
-      console.log(`No text available for ${dokId}`);
+      console.log(`No text available for ${dokId} (status ${response.status})`);
+      // Consume body to avoid resource leaks
+      await response.text().catch(() => {});
       return null;
     }
-    return await response.text();
+    
+    const text = await response.text();
+    // Skip if response is HTML (redirect page) or too short
+    if (text.startsWith('<!DOCTYPE') || text.startsWith('<html') || text.length < 50) {
+      console.log(`Skipping HTML/empty response for ${dokId}`);
+      return null;
+    }
+    
+    return text;
   } catch (error) {
     console.log(`Failed to fetch text for ${dokId}:`, error);
     return null;
