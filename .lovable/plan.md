@@ -1,299 +1,223 @@
 
-# Phase 5.6.4: AI-Assisted Stance Classification
+# Phase 5.4: Committee Reports + Laws — Implementation Plan
 
-## Objective
-
-Automate triage of 961 uncertain remissvar stances (720 neutral with 0 keywords + 241 mixed) using OpenAI tool calling, reducing manual review burden from ~961 items to only low-confidence AI classifications.
-
----
-
-## Current State Analysis
-
-### Database Query Results
-
-| Category | Count | Description |
-|----------|-------|-------------|
-| Neutral (0 keywords) | 720 | No stance signals detected - may contain unrecognized phrasing |
-| Mixed | 241 | Conflicting signals (both support AND oppose keywords) |
-| **Total eligible for AI** | **961** | Requires AI to resolve ambiguity |
-
-### Existing Infrastructure
-
-- `_shared/openai-client.ts`: Shared OpenAI wrapper with retry logic (uses `OPENAI_API_KEY` secret - already configured)
-- `analyze-remissvar-stance/index.ts`: Current keyword-based analyzer (Phase 5.6.3)
-- `stance-analyzer.ts`: Shared module with `extractSections()` for Sammanfattning detection
-- `StanceManualReview.tsx`: Manual review UI with metadata storage pattern
-- `RemissvarStanceAnalyzerTest.tsx`: Batch processing UI with progress tracking
+## Summary
+Implement scrapers for committee reports (betänkanden) and laws (SFS) from the riksdagen.se Open Data API, with validated cross-linking for betänkanden and deferred linking for laws.
 
 ---
 
-## Implementation Details
+## Validation Findings
 
-### 1. Edge Function: `classify-stance-ai`
+### What Works Well
+| Data Element | Status | Notes |
+|--------------|--------|-------|
+| Betänkande → Proposition linking | ✅ Working | `dokreferens[referenstyp=behandlar]` provides `ref_dok_id` for proposition |
+| Betänkande timeline activities | ✅ Working | `dokaktivitet` contains Justering, Bordläggning, Beslut dates |
+| Betänkande PDF attachments | ✅ Working | `dokbilaga.bilaga[].fil_url` |
+| SFS text content | ✅ Working | Embedded in JSON or via `.text` endpoint |
+| Pagination | ✅ Working | `@nasta_sida` provides next page URL |
 
-**File:** `supabase/functions/classify-stance-ai/index.ts`
+### Known Limitation
+| Issue | Impact | Mitigation |
+|-------|--------|------------|
+| SFS → Proposition linking | No direct API support | Laws ingested without proposition link; add heuristic linking in future phase |
 
-**Query Filter (enforces eligibility):**
-```sql
-SELECT * FROM remiss_responses
-WHERE extraction_status = 'ok'
-  AND analysis_status = 'ok'  -- Already keyword-analyzed
-  AND (
-    (stance_summary = 'neutral' AND stance_signals->>'keywords_found' = '[]')
-    OR stance_summary = 'mixed'
-  )
-  AND (metadata->>'ai_review' IS NULL)  -- Not yet AI-processed
-LIMIT :limit
+---
+
+## Phase 5.4.1: Committee Reports Scraper
+
+### Edge Function
+Create `supabase/functions/scrape-committee-reports/index.ts`
+
+### API Endpoints Used
+```text
+List:   GET https://data.riksdagen.se/dokumentlista/?doktyp=bet&rm={session}&utformat=json&sz=100&p={page}
+Detail: GET https://data.riksdagen.se/dokumentstatus/{dok_id}.json
 ```
 
-**Text Preparation (Summary-First Strategy):**
-1. Extract "Sammanfattning" section using existing `extractSections()` logic
-2. If Sammanfattning exists, use it (up to 1500 chars)
-3. Append first N chars of body (up to 2500 chars) for context
-4. Total max: ~4000 chars per document
+### Data Mapping
+| API Field | DB Column | Notes |
+|-----------|-----------|-------|
+| `dok_id` | `doc_number` | Full ID as unique key (e.g., "HC01SkU18") |
+| `titel` | `title` | |
+| `rm` | - | Session (e.g., "2024/25"), stored in metadata |
+| `organ` | - | Committee code (e.g., "SkU"), stored in metadata |
+| `datum` | `publication_date` | |
+| `dokbilaga.bilaga[0].fil_url` | `pdf_url` | First PDF attachment |
+| - | `doc_type` | Set to `'committee_report'` |
+| - | `lifecycle_stage` | Set to `'parliament'` |
 
-**Tool Definition (Structured Output):**
-```typescript
-{
-  type: "function",
-  function: {
-    name: "classify_stance",
-    description: "Classify the stance of a Swedish consultation response (remissvar)",
-    parameters: {
-      type: "object",
-      properties: {
-        stance: { 
-          type: "string", 
-          enum: ["support", "oppose", "conditional", "neutral"] 
-        },
-        confidence: { 
-          type: "string", 
-          enum: ["high", "medium", "low"],
-          description: "Confidence level based on clarity of position in text"
-        },
-        reasoning: { 
-          type: "string",
-          description: "Brief explanation in Swedish (1-2 sentences max)"
-        },
-        key_phrases: {
-          type: "array",
-          items: { type: "string" },
-          description: "2-5 key phrases from the text that informed the decision"
-        }
-      },
-      required: ["stance", "confidence", "reasoning", "key_phrases"]
-    }
-  }
-}
+### Cross-Reference Extraction
+From `dokumentstatus/{dok_id}.json`, extract:
+```javascript
+const refs = data.dokumentstatus.dokreferens?.referens || [];
+const propRefs = refs.filter(r => r.referenstyp === 'behandlar' && r.ref_dok_typ === 'prop');
 ```
 
-**System Prompt (Swedish Context):**
+For each proposition reference, create `document_references` entry:
+- `source_document_id` = betänkande ID
+- `target_doc_number` = `Prop. {ref_dok_rm}:{ref_dok_bet}` (e.g., "Prop. 2021/22:273")
+- `reference_type` = `'recommends'`
+- `confidence` = `'high'`
+
+### Timeline Event Extraction
+From `dokaktivitet.aktivitet[]`, create timeline events:
+- `BES` (Beslut) → `parliament_decision` event
+- `AVG` (Avgörande) → `parliament_vote` event (if distinct from BES)
+
+### Error Handling
+- Implement 500ms delay between requests
+- Retry with exponential backoff on 429/503
+- Log and continue on individual document failures
+
+---
+
+## Phase 5.4.2: Laws Scraper
+
+### Edge Function
+Create `supabase/functions/scrape-laws/index.ts`
+
+### API Endpoints Used
+```text
+List: GET https://data.riksdagen.se/dokumentlista/?doktyp=sfs&rm={year}&utformat=json&sz=100&p={page}
+Text: GET https://data.riksdagen.se/dokument/{dok_id}.text
 ```
-Du analyserar svenska remissvar (consultation responses) till statliga utredningar (SOU).
 
-Bestäm organisationens ställningstagande till förslagen:
-- support: Organisationen tillstyrker/instämmer i förslaget
-- oppose: Organisationen avstyrker/motsätter sig förslaget
-- conditional: Stödjer med förbehåll, villkor eller reservationer
-- neutral: Inga synpunkter, faller utanför verksamhetsområdet, eller irrelevant
+### Data Mapping
+| API Field | DB Column | Notes |
+|-----------|-----------|-------|
+| `dok_id` | - | Not used as doc_number (format: "sfs-2024-1000") |
+| `beteckning` | `doc_number` | SFS number (e.g., "2024:1000") |
+| `titel` | `title` | |
+| `organ` | `ministry` | Issuing department |
+| `datum` | `publication_date` | Utfärdad date |
+| `text` | `raw_content` | From JSON or `.text` endpoint |
+| - | `doc_type` | Set to `'law'` |
+| - | `lifecycle_stage` | Set to `'law'` |
 
-Var uppmärksam på:
-- Explicit ställningstagande i sammanfattning eller inledning
-- Formuleringar som "vi instämmer", "vi tillstyrker", "vi avstyrker", "vi motsätter oss"
-- Förbehåll som "under förutsättning att", "med förbehåll"
-- "Inga synpunkter" eller "berörs ej" indikerar neutral
+### Skip Linking (Deferred)
+SFS documents do not have `dokreferens` linking to propositions. This will be addressed in Phase 5.5 using:
+1. Title parsing: "Lag om ändring i [proposition]"
+2. Reverse lookup: Find betänkande with matching riksdagsskrivelse
 
-Om texten saknar tydligt ställningstagande, välj "neutral" med "low" confidence.
-```
-
-**Database Updates:**
-- If confidence >= threshold: Update `stance_summary` to AI classification
-- Set `analysis_status` to `ai_classified` or `ai_low_confidence`
-- Store full AI response in `metadata.ai_review`:
+### Metadata Fields
+Store in `metadata` JSONB:
 ```json
 {
-  "ai_review": {
-    "stance": "support",
-    "confidence": "high",
-    "reasoning": "Organisationen tillstyrker samtliga förslag och välkomnar utredningens slutsatser.",
-    "key_phrases": ["tillstyrker förslaget", "välkomnar utredningen"],
-    "model": "gpt-4o-2024-08-06",
-    "classified_at": "2026-01-27T12:00:00Z",
-    "original_stance": "mixed",
-    "auto_applied": true
-  }
+  "sfs_number": "2024:1000",
+  "upphavd": "2025-05-01",  // If repealed
+  "upphnr": "SFS 2025:219"  // Repealing law
 }
 ```
 
-**Request Parameters:**
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `limit` | number | 20 | Batch size (max 50) |
-| `dry_run` | boolean | false | Preview mode |
-| `confidence_threshold` | string | "medium" | Auto-apply threshold (high/medium/low) |
+---
 
-**Response Format:**
-```json
-{
-  "processed": 20,
-  "classified": 18,
-  "low_confidence": 2,
-  "errors": [],
-  "summary": { "support": 8, "oppose": 5, "conditional": 3, "neutral": 2 },
-  "details": [
-    {
-      "response_id": "uuid",
-      "organization": "Naturvårdsverket",
-      "original_stance": "mixed",
-      "ai_stance": "support",
-      "confidence": "high",
-      "reasoning": "...",
-      "auto_applied": true
-    }
-  ],
-  "dry_run": false
-}
-```
+## Phase 5.4.3: Admin UI
 
-### 2. Config Update
+### Scraper Controls
+Add to `AdminScraper.tsx`:
+- "Scrape Committee Reports" button (session selector: 2024/25, 2023/24, etc.)
+- "Scrape Laws" button (year selector: 2024, 2023, etc.)
+- Batch size control (default: 50)
 
-**File:** `supabase/config.toml`
+### Test Component
+Create `CommitteeReportsScraperTest.tsx`:
+- Single session test (10 docs)
+- Full session scrape
+- Display: docs created, refs created, errors
 
-Add entry:
-```toml
-[functions.classify-stance-ai]
-verify_jwt = false
-```
+---
 
-### 3. Admin UI Updates: `RemissvarStanceAnalyzerTest.tsx`
+## Database Changes
 
-Add new collapsible section: "AI Classification (Phase 5.6.4)"
+### New doc_type Values
+No migration needed — `doc_type` is a TEXT column without CHECK constraint.
 
-**Components:**
-1. **Target Stats Card**
-   - Neutral with 0 keywords: X
-   - Mixed stances: Y
-   - AI processed: Z
-   - Pending AI review: (X+Y-Z)
+New values to use:
+- `'committee_report'` — Betänkande
+- `'law'` — SFS
 
-2. **Batch Controls**
-   - Batch size selector: 10, 20, 30, 50
-   - Batch count selector: 1, 5, 10, 20
-   - Confidence threshold: high, medium (default), low
-   - Dry run toggle
-   - Run/Stop buttons
-
-3. **Progress Display**
-   - Current batch / total batches
-   - Items processed this session
-   - AI classification distribution chart
-
-4. **Results Table**
-   - Organization name
-   - Original stance (neutral/mixed)
-   - AI stance (with badge)
-   - Confidence (with color: high=green, medium=yellow, low=red)
-   - Auto-applied (check/x icon)
-   - Reasoning (truncated, expandable)
-
-### 4. Manual Review Integration: `StanceManualReview.tsx`
-
-**Updates:**
-
-1. **Add filter for AI-processed items:**
-   - New filter option: "AI Low Confidence" (`analysis_status = 'ai_low_confidence'`)
-
-2. **Display AI reasoning in review dialog:**
-   - If `metadata.ai_review` exists, show:
-     - AI's stance classification
-     - Confidence level
-     - Reasoning text
-     - Key phrases (as badges)
-   - Clear visual distinction: "AI Suggested: Support (Medium Confidence)"
-
-3. **Pre-populate corrected stance:**
-   - If AI classified with low confidence, pre-select AI's stance as starting point for human review
+### lifecycle_stage Values
+Already supports needed values. Add if missing:
+- `'parliament'` — For betänkanden (legislative process stage)
+- `'law'` — For enacted laws
 
 ---
 
 ## File Changes Summary
 
-| File | Action | Lines | Description |
-|------|--------|-------|-------------|
-| `supabase/functions/classify-stance-ai/index.ts` | Create | ~300 | New AI classification edge function |
-| `supabase/config.toml` | Modify | +3 | Add function config |
-| `src/components/admin/RemissvarStanceAnalyzerTest.tsx` | Modify | +200 | Add AI classification section |
-| `src/components/admin/StanceManualReview.tsx` | Modify | +80 | Add AI filter and reasoning display |
+### New Files
+| File | Purpose |
+|------|---------|
+| `supabase/functions/scrape-committee-reports/index.ts` | Committee reports scraper |
+| `supabase/functions/scrape-laws/index.ts` | Laws scraper |
+| `src/components/admin/CommitteeReportsScraperTest.tsx` | Admin test UI |
+
+### Modified Files
+| File | Change |
+|------|--------|
+| `supabase/config.toml` | Add verify_jwt entries for new functions |
+| `src/pages/AdminScraper.tsx` | Add scraper test tabs |
+| `docs/development/branches/phase-5.4-committee-reports-laws.md` | Update with validation findings |
 
 ---
 
-## Cost Estimation
+## Implementation Order
 
-| Model | Input Rate | Output Rate | Est. Total |
-|-------|------------|-------------|------------|
-| gpt-4o-2024-08-06 | $2.50/1M | $10/1M | ~$15-20 |
-| gpt-4o-mini | $0.15/1M | $0.60/1M | ~$1-2 |
+1. **Committee Reports Scraper** (1-2 hours)
+   - Core listing + detail fetch logic
+   - Document insertion with deduplication
+   - Cross-reference extraction
+   - Timeline event creation
 
-Recommendation: Start with `gpt-4o-2024-08-06` (default in `openai-client.ts`) for accuracy, given the relatively small corpus (961 items).
+2. **Laws Scraper** (1 hour)
+   - Core listing logic
+   - Text extraction
+   - Document insertion
+
+3. **Admin UI** (30 min)
+   - Test components for both scrapers
+   - Integration into AdminScraper tabs
+
+4. **Pilot Validation** (30 min)
+   - Scrape 10 betänkanden from 2024/25
+   - Scrape 10 laws from 2024
+   - Verify cross-references created
+   - Verify timeline events created
 
 ---
 
 ## Success Criteria
 
-| Metric | Target |
-|--------|--------|
-| AI classification coverage | >90% of 961 uncertain stances |
-| High/Medium confidence rate | >80% of classifications |
-| Manual review queue reduction | <200 items requiring human review |
-| Spot-check accuracy | >85% agreement on 20 random samples |
-
----
-
-## Risk Mitigation
-
-| Risk | Mitigation |
-|------|------------|
-| API rate limits | Use existing `retryWithBackoff()` in openai-client.ts; 2s delay between batches |
-| Token costs | Truncate to 4000 chars; batch limits prevent runaway costs |
-| Poor classifications | Store AI reasoning for audit; low-confidence → manual queue |
-| Data governance | Already approved for OpenAI; no PII in remissvar (public documents) |
-
----
-
-## Execution Order
-
-1. ✅ Create `classify-stance-ai` edge function
-2. ✅ Update `supabase/config.toml` with function config
-3. ✅ Add AI classification section to `RemissvarStanceAnalyzerTest.tsx`
-4. ✅ Update `StanceManualReview.tsx` with AI filter and reasoning display
-5. 🔄 Deploy and run dry-run test on 10 items
-6. ⏳ Run full batch processing (961 items in ~50 batches of 20)
-7. ⏳ Update documentation
+- [ ] 50+ committee reports ingested from 2024/25 session
+- [ ] 50+ laws ingested from 2024
+- [ ] Betänkande → Proposition references created (`reference_type = 'recommends'`)
+- [ ] Timeline events created for parliament decisions
+- [ ] PDF URLs extracted for betänkanden
+- [ ] Text content stored for laws
+- [ ] No duplicate documents on re-scrape
 
 ---
 
 ## Technical Notes
 
-### Reuse Patterns
+### API Response Structure
+The `dokumentlista` response returns documents with basic metadata. To get:
+- `dokreferens` (cross-references): Must call `dokumentstatus/{dok_id}.json`
+- `dokaktivitet` (timeline): Must call `dokumentstatus/{dok_id}.json`
+- `dokbilaga` (PDFs): Must call `dokumentstatus/{dok_id}.json`
 
-- **OpenAI client**: Import `callOpenAI` from `_shared/openai-client.ts` (includes retry logic)
-- **Section extraction**: Reuse `extractSections()` from `stance-analyzer.ts` for summary-first selection
-- **Batch UI pattern**: Follow existing `RemissvarStanceAnalyzerTest.tsx` batch controls structure
-- **Metadata storage**: Follow existing `metadata.manual_review` pattern for `metadata.ai_review`
+**Implication**: Each betänkande requires 2 API calls (list + detail). Budget ~3-4 calls/second with 500ms delay.
 
-### Analysis Status State Machine
-
-```text
-not_started → ok (keyword analysis) → ai_classified (AI confirmed)
-                                    → ai_low_confidence (needs human review)
-                                    → manual_confirmed (human approved)
-                                    → manual_corrected (human changed)
+### Error Recovery
+Implement cursor-based resumption:
+```javascript
+// Track last successfully processed dok_id
+// On resume, skip already-inserted documents
 ```
 
----
-
-## Governance
-
-- **Data Risk:** LOW (additive metadata field, no schema changes)
-- **Architectural Owner:** Lovable (edge function, database updates)
-- **Cost Owner:** Max (OpenAI API usage ~$15-20)
+### Existing Code Patterns
+Follow patterns from `scrape-proposition-index/index.ts`:
+- CORS headers from `_shared/http-utils.ts`
+- Error response format
+- Pagination handling
