@@ -45,22 +45,23 @@ Maintained by: **Lovable (Architectural Authority)**
 | 5.6.1 Schema | ✅ COMPLETE | extraction_status, raw_content, extracted_at |
 | 5.6.2 Extraction Pipeline | ✅ COMPLETE | 3,366 ok, 55 errors (scanned PDFs) |
 | 5.6.3 Stance Detection | ✅ COMPLETE | 3,363 analyzed (keyword-based) |
-| 5.6.4 AI Classification | 🔄 IN PROGRESS | 548 AI-classified, ~1,019 pending |
+| 5.6.4 AI Classification | ✅ COMPLETE | Medium auto-approved + no_position flagging |
 
-### Current Database Metrics (verified 2026-01-27)
+### Current Database Metrics (verified 2026-01-28)
 
 | Metric | Count |
 |--------|-------|
 | Total remiss_responses | 3,421 |
 | Extraction: ok | 3,366 (98.4%) |
 | Extraction: error | 55 (1.6%) |
-| Stance: support | 1,557 |
-| Stance: conditional | 290 |
-| Stance: oppose | 284 |
-| Stance: neutral | 1,072 |
-| Stance: mixed | 160 |
-| AI classified | 548 |
-| Pending AI review | ~1,019 |
+| **Final Stance Distribution** | |
+| Stance: support | 1,612 |
+| Stance: conditional | 585 |
+| Stance: oppose | 382 |
+| Stance: neutral | 749 |
+| Stance: no_position | 35 |
+| AI classified | 1,171 |
+| Manual review queue | 0 |
 
 ---
 
