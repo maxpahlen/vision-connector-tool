@@ -134,13 +134,17 @@ async function fetchDocumentStatus(dokId: string): Promise<DocumentStatus> {
 }
 
 function extractPdfUrl(status: DocumentStatus): string | null {
-  const bilagor = status.dokumentstatus.dokbilaga?.bilaga || [];
+  const rawBilagor = status.dokumentstatus.dokbilaga?.bilaga;
+  // API returns single object when there's one attachment, array when multiple
+  const bilagor = rawBilagor == null ? [] : Array.isArray(rawBilagor) ? rawBilagor : [rawBilagor];
   const pdfBilaga = bilagor.find(b => b.filtyp?.toLowerCase() === "pdf");
   return pdfBilaga?.fil_url || null;
 }
 
 function extractPropositionRefs(status: DocumentStatus): Array<{ docNumber: string; refDokId: string }> {
-  const refs = status.dokumentstatus.dokreferens?.referens || [];
+  const rawRefs = status.dokumentstatus.dokreferens?.referens;
+  // API returns single object when there's one reference, array when multiple
+  const refs = rawRefs == null ? [] : Array.isArray(rawRefs) ? rawRefs : [rawRefs];
   return refs
     .filter(r => r.referenstyp === "behandlar" && r.ref_dok_typ === "prop")
     .map(r => ({
@@ -150,7 +154,9 @@ function extractPropositionRefs(status: DocumentStatus): Array<{ docNumber: stri
 }
 
 function extractTimelineEvents(status: DocumentStatus): Array<{ type: string; date: string; description: string }> {
-  const activities = status.dokumentstatus.dokaktivitet?.aktivitet || [];
+  const rawActivities = status.dokumentstatus.dokaktivitet?.aktivitet;
+  // API returns single object when there's one activity, array when multiple
+  const activities = rawActivities == null ? [] : Array.isArray(rawActivities) ? rawActivities : [rawActivities];
   const events: Array<{ type: string; date: string; description: string }> = [];
   
   for (const activity of activities) {
