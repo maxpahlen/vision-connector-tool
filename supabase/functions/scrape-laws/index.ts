@@ -115,23 +115,93 @@ async function fetchDocumentText(dokId: string): Promise<string | null> {
   }
 }
 
+interface LawDoc {
+  id: string;
+  doc_number: string;
+  metadata: { dok_id?: string } | null;
+}
+
+// deno-lint-ignore no-explicit-any
+async function handleBackfill(supabase: any, limit: number) {
+  // Find laws with missing text
+  const { data: laws, error: fetchError } = await supabase
+    .from("documents")
+    .select("id, doc_number, metadata")
+    .eq("doc_type", "law")
+    .is("raw_content", null)
+    .limit(limit);
+
+  if (fetchError) throw new Error(`Fetch failed: ${fetchError.message}`);
+  if (!laws || laws.length === 0) {
+    return { processed: 0, updated: 0, errors: [], message: "No laws with missing text found" };
+  }
+
+  const results = { processed: 0, updated: 0, errors: [] as string[] };
+
+  for (const law of laws as LawDoc[]) {
+    try {
+      await delay(REQUEST_DELAY_MS);
+      const dokId = law.metadata?.dok_id;
+      if (!dokId) {
+        results.errors.push(`${law.doc_number}: missing dok_id in metadata`);
+        results.processed++;
+        continue;
+      }
+
+      const text = await fetchDocumentText(dokId);
+      if (!text) {
+        results.errors.push(`${law.doc_number}: no text available`);
+        results.processed++;
+        continue;
+      }
+
+      const { error: updateError } = await supabase
+        .from("documents")
+        .update({ raw_content: text })
+        .eq("id", law.id);
+
+      if (updateError) {
+        results.errors.push(`${law.doc_number}: update failed - ${updateError.message}`);
+      } else {
+        results.updated++;
+        console.log(`Updated text for ${law.doc_number}`);
+      }
+      results.processed++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      results.errors.push(`${law.doc_number}: ${msg}`);
+      results.processed++;
+    }
+  }
+
+  return results;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return handleCorsPreflightRequest();
   }
 
   try {
-    const { year = "2024", limit = 10, page = 1, fetchText = true } = await req.json().catch(() => ({}));
+    const { year = "2024", limit = 10, page = 1, fetchText = true, backfill = false } = await req.json().catch(() => ({}));
     
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Backfill mode: re-fetch text for existing laws with null raw_content
+    if (backfill) {
+      console.log(`Backfilling text for up to ${limit} laws...`);
+      await delay(INITIAL_DELAY_MS);
+      const results = await handleBackfill(supabase, limit);
+      return createSuccessResponse({ backfill: true, ...results });
+    }
+
     console.log(`Scraping laws for year ${year}, limit ${limit}, page ${page}, fetchText ${fetchText}`);
 
     // Initial delay to let edge function connection stabilize
     console.log(`Waiting ${INITIAL_DELAY_MS}ms before first request...`);
     await delay(INITIAL_DELAY_MS);
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Fetch list from Riksdagen API
     const listResponse = await fetchDocumentList(year, page, Math.min(limit, 100));
