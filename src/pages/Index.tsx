@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "react-router-dom";
 import { Search, FileText, Building2, Users, Clock, ArrowRight, BarChart3 } from "lucide-react";
+import { StanceDistributionWidget } from "@/components/insights/StanceDistributionWidget";
 
 const Index = () => {
   const { processes, isLoading } = useProcesses();
@@ -37,7 +38,10 @@ const Index = () => {
             <p className="text-muted-foreground">Utforska data och mönster i lagstiftningsprocessen</p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid md:grid-cols-3 gap-4">
+            {/* Stance Distribution Widget */}
+            <StanceDistributionWidget />
+
             <Link to="/insights/participation">
               <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
                 <CardHeader>
