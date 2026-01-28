@@ -1,12 +1,17 @@
 # Phase 5.4: Committee Reports + Laws
 
-**Status:** 📋 RESEARCH COMPLETE — Ready for Implementation  
+**Status:** 🚧 IN PROGRESS — Scrapers Implemented, Ready for Pilot  
 **Branch:** `phase-5.4-committee-reports-laws`  
 **Dependencies:** Phase 5.3 (Remisser + Remissvar), Phase 5.6 (Content Insights)
 
----
+## Implementation Progress (2026-01-28)
 
-## Research Summary (2026-01-27)
+- ✅ `scrape-committee-reports` edge function created
+- ✅ `scrape-laws` edge function created  
+- ✅ Admin UI components added (Parliament tab)
+- ⏳ Pilot validation pending (10 betänkanden + 10 laws)
+
+---
 
 ### riksdagen.se Open Data API
 
