@@ -223,31 +223,66 @@ https://data.riksdagen.se/dokumentlista/?doktyp={TYPE}&rm={SESSION}&utformat=jso
 
 ---
 
+## Professional Nuances & Considerations
+
+### Nuance 1: Freshness Lag — "Canonical Archive" vs "Current Publication"
+
+**Observation:** riksdagen.se is the canonical historical archive, but regeringen.se may publish documents before they are processed into riksdagen.se.
+
+**Implication:** For near-real-time ingestion of newly published documents, a freshness check against regeringen.se may still be needed. This doesn't conflict with using riksdagen.se as the primary source, but suggests a dual-check pattern for the most recent documents (e.g., last 30 days).
+
+**Mitigation:** Compare `systemdatum` from riksdagen.se against `publicationDate` from regeringen.se for recent documents; prefer whichever is more current for latest-week ingestion.
+
+### Nuance 2: SOU Hybrid Matching Complexity
+
+**Observation:** The SOU hybrid approach (riksdagen for metadata/text, regeringen for remiss links) implies a non-trivial matching problem via `doc_number`.
+
+**Risk:** Mismatches between sources would degrade remiss link quality downstream.
+
+**Mitigation:** 
+- Establish matching reliability metrics early in pilot phase
+- Track match success rate (target: >99%)
+- Implement fuzzy matching fallback for edge cases (e.g., "SOU 2024:1" vs "SOU 2024:01")
+- Log and alert on unmatched documents for manual review
+
+### Nuance 3: Text Source Quality vs PDF Fidelity
+
+**Observation:** riksdagen.se text content is OCR'd from PDFs. For older documents, OCR errors are more likely.
+
+**Implication:** Any LLM pipeline or search indexing should track provenance (text source: OCR vs native) to enable quality-aware processing.
+
+**Mitigation:**
+- Add `text_source` metadata field: `riksdagen_ocr`, `pdf_extracted`, `native_html`
+- For high-stakes analysis, prefer PDF extraction over pre-OCR'd text
+- Validate OCR quality on sample of historical documents before bulk ingestion
+
+---
+
 ## Risk Analysis
 
 ### Risk 1: Data Sync Between Sources
 
 **Risk:** riksdagen.se and regeringen.se may have different publication dates
-**Mitigation:** Use riksdagen.se `systemdatum` for freshness, match by doc_number
+**Mitigation:** Use riksdagen.se `systemdatum` for freshness, match by doc_number; implement dual-check for latest-week documents
 **Impact:** LOW — Both sources are government-official
 
 ### Risk 2: Remiss Dependency
 
 **Risk:** Switching to riksdagen.se for SOUs loses remiss linkage
-**Mitigation:** Maintain parallel lookup by doc_number on regeringen.se
-**Impact:** MEDIUM — Requires two-source pipeline
+**Mitigation:** Maintain parallel lookup by doc_number on regeringen.se; establish matching metrics early
+**Impact:** MEDIUM — Requires two-source pipeline with quality monitoring
 
 ### Risk 3: API Rate Limiting
 
 **Risk:** Large historical ingestion may hit limits
-**Mitigation:** Already implemented exponential backoff; batch processing
+**Mitigation:** Already implemented exponential backoff with jitter; batch processing
 **Impact:** LOW — API is public and generous
 
 ### Risk 4: Content Format Differences
 
-**Risk:** riksdagen.se text may differ from regeringen.se PDFs
-**Mitigation:** Text is OCR'd from same source PDFs; validate sample
-**Impact:** LOW — Both are authoritative
+**Risk:** riksdagen.se text may differ from regeringen.se PDFs due to OCR quality
+**Mitigation:** Track text provenance; validate OCR quality on historical sample
+**Impact:** LOW — Both are authoritative; provenance metadata enables quality-aware processing
 
 ---
 
