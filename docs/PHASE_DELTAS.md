@@ -1,34 +1,53 @@
 # Phase Deltas
 
-## 2026-01-28: Phase 5.4 Scrapers — Upstream connection reset mitigation
+## 2026-01-28: Phase 5.4 Committee Reports + Laws — COMPLETE
 
-**Status:** IN PROGRESS — Reliability hardening
+**Status:** ✅ COMPLETE — All scrapers operational, data validated
 
-### Problem
+### Final Metrics
 
-Backend scrapers calling `https://data.riksdagen.se` intermittently fail with:
+| Data Type | Count | Details |
+|-----------|-------|---------|
+| Committee Reports | 333 | All with PDF URLs, riksmöte 2024/25 |
+| Laws (SFS) | 161 | All with extracted text, year 2024 |
+| Document References | 221 | `recommends` type (betänkande → proposition) |
+| Timeline Events | 327 | `parliament_decision` events |
+| Missing Metadata | 0 | ✅ All records healthy |
 
-- `connection error: Connection reset by peer (os error 104)`
+### Bug Fixed: `refs.filter is not a function`
 
-This presents as `500 scraper_error` and can interrupt pilot runs.
+**Root Cause:** Riksdagen API returns a single object (not array) when there's only one `referens`, `aktivitet`, or `bilaga` entry. The code assumed arrays.
 
-### Fix
+**Fix:** Added `Array.isArray()` guards to all extraction functions:
+```typescript
+const rawRefs = status.dokumentstatus.dokreferens?.referens;
+const refs = rawRefs == null ? [] : Array.isArray(rawRefs) ? rawRefs : [rawRefs];
+```
 
-- Added browser-like fetch headers (`User-Agent`, `Accept`, `Accept-Language`)
-- Hardened upstream fetching with retries + exponential backoff + jitter
-- Classified upstream connection resets as `503 upstream_unavailable` (not 500)
-- Documented operational retry workflow
+### Reliability Improvements
+
+- Browser-like fetch headers (`User-Agent`, `Accept`, `Accept-Language`, `Connection: keep-alive`)
+- Exponential backoff with jitter (5 retries, 3s-24s delays)
+- Connection resets classified as `503 upstream_unavailable`
+- Initial 1s delay before first upstream request
+
+### Laws Text Backfill Feature
+
+Added "Backfill Text" button to Laws scraper UI to re-fetch `raw_content` for existing laws where extraction initially failed.
 
 ### Files Changed
 
-- `supabase/functions/scrape-laws/index.ts`
-- `supabase/functions/scrape-committee-reports/index.ts`
+- `supabase/functions/scrape-committee-reports/index.ts` — Array guards, resilience
+- `supabase/functions/scrape-laws/index.ts` — Backfill mode, text extraction headers
+- `src/components/admin/LawsScraperTest.tsx` — Backfill UI
 - `docs/development/SCRAPER_KNOWN_ISSUES.md`
 - `docs/development/branches/phase-5.4-committee-reports-laws.md`
 
+---
+
 ## 2026-01-27: Phase 5.4 Research — riksdagen.se API Patterns
 
-**Status:** RESEARCH COMPLETE — Ready for Implementation
+**Status:** RESEARCH COMPLETE — Implementation done
 
 ### Summary
 
@@ -42,25 +61,13 @@ Researched riksdagen.se Open Data API for Committee Reports (betänkanden) and L
 | Session format | `rm=2024/25` | `rm=2024` |
 | Volume (sample) | 333 docs (2024/25) | 161 docs (2024) |
 | dok_id format | `HC01SkU18` | `sfs-2024-1373` |
-| PDF available | Yes, via `filbilaga.fil[].url` | Text via URL |
+| PDF available | Yes, via `dokumentstatus` | Text via URL |
 
 ### API Structure
 
 **Base URL:** `https://data.riksdagen.se/dokumentlista/?doktyp={type}&rm={session}&utformat=json`
 
-**Response includes:**
-- `@traffar` — Total hits
-- `@sidor` — Total pages
-- `dokument[]` — Array of documents with full metadata
-- `dokreferens` — Cross-references to related documents (propositions, etc.)
-
-### Implementation Plan
-
-Created `docs/development/branches/phase-5.4-committee-reports-laws.md` with:
-- Complete API documentation
-- Sample response structures
-- Scraper implementation plan
-- Success criteria
+**Document Status:** `https://data.riksdagen.se/dokumentstatus/{dok_id}.json`
 
 ### Files Created
 
