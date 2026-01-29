@@ -13,6 +13,8 @@ import { PropositionScraperTest } from '@/components/admin/PropositionScraperTes
 import { PropositionTextExtractorTest } from '@/components/admin/PropositionTextExtractorTest';
 import { PropositionAgentTest } from '@/components/admin/PropositionAgentTest';
 import { PropositionBatchProcessor } from '@/components/admin/PropositionBatchProcessor';
+import { PropositionRiksdagenScraperTest } from '@/components/admin/PropositionRiksdagenScraperTest';
+import { DirectiveRiksdagenScraperTest } from '@/components/admin/DirectiveRiksdagenScraperTest';
 import { RemissScraperTest } from '@/components/admin/RemissScraperTest';
 import { RemissIndexScraperTest } from '@/components/admin/RemissIndexScraperTest';
 import { RemissDiscoveryDashboard } from '@/components/admin/RemissDiscoveryDashboard';
@@ -27,7 +29,7 @@ import { DirectiveMetadataScraper } from '@/components/admin/DirectiveMetadataSc
 import { ValidationDashboard } from '@/components/admin/ValidationDashboard';
 import { CommitteeReportsScraperTest } from '@/components/admin/CommitteeReportsScraperTest';
 import { LawsScraperTest } from '@/components/admin/LawsScraperTest';
-import { FileText, Bot, Database, Settings, Play, FileSearch, BarChart3, Landmark } from 'lucide-react';
+import { FileText, Bot, Database, Settings, Play, FileSearch, BarChart3, Landmark, Globe } from 'lucide-react';
 
 export default function AdminScraper() {
   return (
@@ -40,10 +42,14 @@ export default function AdminScraper() {
       </div>
 
       <Tabs defaultValue="validation" className="w-full">
-        <TabsList className="grid w-full grid-cols-8">
+        <TabsList className="grid w-full grid-cols-9">
           <TabsTrigger value="validation" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
             Validation
+          </TabsTrigger>
+          <TabsTrigger value="riksdagen" className="flex items-center gap-2">
+            <Globe className="h-4 w-4" />
+            Riksdagen
           </TabsTrigger>
           <TabsTrigger value="parliament" className="flex items-center gap-2">
             <Landmark className="h-4 w-4" />
@@ -78,6 +84,24 @@ export default function AdminScraper() {
         {/* Validation Dashboard Tab - Phase Reset */}
         <TabsContent value="validation" className="space-y-6 mt-6">
           <ValidationDashboard />
+        </TabsContent>
+
+        {/* Riksdagen API Tab - Phase 6 */}
+        <TabsContent value="riksdagen" className="space-y-6 mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Phase 6: Riksdagen API Migration</CardTitle>
+              <CardDescription>
+                Migrate Propositions and Directives ingestion from regeringen.se to the structured riksdagen.se Open Data API.
+                Target corpus: ~31,598 propositions + ~6,361 directives from historical archives.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+          
+          <div className="grid gap-6">
+            <PropositionRiksdagenScraperTest />
+            <DirectiveRiksdagenScraperTest />
+          </div>
         </TabsContent>
 
         {/* Parliament Tab - Phase 5.4 */}
