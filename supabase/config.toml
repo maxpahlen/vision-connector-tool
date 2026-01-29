@@ -83,3 +83,6 @@ verify_jwt = false
 
 [functions.scrape-propositions-riksdagen]
 verify_jwt = false
+
+[functions.scrape-directives-riksdagen]
+verify_jwt = false
