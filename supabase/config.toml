@@ -80,3 +80,6 @@ verify_jwt = false
 
 [functions.scrape-laws]
 verify_jwt = false
+
+[functions.scrape-propositions-riksdagen]
+verify_jwt = false
