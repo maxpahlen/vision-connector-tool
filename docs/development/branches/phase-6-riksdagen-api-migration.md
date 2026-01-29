@@ -270,6 +270,32 @@ Following established "pilot then scale" strategy:
 - The `dokreferens` field is key for building the legislative graph
 - `dokaktivitet` provides rich timeline data (beslut, utskott, etc.)
 
+### Important: Proposition Timeline Events Architecture
+
+**Propositions do NOT have `dokaktivitet` in the Riksdagen API.** This is by design:
+
+- **Propositions** are INPUT documents (Government → Parliament)
+- **Committee Reports (Betänkanden)** are OUTPUT documents (Parliament → Plenary)
+- The `dokaktivitet` field tracks **parliamentary processing**, which occurs at the committee report level
+
+```
+Proposition ──────────────> Parliament ──────────────> Committee Report
+(no dokaktivitet)           (receives prop)            (has dokaktivitet)
+```
+
+**To display a proposition's timeline**, resolve the `has_committee_report` reference:
+```sql
+SELECT te.event_type, te.event_date, te.description
+FROM document_references dr
+JOIN documents bet ON dr.target_doc_number = bet.doc_number
+JOIN processes p ON p.main_document_id = bet.id
+JOIN timeline_events te ON te.process_id = p.id
+WHERE dr.source_document_id = '<proposition_id>'
+AND dr.reference_type = 'has_committee_report';
+```
+
+**Verified 2026-01-29**: Committee reports contain rich `dokaktivitet` (UBE, JUS, TRY, B, BEH, BES events). Propositions correctly have 0 timeline events from the API; their processing history comes from linked committee reports.
+
 ---
 
 ## Files to Create
