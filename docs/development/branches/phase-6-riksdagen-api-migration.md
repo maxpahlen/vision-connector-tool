@@ -91,9 +91,40 @@ const headers = {
   'Connection': 'keep-alive'
 };
 
-// Exponential backoff with jitter
+// Base delay between requests: 500ms (validated for scale)
+const REQUEST_DELAY_MS = 500;
+
+// Exponential backoff with jitter on failures
 const backoff = 3000 * Math.pow(2, attempt) + Math.random() * 1000;
 ```
+
+**Rate Limiting Rationale**: 500ms base delay prevents throttling at scale (31k+ documents). The 100ms delay mentioned in early drafts was too aggressive for sustained batch processing.
+
+---
+
+### Freshness & Conflict Resolution Policy
+
+**7-Day Freshness Window**: Documents published within the last 7 days require dual-source verification because riksdagen.se may have archival lag.
+
+**Conflict Resolution Rules**:
+1. **Metadata conflicts**: Prefer riksdagen.se as source of truth (structured, validated)
+2. **Missing from riksdagen**: Use regeringen.se as fallback, tag with `metadata.source = 'regeringen'`
+3. **Both sources present**: Use riksdagen.se data, log regeringen.se discrepancies for investigation
+4. **Text content**: Prefer riksdagen.se native text; fall back to PDF extraction if unavailable
+
+---
+
+### Doc Number Matching Strategy
+
+**Normalization Rules** (for cross-source matching and future SOU linkage):
+```
+Prop. 2024/25:1   → prop-2024/25-1
+SOU 2024:01      → sou-2024-1
+SOU 2024:1       → sou-2024-1  (same canonical form)
+Dir. 2024:10     → dir-2024-10
+```
+
+**Match Metrics**: Track `match_success_rate` during ingestion. Target: >99% for props/dirs.
 
 ---
 
