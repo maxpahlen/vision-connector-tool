@@ -173,9 +173,18 @@ The riksdagen.se Open Data API (`https://data.riksdagen.se`) intermittently rese
 
 `connection error: Connection reset by peer (os error 104)`
 
-This has been observed on both:
-- `dokumentlista` (listing)
+This has been observed on:
+- `dokumentlista` (listing) — e.g., `?doktyp=prop&rm=2024/25`
 - `dokumentstatus` / `dokument/*.text` (detail content)
+
+### Affected Scrapers
+
+| Scraper | Endpoint | Notes |
+|---------|----------|-------|
+| `scrape-propositions-riksdagen` | dokumentlista, dokumentstatus | Phase 6.1 |
+| `scrape-directives-riksdagen` | dokumentlista, dokumentstatus | Phase 6.2 |
+| `scrape-committee-reports` | dokumentlista, dokumentstatus | Phase 5.4 |
+| `scrape-laws` | dokumentlista | Phase 5.4 |
 
 ### Impact Assessment
 
@@ -189,8 +198,8 @@ This has been observed on both:
 ### Mitigation Implemented
 
 1. Browser-like request headers (explicit `User-Agent`, `Accept`, `Accept-Language`)
-2. Increased retries with exponential backoff and jitter
-3. Initial delay before the first upstream request to avoid early handshake instability
+2. 5 retries with exponential backoff (3s, 6s, 12s, 24s, ~48s total wait)
+3. Initial 1000ms delay before the first upstream request to avoid early handshake instability
 4. Upstream errors are surfaced as `503 upstream_unavailable` (not `500`) to reflect transient availability issues
 
 ### Recommended Operator Workflow
@@ -198,4 +207,5 @@ This has been observed on both:
 If you hit a run of 503s:
 1. Wait ~30–60 seconds
 2. Retry the same batch (scrapers are idempotent via deduplication)
+3. If failures persist across multiple retry windows, riksdagen.se may be experiencing broader issues—check again later
 
