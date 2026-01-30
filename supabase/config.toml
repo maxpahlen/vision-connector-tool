@@ -86,3 +86,6 @@ verify_jwt = false
 
 [functions.scrape-directives-riksdagen]
 verify_jwt = false
+
+[functions.process-committee-report-pdf]
+verify_jwt = false
