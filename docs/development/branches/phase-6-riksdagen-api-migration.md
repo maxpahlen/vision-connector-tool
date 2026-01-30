@@ -3,12 +3,45 @@
 ## Branch Information
 - **Branch Name**: `phase-6-riksdagen-api-migration`
 - **Created**: 2026-01-28
-- **Status**: Planning
+- **Status**: IN PROGRESS — Pilots Complete
+- **Last Updated**: 2026-01-30
 - **Depends On**: Phase 5.4 completion (Committee Reports & Laws)
 
 ## Goal
 
 Migrate Propositions and Directives ingestion from the fragile regeringen.se Filter API to the structured riksdagen.se Open Data API, achieving 10-100x corpus expansion with cleaner, more reliable data pipelines.
+
+---
+
+## Implementation Status
+
+### Completed ✅
+
+| Component | Date | Details |
+|-----------|------|---------|
+| Propositions Scraper | 2026-01-29 | `scrape-propositions-riksdagen` edge function |
+| Directives Scraper | 2026-01-29 | `scrape-directives-riksdagen` edge function |
+| Propositions Pilot | 2026-01-29 | 10 docs ingested, cross-refs extracted |
+| Directives Pilot | 2026-01-29 | 10 docs ingested, 2020 session tested |
+| Propositions Admin UI | 2026-01-29 | `PropositionRiksdagenScraperTest.tsx` |
+| Directives Admin UI | 2026-01-29 | `DirectiveRiksdagenScraperTest.tsx` |
+| Kommittébeteckning Fix | 2026-01-30 | Fallback chain: tempbeteckning → dokuppgift → subtitel |
+| Committee Report Extraction | 2026-01-30 | 3 pilot docs (129, 48, 144 pages) |
+
+### In Progress 🔄
+
+| Component | Notes |
+|-----------|-------|
+| Historical Backfill Props | 31,598 available, 10 ingested |
+| Historical Backfill Dirs | 6,361 available, 10 ingested |
+| Batch Committee Extraction | 330 remaining (3 pilot complete) |
+
+### Pending 🔲
+
+| Component | Notes |
+|-----------|-------|
+| Freshness Integration | 7-day dual-source verification |
+| Deep Historical Backfill | 1971-2010 props, 1988-2010 dirs |
 
 ---
 
@@ -130,42 +163,65 @@ Dir. 2024:10     → dir-2024-10
 
 ## Implementation Plan
 
-### Phase 6.1: Propositions Migration
+### Phase 6.1: Propositions Migration — ✅ PILOT COMPLETE
 
-**Step 1: Create scraper edge function**
+**Step 1: Create scraper edge function** ✅
 - File: `supabase/functions/scrape-propositions-riksdagen/index.ts`
 - Paginated ingestion from riksdagen.se API
-- Extract metadata, cross-references, timeline events
+- Extract metadata, cross-references (dokreferens)
 - Dedup by `doc_number`
 
-**Step 2: Pilot validation**
-- Select 3 representative propositions (different sessions/ministries)
-- Run full pipeline: metadata → text → references → timeline
-- Verify data quality and completeness
+**Step 2: Pilot validation** ✅
+- 10 propositions ingested from 2024/25 session
+- Cross-references extracted (6 total)
+- Admin UI operational
 
-**Step 3: Historical backfill**
+**Step 3: Historical backfill** 🔲 PENDING
 - Batch process by session (2024/25, 2023/24, ...)
-- Rate limit: 100ms between requests
+- Rate limit: 500ms between requests
 - Target: All 31,598 propositions
 
-**Step 4: Freshness integration**
+**Step 4: Freshness integration** 🔲 PENDING
 - For documents < 7 days old, cross-check against regeringen.se
 - Log any discrepancies for investigation
 
-### Phase 6.2: Directives Migration
+### Phase 6.2: Directives Migration — ✅ PILOT COMPLETE
 
-**Step 1: Create scraper edge function**
+**Step 1: Create scraper edge function** ✅
 - File: `supabase/functions/scrape-directives-riksdagen/index.ts`
 - Extract kommittébeteckning for SOU linkage
 - Similar pattern to propositions scraper
 
-**Step 2: Pilot validation**
-- 3 representative directives
-- Verify kommittébeteckning extraction
-- Confirm SOU cross-reference quality
+**Step 2: Pilot validation** ✅
+- 10 directives ingested
+- 2020 session tested for kommittébeteckning extraction
+- 5/5 tilläggsdirektiv correctly extracted designations
 
-**Step 3: Historical backfill**
+**Step 3: Kommittébeteckning fix** ✅ (2026-01-30)
+- **Root cause**: API stores designation in `tempbeteckning`, not `dokuppgift`
+- **Solution**: Fallback chain implemented:
+  1. `tempbeteckning` field (primary)
+  2. `dokuppgift.kommittebeteckning` 
+  3. Regex parse from `subtitel`
+
+**Step 4: Historical backfill** 🔲 PENDING
 - Target: All 6,361 directives from 1988
+
+### Phase 6.3: Committee Report Extraction — ✅ PILOT COMPLETE
+
+**Pipeline**: Riksdagen PDF URL → PDF Extractor (Vercel) → Database
+
+**Pilot results** (2026-01-30):
+
+| Document | Pages | Characters | Status |
+|----------|-------|------------|--------|
+| HC01MJU14 | 129 | 355,004 | ✅ ok |
+| HC01JuU10 | 48 | 106,032 | ✅ ok |
+| HC01FöU4 | 144 | 399,392 | ✅ ok |
+
+**Prerequisite**: PDF extractor redeployed with `data.riksdagen.se` in allowlist
+
+**Remaining**: 330 committee reports pending batch extraction
 
 ---
 
@@ -235,14 +291,17 @@ Following established "pilot then scale" strategy:
 
 ## Timeline
 
-| Week | Milestone |
-|------|-----------|
-| 1 | Create proposition scraper, pilot 3 docs |
-| 2 | Proposition historical backfill (2020-2026) |
-| 3 | Create directive scraper, pilot 3 docs |
-| 4 | Directive historical backfill (2010-2026) |
-| 5 | Deep historical backfill (1971-2010 props, 1988-2010 dirs) |
-| 6 | Freshness integration, quality metrics dashboard |
+| Week | Milestone | Status |
+|------|-----------|--------|
+| 1 | Create proposition scraper, pilot 3 docs | ✅ COMPLETE (10 docs) |
+| 1 | Create directive scraper, pilot 3 docs | ✅ COMPLETE (10 docs) |
+| 2 | Kommittébeteckning extraction fix | ✅ COMPLETE |
+| 2 | Committee report PDF extraction pilot | ✅ COMPLETE (3 docs) |
+| 3 | Proposition historical backfill (2020-2026) | 🔲 PENDING |
+| 3 | Directive historical backfill (2010-2026) | 🔲 PENDING |
+| 4 | Batch committee report extraction (330 docs) | 🔲 PENDING |
+| 5 | Deep historical backfill (1971-2010 props, 1988-2010 dirs) | 🔲 PENDING |
+| 6 | Freshness integration, quality metrics dashboard | 🔲 PENDING |
 
 ---
 
@@ -298,14 +357,25 @@ AND dr.reference_type = 'has_committee_report';
 
 ---
 
-## Files to Create
+## Files Created ✅
 
-- `supabase/functions/scrape-propositions-riksdagen/index.ts`
-- `supabase/functions/scrape-directives-riksdagen/index.ts`
-- `src/components/admin/PropositionRiksdagenScraperTest.tsx`
-- `src/components/admin/DirectiveRiksdagenScraperTest.tsx`
+- `supabase/functions/scrape-propositions-riksdagen/index.ts` ✅
+- `supabase/functions/scrape-directives-riksdagen/index.ts` ✅
+- `src/components/admin/PropositionRiksdagenScraperTest.tsx` ✅
+- `src/components/admin/DirectiveRiksdagenScraperTest.tsx` ✅
 
-## Files to Update
+## Files Updated ✅
 
-- `src/pages/AdminScraper.tsx` — Add new test components
-- `docs/CONTEXT_PRIORITY.md` — Add Phase 6 docs
+- `src/pages/AdminScraper.tsx` — Added new test components ✅
+- `docs/CONTEXT_PRIORITY.md` — Phase 6 status ✅
+- `docs/PHASE_DELTAS.md` — Progress logging ✅
+- `docs/development/SCRAPER_KNOWN_ISSUES.md` — Connection reset handling ✅
+
+## Current Database Metrics (2026-01-30)
+
+| Metric | Count |
+|--------|-------|
+| Propositions (riksdagen source) | 10 |
+| Directives (riksdagen source) | 10 |
+| Committee reports with extracted text | 3 |
+| Cross-references extracted | 6 |
