@@ -1,7 +1,7 @@
 # Context Priority
 
-**Last Updated:** 2026-01-27  
-**Current Phase:** 5.6 (Remissvar Content Insights) — IN PROGRESS
+**Last Updated:** 2026-01-30  
+**Current Phase:** 6.1/6.2 (Riksdagen API Migration) — IN PROGRESS
 
 ---
 
@@ -19,26 +19,49 @@ Maintained by: **Lovable (Architectural Authority)**
 |---|------|-------------------|
 | 1 | `docs/WORKFLOW.md` | Operating agreement: roles, phases, message discipline |
 | 2 | `docs/PHASE_DELTAS.md` | Most recent changes since last sync |
-| 3 | `docs/development/branches/phase-5.6-content-insights.md` | **IN PROGRESS** - Remissvar content extraction + stance detection |
-| 4 | `docs/development/PHASE_5.6_REMISSVAR_TEXT_EXTRACTION_GUIDANCE.md` | Swedish stance keywords, structural anchors from SB PM 2021:1 |
-| 5 | `docs/development/branches/phase-5.4-committee-reports-laws.md` | **RESEARCH COMPLETE** - riksdagen.se API patterns documented |
-| 6 | `docs/development/branches/phase-5.5-cross-document-insights.md` | **COMPLETE** - Cross-document linking & insights |
+| 3 | `docs/development/branches/phase-6-riksdagen-api-migration.md` | **IN PROGRESS** - Propositions & Directives migration to riksdagen.se API |
+| 4 | `docs/development/RIKSDAGEN_API_RESEARCH.md` | API patterns, field mappings, rate limiting guidance |
+| 5 | `docs/development/SCRAPER_KNOWN_ISSUES.md` | Connection reset handling, retry strategies |
+| 6 | `docs/development/branches/phase-5.6-content-insights.md` | **COMPLETE** - Remissvar content extraction + stance detection |
 | 7 | `docs/CHECKLISTS.md` | Verification requirements before sign-off |
 | 8 | `docs/DECISION_LOG.md` | Approved decisions with triple sign-off |
 | 9 | `docs/development/PRODUCT_ROADMAP.md` | Overall progress and metrics |
 
 ---
 
-## Recent Changes (2026-01-27)
+## Recent Changes (2026-01-30)
 
-- **COMPLETE:** Phase 5.6.3 keyword-based stance detection deployed + validated
-- **IN PROGRESS:** Phase 5.6.4 AI stance classification (paginated accumulation fix deployed)
-- **RESEARCH:** Phase 5.4 riksdagen.se API patterns documented for Committee Reports + Laws
-- **REMAINING:** ~1,018 remissvar pending AI classification, ~2,949 PDFs pending extraction
+- **IN PROGRESS:** Phase 6.1 Propositions scraper created + pilot tested (10 docs)
+- **IN PROGRESS:** Phase 6.2 Directives scraper created + pilot tested (10 docs)
+- **CREATED:** Admin UI components for Riksdagen scrapers (PropositionRiksdagenScraperTest, DirectiveRiksdagenScraperTest)
+- **DOCUMENTED:** Connection reset handling for riksdagen.se API (Issue #4 in SCRAPER_KNOWN_ISSUES.md)
+- **COMPLETE:** Phase 5.6 Remissvar content insights (3,363 analyzed)
 
 ---
 
-## Phase 5.6 Status
+## Phase 6 Status
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| 6.1 Propositions Scraper | ✅ PILOT COMPLETE | 10 docs ingested, cross-refs extracted |
+| 6.2 Directives Scraper | ✅ PILOT COMPLETE | 10 docs ingested, kommittébeteckning null (expected for recent) |
+| 6.1 Admin UI | ✅ COMPLETE | PropositionRiksdagenScraperTest.tsx |
+| 6.2 Admin UI | ✅ COMPLETE | DirectiveRiksdagenScraperTest.tsx |
+| Historical Backfill Props | 🔲 PENDING | 31,598 total available |
+| Historical Backfill Dirs | 🔲 PENDING | 6,361 total available |
+| Freshness Integration | 🔲 PENDING | 7-day dual-source verification |
+
+### Current Database Metrics (verified 2026-01-30)
+
+| Metric | Count |
+|--------|-------|
+| Propositions (riksdagen source) | 10 |
+| Directives (riksdagen source) | 10 |
+| Cross-references extracted | 6 |
+
+---
+
+## Phase 5.6 Status (COMPLETE)
 
 | Component | Status | Notes |
 |-----------|--------|-------|
@@ -47,56 +70,37 @@ Maintained by: **Lovable (Architectural Authority)**
 | 5.6.3 Stance Detection | ✅ COMPLETE | 3,363 analyzed (keyword-based) |
 | 5.6.4 AI Classification | ✅ COMPLETE | Medium auto-approved + no_position flagging |
 
-### Current Database Metrics (verified 2026-01-28)
-
-| Metric | Count |
-|--------|-------|
-| Total remiss_responses | 3,421 |
-| Extraction: ok | 3,366 (98.4%) |
-| Extraction: error | 55 (1.6%) |
-| **Final Stance Distribution** | |
-| Stance: support | 1,612 |
-| Stance: conditional | 585 |
-| Stance: oppose | 382 |
-| Stance: neutral | 749 |
-| Stance: no_position | 35 |
-| AI classified | 1,171 |
-| Manual review queue | 0 |
-
----
-
-## Phase 5.4 Research Summary
-
-riksdagen.se provides REST API for Committee Reports and Laws:
-- **Committee Reports (betänkanden):** `doktyp=bet`, 333 docs in 2024/25 session
-- **Laws (SFS):** `doktyp=sfs`, 161 docs in 2024
-- **Format:** JSON available, includes PDF URLs and cross-references
-- **Ready for implementation** after Phase 5.6 completion
-
 ---
 
 ## Known Limitations
 
+### Riksdagen API Connection Resets
+- **Issue:** `Connection reset by peer (os error 104)` occurs intermittently
+- **Mitigation:** 5 retries with exponential backoff (3s→48s total)
+- **Resolution:** Wait 30-60 seconds, retry (scrapers are idempotent)
+- **Reference:** `docs/development/SCRAPER_KNOWN_ISSUES.md` Issue #4
+
 ### Scanned PDF Extraction (8 documents)
 - **Cause:** Image-based PDFs without text layer
-- **Organizations affected:** Sametinget (5), SMHI (1), Uppsala universitet (1), other (1)
-- **Resolution:** Future OCR capability (Tesseract.js, Google Vision API)
-- **Impact:** 0.2% error rate, acceptable for current phase
+- **Resolution:** Future OCR capability
+- **Impact:** 0.2% error rate, acceptable
 
 ---
 
 ## Next Steps
 
-1. **Complete AI classification:** Process ~1,018 pending remissvar through AI stance classifier
-2. **Complete extraction:** Run remaining ~2,949 PDFs through batch processor
-3. **Phase 5.4:** Implement Committee Reports + Laws scrapers
-4. **Phase 6:** Relationship Inference & Case Reconstruction
+1. **Historical backfill:** Ingest 2024/25 propositions (full session)
+2. **Historical backfill:** Ingest 2024 directives (full year)
+3. **Older session test:** Verify kommittébeteckning extraction on pre-2015 directives
+4. **Phase 6.3:** SOU hybrid pipeline (riksdagen + regeringen)
+5. **Phase 7:** Relationship Inference & Case Reconstruction
 
 ---
 
 ## Secondary Context (If Needed)
 
-- `docs/development/SCRAPER_KNOWN_ISSUES.md` — Pagination quirks, Filter API notes
+- `docs/development/branches/phase-5.4-committee-reports-laws.md` — Committee Reports + Laws (research complete)
+- `docs/development/branches/phase-6-advanced-analysis.md` — Future analytics planning
 - `docs/testing/README.md` — Test philosophy and patterns
 - `docs/operations/AGENT_RUNBOOK.md` — Agent operational procedures
 
