@@ -15,6 +15,7 @@ module.exports = {
   // Domain allow-list
   ALLOWED_DOMAINS: [
     'https://www.regeringen.se',
-    'https://regeringen.se'
+    'https://regeringen.se',
+    'https://data.riksdagen.se'
   ]
 };

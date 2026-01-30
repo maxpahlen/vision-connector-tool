@@ -28,6 +28,7 @@ import { SouUrlRepairTool } from '@/components/admin/SouUrlRepairTool';
 import { DirectiveMetadataScraper } from '@/components/admin/DirectiveMetadataScraper';
 import { ValidationDashboard } from '@/components/admin/ValidationDashboard';
 import { CommitteeReportsScraperTest } from '@/components/admin/CommitteeReportsScraperTest';
+import CommitteeReportTextExtractor from '@/components/admin/CommitteeReportTextExtractor';
 import { LawsScraperTest } from '@/components/admin/LawsScraperTest';
 import { FileText, Bot, Database, Settings, Play, FileSearch, BarChart3, Landmark, Globe } from 'lucide-react';
 
@@ -118,6 +119,7 @@ export default function AdminScraper() {
           
           <div className="grid gap-6">
             <CommitteeReportsScraperTest />
+            <CommitteeReportTextExtractor />
             <LawsScraperTest />
           </div>
         </TabsContent>
