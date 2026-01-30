@@ -1,5 +1,87 @@
 # Phase Deltas
 
+## 2026-01-30: Phase 6 Riksdagen API Migration — Progress Update
+
+**Status:** IN PROGRESS — Pilot scrapers complete, extraction verified
+
+### Summary
+
+Phase 6 migrates Propositions and Directives ingestion from regeringen.se HTML scraping to the riksdagen.se Open Data API. Today completed kommittébeteckning extraction fix and verified committee report PDF extraction pipeline.
+
+### Completed Today
+
+| Component | Status | Details |
+|-----------|--------|---------|
+| Kommittébeteckning Fix | ✅ COMPLETE | Extraction now uses `tempbeteckning` → `dokuppgift` → `subtitel` fallback chain |
+| Committee Report Extraction | ✅ PILOT COMPLETE | 3 docs extracted (129, 48, 144 pages) via PDF extractor |
+| CONTEXT_PRIORITY.md | ✅ UPDATED | Reflects current Phase 6 status |
+
+### Kommittébeteckning Extraction Fix
+
+**Problem:** Directives scraped from riksdagen.se returned `null` for kommittébeteckning (committee designation).
+
+**Root Cause:** The API stores committee designations in `tempbeteckning` field, not `dokuppgift.kommittebeteckning` as initially assumed.
+
+**Solution:** Updated `extractKommittebeteckning()` with fallback chain:
+
+```typescript
+// 1. Primary: tempbeteckning field (e.g., "I 2020:01")
+const tempbet = status.dokumentstatus.dokument.tempbeteckning;
+if (tempbet?.trim()) return tempbet.trim();
+
+// 2. Fallback: dokuppgift.kommittebeteckning
+const uppgifter = normalizeArray(status.dokumentstatus.dokuppgift?.uppgift);
+const kommitte = uppgifter.find(u => u.kod === "kommittebeteckning");
+if (kommitte?.text) return kommitte.text;
+
+// 3. Fallback: Parse from subtitel (e.g., "kommittébeteckning: I 2020:01")
+const subtitel = status.dokumentstatus.dokument.subtitel;
+const match = subtitel?.match(/kommitt[eé]beteckning:\s*([A-Za-zÅÄÖåäö]+\s*\d{4}:\d+)/i);
+return match ? match[1].trim() : null;
+```
+
+**Validation:** 2020 session tested — 5/5 tilläggsdirektiv correctly extracted kommittébeteckning.
+
+### Committee Report PDF Extraction
+
+**Pipeline:** Riksdagen PDF URL → PDF Extractor Service (Vercel) → Database
+
+**Pilot Results:**
+
+| Document | Pages | Characters | Status |
+|----------|-------|------------|--------|
+| HC01MJU14 | 129 | 355,004 | ✅ ok |
+| HC01JuU10 | 48 | 106,032 | ✅ ok |
+| HC01FöU4 | 144 | 399,392 | ✅ ok |
+
+**Prerequisite:** PDF extractor service redeployed to Vercel with `data.riksdagen.se` in domain allowlist.
+
+### Phase 6 Current Status
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| 6.1 Propositions Scraper | ✅ PILOT COMPLETE | 10 docs ingested |
+| 6.2 Directives Scraper | ✅ PILOT COMPLETE | 10 docs ingested, kommittébeteckning fixed |
+| Committee Report Extraction | ✅ PILOT COMPLETE | 3 docs extracted |
+| Historical Backfill Props | 🔲 PENDING | 31,598 available |
+| Historical Backfill Dirs | 🔲 PENDING | 6,361 available |
+| Batch Committee Extraction | 🔲 PENDING | 330 remaining |
+
+### Files Changed
+
+- `supabase/functions/scrape-directives-riksdagen/index.ts` — Kommittébeteckning fallback chain
+- `docs/CONTEXT_PRIORITY.md` — Phase 6 status update
+- `docs/PHASE_DELTAS.md` — This entry
+
+### Next Steps
+
+1. Run batch extraction on remaining 330 committee reports
+2. Historical backfill: 2024/25 propositions (full session)
+3. Historical backfill: 2020+ directives (kommittébeteckning validation)
+4. Update branch doc: `phase-6-riksdagen-api-migration.md`
+
+---
+
 ## 2026-01-28: Phase 5.4 Committee Reports + Laws — COMPLETE
 
 **Status:** ✅ COMPLETE — All scrapers operational, data validated
