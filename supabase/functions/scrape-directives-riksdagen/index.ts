@@ -22,6 +22,8 @@ interface RiksdagenDocument {
   datum: string;        // Publication date
   beteckning: string;   // Document designation (e.g., "10")
   undertitel?: string;
+  subtitel?: string;    // May contain kommittébeteckning
+  tempbeteckning?: string; // Committee designation (e.g., "I 2020:01")
   doktyp: string;
 }
 
@@ -160,10 +162,29 @@ function extractPdfUrl(status: DocumentStatus): string | null {
 }
 
 function extractKommittebeteckning(status: DocumentStatus): string | null {
-  // Extract committee designation from dokuppgift
+  // Primary: tempbeteckning field contains committee designation (e.g., "I 2020:01")
+  const tempbet = status.dokumentstatus.dokument.tempbeteckning;
+  if (tempbet && tempbet.trim()) {
+    return tempbet.trim();
+  }
+  
+  // Fallback: Check dokuppgift for kommittebeteckning
   const uppgifter = normalizeArray(status.dokumentstatus.dokuppgift?.uppgift);
   const kommitte = uppgifter.find(u => u.kod === "kommittebeteckning");
-  return kommitte?.text || null;
+  if (kommitte?.text) {
+    return kommitte.text;
+  }
+  
+  // Fallback: Parse from subtitel (e.g., "kommittébeteckning: I 2020:01")
+  const subtitel = status.dokumentstatus.dokument.subtitel;
+  if (subtitel) {
+    const match = subtitel.match(/kommitt[eé]beteckning:\s*([A-Za-zÅÄÖåäö]+\s*\d{4}:\d+)/i);
+    if (match) {
+      return match[1].trim();
+    }
+  }
+  
+  return null;
 }
 
 function extractCrossReferences(status: DocumentStatus): Array<{ docNumber: string; refDokId: string; refType: string; targetDocType: string }> {
