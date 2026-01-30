@@ -31,6 +31,8 @@ Maintained by: **Lovable (Architectural Authority)**
 
 ## Recent Changes (2026-01-30)
 
+- **COMPLETE:** Committee report PDF extraction pipeline verified (3 pilot docs)
+- **COMPLETE:** Kommittébeteckning extraction fix (tempbeteckning + subtitel fallbacks)
 - **IN PROGRESS:** Phase 6.1 Propositions scraper created + pilot tested (10 docs)
 - **IN PROGRESS:** Phase 6.2 Directives scraper created + pilot tested (10 docs)
 - **CREATED:** Admin UI components for Riksdagen scrapers (PropositionRiksdagenScraperTest, DirectiveRiksdagenScraperTest)
@@ -44,9 +46,10 @@ Maintained by: **Lovable (Architectural Authority)**
 | Component | Status | Notes |
 |-----------|--------|-------|
 | 6.1 Propositions Scraper | ✅ PILOT COMPLETE | 10 docs ingested, cross-refs extracted |
-| 6.2 Directives Scraper | ✅ PILOT COMPLETE | 10 docs ingested, kommittébeteckning null (expected for recent) |
+| 6.2 Directives Scraper | ✅ PILOT COMPLETE | 10 docs ingested, kommittébeteckning fixed |
 | 6.1 Admin UI | ✅ COMPLETE | PropositionRiksdagenScraperTest.tsx |
 | 6.2 Admin UI | ✅ COMPLETE | DirectiveRiksdagenScraperTest.tsx |
+| Committee Report Extraction | ✅ PILOT COMPLETE | 3 docs extracted (129, 48, 144 pages) |
 | Historical Backfill Props | 🔲 PENDING | 31,598 total available |
 | Historical Backfill Dirs | 🔲 PENDING | 6,361 total available |
 | Freshness Integration | 🔲 PENDING | 7-day dual-source verification |
@@ -57,6 +60,7 @@ Maintained by: **Lovable (Architectural Authority)**
 |--------|-------|
 | Propositions (riksdagen source) | 10 |
 | Directives (riksdagen source) | 10 |
+| Committee reports with extracted text | 3 |
 | Cross-references extracted | 6 |
 
 ---
