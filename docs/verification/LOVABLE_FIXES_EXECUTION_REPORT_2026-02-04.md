@@ -51,8 +51,8 @@
 |---|-----------|----------|----------------|
 | 1 | `supabase/functions/scrape-sou-metadata/` | Legacy scraper | EVALUATE if still needed |
 | 2 | `supabase/functions/scrape-directive-metadata/` | Legacy scraper | ARCHIVE (superseded by Riksdagen) |
-| 3 | `supabase/functions/test-org-matcher/` | Test utility | KEEP |
-| 4 | `supabase/functions/test-stage-machine/` | Test utility | KEEP |
+| 3 | `supabase/functions/test-org-matcher/` | Test utility | KEEP (documented in AGENT_RUNBOOK) |
+| 4 | `supabase/functions/test-stage-machine/` | Test utility | KEEP (documented in AGENT_RUNBOOK) |
 | 5 | `src/components/admin/PropositionScraperTest.tsx` | Superseded UI | ARCHIVE then DELETE |
 | 6 | `src/components/admin/DirectiveMetadataScraper.tsx` | Superseded UI | ARCHIVE then DELETE |
 | 7 | `src/components/admin/PropositionBatchProcessor.tsx` | Undocumented | ADD DOCS |
@@ -251,7 +251,8 @@ docs/archive/
 ├── branches/           # Completed phase branch plans
 ├── summaries/          # Phase completion summaries
 ├── audits/             # Historical audits
-└── reset-events/       # DB reset documentation
+├── reset-events/       # DB reset documentation
+└── superseded-code/    # Archived superseded components (notes only)
 ```
 
 #### 4.2 Move Historical Documents
@@ -362,9 +363,9 @@ Create `docs/DOC_INDEX.md` listing all authoritative current docs.
 
 | Role | Name | Action | Status |
 |------|------|--------|--------|
-| Head Developer | Maximilian | APPROVE plan | ✅ APPROVED (2026-02-04) |
-| Architectural Authority | Lovable | Execute fixes | 🔲 READY |
-| Execution Coder | Codex | Assist with code | 🔲 PENDING |
+| Head Developer | Maximilian | APPROVE plan | ✅ AGREE (2026-02-04) |
+| Architectural Authority | Lovable | Execute fixes | ✅ AGREE (2026-02-04) |
+| Execution Coder | Codex | Assist with code | 🔲 PENDING (will review Phase 1 edge functions) |
 
 ---
 
