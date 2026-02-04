@@ -1,17 +1,17 @@
 # Product Roadmap — Legislative Intelligence Platform
 
-**Last Updated:** 2026-01-26  
-**Current Phase:** Phase 5.6 🚀 IN PROGRESS (Remissvar Content Insights)
+**Last Updated:** 2026-02-04  
+**Current Phase:** Phase 5.6 ✅ COMPLETE (Remissvar Content Insights)
 
 ---
 
-## Recent Milestone: Phase 5.6.2 Extraction Pipeline Complete 🎉
+## Recent Milestone: Phase 5.6 Complete — Remissvar Extraction + Stance Analysis 🎉
 
-**Remissvar text extraction validated:**
-- ~467 remissvar successfully extracted (avg ~9,000 chars)
-- 8 scanned PDFs identified as extraction errors (OCR limitation)
-- ~2,949 remaining for batch processing
+**Remissvar text extraction validated (98.4% coverage):**
+- 3,366 remissvar successfully extracted (avg ~9,000 chars)
+- 54 scanned PDFs identified as extraction errors (OCR limitation)
 - Admin UI supports multi-batch execution with pagination
+- Keyword-based stance detection operational
 
 ---
 
@@ -396,17 +396,17 @@ These were **NOT** implemented until MVP is validated:
 
 **Goal:** Expand beyond SOUs to build comprehensive legislative process graph.
 
-### Current Database Metrics (2026-01-20)
+### Current Database Metrics (2026-02-04)
 
 | Table | Count | Notes |
 |-------|-------|-------|
-| **Documents** | 127 total | 61 SOUs, 56 directives, 10 propositions |
+| **Documents** | 863 total | 61 SOUs, 183 directives, 126 propositions, 446 committee reports, 47 laws |
 | **Processes** | 127 | All with linked documents |
-| **Entities** | 1,473 | Organizations (cleaned, deduplicated) |
-| **Timeline Events** | 723 | Extracted with citations |
-| **Document References** | 587 | Cross-document citations (76 resolved) |
+| **Entities** | 1,760 | Organizations (cleaned, deduplicated) |
+| **Timeline Events** | 1,050 | Extracted with citations |
+| **Document References** | 1,083 | Cross-document citations (84 resolved, 7.8%) |
 | **Remiss Documents** | 54 | All scraped with remissinstanser PDFs |
-| **Remiss Responses** | 3,424 | 99.91% linked to entities |
+| **Remiss Responses** | 3,424 | 98.4% text extracted, 99.91% linked to entities |
 | **Remiss Invitees** | 4,321 | 100% linked to entities |
 
 ### Completion Summary
@@ -416,13 +416,14 @@ These were **NOT** implemented until MVP is validated:
 | **5.1** | ✅ COMPLETE | Database Schema + Timeline Agent v2.1 |
 | **5.2** | ✅ COMPLETE | Propositions End-to-End |
 | **5.3** | ✅ COMPLETE | Remisser + Remissvar + Entity Pipeline |
-| **5.5.1** | ✅ COMPLETE | Reference Resolution (76 resolved) |
+| **5.4** | ✅ COMPLETE | Committee Reports + Laws (Riksdagen API) |
+| **5.5.1** | ✅ COMPLETE | Reference Resolution (84 resolved) |
 | **5.5.2** | ✅ COMPLETE | Directive-SOU Linking (8 links) |
 | **5.5.3** | ✅ COMPLETE | Participation Dashboard MVP |
 | **5.5.4** | ✅ COMPLETE | Velocity Dashboard (ministry bug fixed) |
 | **5.6.1** | ✅ COMPLETE | Remissvar Extraction Schema |
 | **5.6.2** | ✅ COMPLETE | PDF Extraction Pipeline + Admin UI |
-| **5.6.3** | 🔲 PLANNING | Keyword-based Stance Detection |
+| **5.6.3** | ✅ COMPLETE | Keyword-based Stance Detection |
 
 ### Phase 5.5: Cross-Document Insights Foundation
 
@@ -434,31 +435,34 @@ These were **NOT** implemented until MVP is validated:
 - Participation Dashboard: `/insights/participation` with full aggregation
 - Velocity Dashboard: `/insights/velocity`
 
-### Phase 5.6: Remissvar Content Insights
+### Phase 5.4: Committee Reports + Laws ✅ COMPLETE
 
-**Status:** IN PROGRESS (Extraction Complete, Stance Detection Planning)  
+**Status:** COMPLETE (2026-01)  
+**Documentation:** `docs/development/branches/phase-5.4-committee-reports-laws.md`
+
+**Delivered:**
+- Riksdagen API integration for committee reports (446 scraped)
+- Riksdagen API integration for laws (47 scraped)
+- Committee report PDF extraction pipeline
+- Timeline events derived from committee report `dokaktivitet`
+- Cross-linking to propositions via `has_committee_report` reference type
+
+### Phase 5.6: Remissvar Content Insights ✅ COMPLETE
+
+**Status:** COMPLETE (2026-02)  
 **Documentation:** `docs/development/branches/phase-5.6-content-insights.md`
 
-**Delivered (5.6.1-5.6.2):**
+**Delivered (5.6.1-5.6.3):**
 - Schema: `extraction_status`, `raw_content`, `extracted_at` columns
 - Edge function: `process-remissvar-pdf` with batch processing
 - Admin UI: Multi-batch extraction with pagination beyond 1000-row limit
-- Extraction results: ~467 ok (avg ~9K chars), 8 errors (scanned PDFs), ~2,949 pending
+- Extraction results: 3,366 extracted (98.4%), 54 errors (scanned PDFs requiring OCR)
+- Keyword-based stance detection: `stance_summary`, `stance_signals` columns operational
+- AI stance classification via `classify-stance-ai` edge function
 
 **Known Limitation:**
-- 8 scanned/image PDFs cannot be extracted (require OCR, not text layer)
-- Organizations: Sametinget (5), SMHI (1), Uppsala universitet (1), other (1)
-- Error rate: 0.2% — acceptable, documented for future OCR enhancement
-
-**Next (5.6.3):**
-- Keyword-based stance detection (Swedish terms: instämmer, tillstyrker, avstyrker)
-- Schema: `stance_summary`, `stance_signals` columns
-
-### Next: Phase 5.4 — Committee Reports + Laws
-
-1. **Committee Reports** — Scrape riksdagen.se/betankanden
-2. **Laws** — Scrape riksdagen.se/lagar
-3. Link to source propositions
+- 54 scanned/image PDFs cannot be extracted (require OCR, not text layer)
+- Error rate: 1.6% — acceptable, documented for future OCR enhancement
 
 ### Database Schema Changes (Implemented)
 - `lifecycle_stage` column on documents ✅
