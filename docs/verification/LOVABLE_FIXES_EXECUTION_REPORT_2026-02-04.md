@@ -96,10 +96,16 @@ Rationale: Phase 1 removes critical data gaps; Phase 3 fixes documentation drift
 
 | Action | Owner | Dependency | Status |
 |--------|-------|------------|--------|
-| Create `process-proposition-pdf` edge function (reuse pdf-extractor.ts pattern) | Lovable | None | 🔲 TODO |
+| Create `process-proposition-pdf` edge function (reuse pdf-extractor.ts pattern) | Lovable | None | ✅ DONE (2026-02-04) |
+| Add config.toml entry for new function | Lovable | 1.1.1 | ✅ DONE (2026-02-04) |
 | Add admin UI for batch proposition extraction | Lovable | 1.1.1 | 🔲 TODO |
 | Run extraction on 116 propositions with pdf_url | Max (trigger) | 1.1.1-2 | 🔲 TODO |
 | Verify 0 missing raw_content where PDF exists | Lovable | 1.1.3 | 🔲 TODO |
+
+**Edge Function Created:** `supabase/functions/process-proposition-pdf/index.ts`
+- Uses shared `pdf-extractor.ts` and `text-utils.ts`
+- Batch processing with `limit` and `dry_run` parameters
+- Handles both Riksdagen and regeringen.se PDF URLs
 
 **Root Cause:** Riksdagen API text endpoint returns empty for most propositions. PDF extraction is the reliable path.
 
@@ -116,10 +122,28 @@ AND pdf_url IS NOT NULL;
 
 | Action | Owner | Dependency | Status |
 |--------|-------|------------|--------|
-| Create `process-directive-pdf` edge function | Lovable | None | 🔲 TODO |
-| Add admin UI for batch directive extraction | Lovable | 1.2.1 | 🔲 TODO |
+| Create `process-directive-pdf` edge function | Lovable | None | ✅ DONE (2026-02-04) |
+| Add config.toml entry for new function | Lovable | 1.2.1 | ✅ DONE (2026-02-04) |
+| **Investigate missing pdf_url for directives** | Lovable | N/A | ⚠️ BLOCKER FOUND |
+| Add admin UI for batch directive extraction | Lovable | 1.2.3 | 🔲 TODO |
 | Run extraction on directives with pdf_url | Max (trigger) | 1.2.1-2 | 🔲 TODO |
 | Verify improved extraction coverage | Lovable | 1.2.3 | 🔲 TODO |
+
+**Edge Function Created:** `supabase/functions/process-directive-pdf/index.ts`
+- Uses shared `pdf-extractor.ts` and `text-utils.ts`
+- Batch processing with `limit` and `dry_run` parameters
+- Handles both Riksdagen and regeringen.se PDF URLs
+
+**⚠️ BLOCKER FOUND (2026-02-04):**
+Database verification shows **0 directives have pdf_url set**:
+```
+directive: 127 missing raw_content, 0 with pdf_url
+proposition: 116 missing raw_content, 116 with pdf_url  
+```
+The Riksdagen API scraper is not populating `pdf_url` for directives. This requires investigation:
+1. Does the Riksdagen API provide directive PDFs?
+2. Should we fall back to regeringen.se for directive PDFs?
+3. Is raw_content available via the Riksdagen API `dokument` endpoint?
 
 **Note:** Some directives may not have PDFs (text-only from Riksdagen API). These are expected gaps.
 
@@ -329,10 +353,12 @@ Create `docs/DOC_INDEX.md` listing all authoritative current docs.
 ## Execution Checklist
 
 ### Phase 1 Checklist (Critical) — START HERE
-- [ ] Create `process-proposition-pdf` edge function
-- [ ] Create `process-directive-pdf` edge function
-- [ ] Run lifecycle_stage backfill migration
+- [x] Create `process-proposition-pdf` edge function ✅ (2026-02-04)
+- [x] Create `process-directive-pdf` edge function ✅ (2026-02-04)
+- [x] Run lifecycle_stage backfill migration ✅ (2026-02-04)
 - [ ] Re-extract HC01FiU1
+- [ ] Trigger batch extraction for propositions
+- [ ] Trigger batch extraction for directives
 - [ ] Verify all success criteria SQL queries pass
 
 ### Phase 3 Checklist (Documentation) — PARALLEL WITH P1
