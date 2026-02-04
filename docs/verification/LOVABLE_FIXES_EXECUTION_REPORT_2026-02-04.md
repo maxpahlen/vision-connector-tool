@@ -124,36 +124,41 @@ AND pdf_url IS NOT NULL;
 |--------|-------|------------|--------|
 | Create `process-directive-pdf` edge function | Lovable | None | ✅ DONE (2026-02-04) |
 | Add config.toml entry for new function | Lovable | 1.2.1 | ✅ DONE (2026-02-04) |
-| **Investigate missing pdf_url for directives** | Lovable | N/A | ⚠️ BLOCKER FOUND |
-| Add admin UI for batch directive extraction | Lovable | 1.2.3 | 🔲 TODO |
-| Run extraction on directives with pdf_url | Max (trigger) | 1.2.1-2 | 🔲 TODO |
-| Verify improved extraction coverage | Lovable | 1.2.3 | 🔲 TODO |
+| **Investigate missing pdf_url for directives** | Lovable | N/A | ✅ INVESTIGATED |
+| **Create process-directive-text edge function** | Lovable | 1.2.3 | 🔲 TODO |
+| Run text extraction on 127 riksdagen directives | Max (trigger) | 1.2.4 | 🔲 TODO |
+| Verify improved extraction coverage | Lovable | 1.2.5 | 🔲 TODO |
 
 **Edge Function Created:** `supabase/functions/process-directive-pdf/index.ts`
 - Uses shared `pdf-extractor.ts` and `text-utils.ts`
-- Batch processing with `limit` and `dry_run` parameters
-- Handles both Riksdagen and regeringen.se PDF URLs
+- For regeringen.se directives (56 total) that have pdf_url
 
-**⚠️ BLOCKER FOUND (2026-02-04):**
-Database verification shows **0 directives have pdf_url set**:
+**✅ INVESTIGATION COMPLETE (2026-02-04):**
+
+**Root Cause:** Riksdagen API does NOT provide PDF attachments for directives (`dokbilaga` absent).
+
+Database breakdown:
 ```
-directive: 127 missing raw_content, 0 with pdf_url
-proposition: 116 missing raw_content, 116 with pdf_url  
+56 directives from regeringen.se → HAVE pdf_url ✅ (already extracted)
+127 directives from riksdagen.se → NO pdf_url (API doesn't provide PDFs)
 ```
-The Riksdagen API scraper is not populating `pdf_url` for directives. This requires investigation:
-1. Does the Riksdagen API provide directive PDFs?
-2. Should we fall back to regeringen.se for directive PDFs?
-3. Is raw_content available via the Riksdagen API `dokument` endpoint?
 
-**Note:** Some directives may not have PDFs (text-only from Riksdagen API). These are expected gaps.
+**Solution:** The Riksdagen API provides full text via `dokument_url_text` endpoint:
+- Example: `https://data.riksdagen.se/dokument/HCB1122/text`
+- This returns HTML-formatted text that can be sanitized and stored
 
-**Success Criteria:**
+**Proposed Fix:** Create `process-directive-text` edge function that:
+1. Queries directives with `metadata->>'source' = 'riksdagen'` AND `raw_content IS NULL`
+2. Fetches text from `https://data.riksdagen.se/dokument/{riksdagen_id}/text`
+3. Sanitizes HTML to plain text
+4. Updates `raw_content` and `processed_at`
+
+**Updated Success Criteria:**
 ```sql
 SELECT COUNT(*) FROM documents 
 WHERE doc_type = 'directive' 
-AND raw_content IS NULL 
-AND pdf_url IS NOT NULL;
--- Expected: 0 (or near-zero)
+AND raw_content IS NULL;
+-- Expected: 0
 ```
 
 #### 1.3 Directives: 56 Missing lifecycle_stage
