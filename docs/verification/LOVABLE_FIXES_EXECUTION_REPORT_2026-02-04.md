@@ -136,11 +136,11 @@ AND pdf_url IS NOT NULL;
 
 | Action | Owner | Dependency | Status |
 |--------|-------|------------|--------|
-| Run SQL migration to backfill lifecycle_stage | Lovable | Approval | 🔲 TODO |
-| Update scraper to set lifecycle_stage on insert | Lovable | 1.3.1 | 🔲 TODO |
-| Verify 0 NULL lifecycle_stage for directives | Lovable | 1.3.1 | 🔲 TODO |
+| Run SQL migration to backfill lifecycle_stage | Lovable | Approval | ✅ DONE (2026-02-04) |
+| Update scraper to set lifecycle_stage on insert | Lovable | 1.3.1 | ✅ Already implemented |
+| Verify 0 NULL lifecycle_stage for directives | Lovable | 1.3.1 | ✅ VERIFIED |
 
-**Migration SQL:**
+**Migration SQL (EXECUTED):**
 ```sql
 UPDATE documents 
 SET lifecycle_stage = 'directive' 
@@ -148,11 +148,11 @@ WHERE doc_type = 'directive'
 AND lifecycle_stage IS NULL;
 ```
 
-**Success Criteria:**
+**Success Criteria (VERIFIED):**
 ```sql
 SELECT COUNT(*) FROM documents 
 WHERE doc_type = 'directive' AND lifecycle_stage IS NULL;
--- Expected: 0
+-- Result: 0 ✅
 ```
 
 #### 1.4 Committee Reports: 1 Missing raw_content (HC01FiU1)
@@ -205,13 +205,13 @@ SELECT LENGTH(raw_content) > 0 FROM documents WHERE doc_number = 'HC01FiU1';
 
 | Field | Old Value | New Value | Status |
 |-------|-----------|-----------|--------|
-| Total documents | 127 | 863 | 🔲 TODO |
-| Timeline events | 723 | 1,050 | 🔲 TODO |
-| Document references | 587 | 1,083 | 🔲 TODO |
-| Entities | 1,473 | 1,760 | 🔲 TODO |
-| Phase 5.4 status | "Next" | ✅ COMPLETE | 🔲 TODO |
-| Phase 5.6.2 stats | ~467 (14%) | 3,366 (98.4%) | 🔲 TODO |
-| Phase 5.6.3 status | "PLANNING" | ✅ COMPLETE | 🔲 TODO |
+| Total documents | 127 | 863 | ✅ DONE |
+| Timeline events | 723 | 1,050 | ✅ DONE |
+| Document references | 587 | 1,083 | ✅ DONE |
+| Entities | 1,473 | 1,760 | ✅ DONE |
+| Phase 5.4 status | "Next" | ✅ COMPLETE | ✅ DONE |
+| Phase 5.6.2 stats | ~467 (14%) | 3,366 (98.4%) | ✅ DONE |
+| Phase 5.6.3 status | "PLANNING" | ✅ COMPLETE | ✅ DONE |
 
 #### 3.2 Other Doc Updates
 

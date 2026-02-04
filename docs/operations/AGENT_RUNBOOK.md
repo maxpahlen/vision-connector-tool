@@ -718,3 +718,47 @@ WHERE status = 'completed'
 GROUP BY agent_name
 ORDER BY estimated_cost_usd DESC;
 ```
+
+---
+
+## Test Utilities (Development Only)
+
+These edge functions are used for unit testing shared modules and are **not** part of production workflows.
+
+### test-org-matcher
+
+**Purpose:** Runs unit tests for `organization-matcher.ts` (fuzzy name matching, normalization).
+
+**Trigger:** Manual API call only.
+
+**When to use:**
+- After modifying `organization-matcher.ts` logic
+- To verify fuzzy matching thresholds
+- To debug entity linking issues
+
+**Invocation:**
+```bash
+curl -X POST 'https://[PROJECT_REF].supabase.co/functions/v1/test-org-matcher' \
+  -H 'Authorization: Bearer [ANON_KEY]'
+```
+
+**Expected output:** JSON with test results (`passed`, `failed`, `summary`).
+
+### test-stage-machine
+
+**Purpose:** Runs unit tests for `process-stage-machine.ts` (state transitions, stage determination).
+
+**Trigger:** Manual API call only.
+
+**When to use:**
+- After modifying stage machine logic
+- To verify state transition rules
+- To debug process stage issues
+
+**Invocation:**
+```bash
+curl -X POST 'https://[PROJECT_REF].supabase.co/functions/v1/test-stage-machine' \
+  -H 'Authorization: Bearer [ANON_KEY]'
+```
+
+**Expected output:** JSON with test results (`passed`, `failed`, `summary`).
