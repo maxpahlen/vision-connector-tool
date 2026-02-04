@@ -1,9 +1,9 @@
 # Fix Execution Report
 
 **Date:** 2026-02-04  
-**Message Type:** APPROVAL REQUEST | Phase: APPROVAL  
+**Message Type:** EXECUTION PLAN | Phase: APPROVAL  
 **Prepared By:** Lovable (Architectural Authority)  
-**Approval Required From:** Maximilian (Head Developer)
+**Approval Status:** ✅ APPROVED by Maximilian (2026-02-04)
 
 ---
 
@@ -41,19 +41,58 @@
 | Category | Count | Status |
 |----------|-------|--------|
 | Total code items verified | 66 | 100% match |
-| Orphan code (undocumented) | 13 | Needs review |
-| Superseded components | 4 | Archive candidates |
+| Orphan code (undocumented) | 13 | See detailed list below |
+| Superseded components | 4 | Archive first, then delete |
 | Doc metrics outdated | 4 | P0 fix |
+
+#### Orphan Code Breakdown (13 items)
+
+| # | Code File | Category | Recommendation |
+|---|-----------|----------|----------------|
+| 1 | `supabase/functions/scrape-sou-metadata/` | Legacy scraper | EVALUATE if still needed |
+| 2 | `supabase/functions/scrape-directive-metadata/` | Legacy scraper | ARCHIVE (superseded by Riksdagen) |
+| 3 | `supabase/functions/test-org-matcher/` | Test utility | KEEP |
+| 4 | `supabase/functions/test-stage-machine/` | Test utility | KEEP |
+| 5 | `src/components/admin/PropositionScraperTest.tsx` | Superseded UI | ARCHIVE then DELETE |
+| 6 | `src/components/admin/DirectiveMetadataScraper.tsx` | Superseded UI | ARCHIVE then DELETE |
+| 7 | `src/components/admin/PropositionBatchProcessor.tsx` | Undocumented | ADD DOCS |
+| 8 | `src/components/admin/PropositionTextExtractorTest.tsx` | Undocumented | ADD DOCS |
+| 9 | `src/components/admin/ValidationDashboard.tsx` | Undocumented | ADD DOCS |
+| 10 | `src/components/admin/SouUrlRepairTool.tsx` | Undocumented | ADD DOCS |
+| 11 | `src/components/admin/SouLagstiftningskedjaScraper.tsx` | Undocumented | ADD DOCS |
+| 12 | `src/hooks/useDocuments.ts` | Undocumented | ADD DOCS |
+| 13 | `src/hooks/useDocumentCount.ts` | Undocumented | ADD DOCS |
+
+---
+
+## Decisions from Maximilian (2026-02-04)
+
+### Q1: Priority — Propositions or Directives first?
+**Decision:** ✅ **Propositions first**  
+Rationale: 92% missing vs 69%, and propositions are central to legislative graph linking.
+
+### Q2: Document reference resolution target?
+**Decision:** ✅ **Staged targets**
+- Short-term: 20–30% after corpus expansion + resolver re-run
+- Long-term: 50%+ once historical corpus grows
+
+### Q3: DELETE or ARCHIVE superseded components?
+**Decision:** ✅ **Archive first, then delete after confirmation**  
+The 4 superseded items will be archived to `docs/archive/superseded-code/` with notes before deletion.
+
+### Q4: Execute all 5 phases or prioritize?
+**Decision:** ✅ **Prioritize Phase 1 + Phase 3 first**  
+Rationale: Phase 1 removes critical data gaps; Phase 3 fixes documentation drift. Then proceed to Phase 2/4/5.
 
 ---
 
 ## Fix Plan (5 Phases)
 
-### Phase 1: Critical Data Gaps (DB/Pipeline Fixes)
+### Phase 1: Critical Data Gaps (DB/Pipeline Fixes) — **PRIORITY**
 
 **Goal:** Zero critical missing fields where data should exist.
 
-#### 1.1 Propositions: 116/126 Missing raw_content
+#### 1.1 Propositions: 116/126 Missing raw_content — **FIRST PRIORITY**
 
 | Action | Owner | Dependency | Status |
 |--------|-------|------------|--------|
@@ -152,12 +191,13 @@ SELECT LENGTH(raw_content) > 0 FROM documents WHERE doc_number = 'HC01FiU1';
 - 999 unresolved with target_doc_number
 
 **Success Criteria:**
-- Resolution rate > 30% (or justified threshold based on corpus analysis)
+- Short-term: Resolution rate > 20–30%
+- Long-term: Resolution rate > 50%
 - Clear documentation of why remaining references cannot be resolved
 
 ---
 
-### Phase 3: Documentation Corrections
+### Phase 3: Documentation Corrections — **PRIORITY**
 
 **Goal:** All planning docs reflect current reality.
 
@@ -192,6 +232,7 @@ SELECT LENGTH(raw_content) > 0 FROM documents WHERE doc_number = 'HC01FiU1';
 | ValidationDashboard tool | AGENT_RUNBOOK.md | 🔲 TODO |
 | SouUrlRepairTool | AGENT_RUNBOOK.md | 🔲 TODO |
 | SouLagstiftningskedjaScraper | AGENT_RUNBOOK.md | 🔲 TODO |
+| PropositionBatchProcessor | AGENT_RUNBOOK.md | 🔲 TODO |
 
 **Success Criteria:**
 - All 6 conflicts from Doc Audit resolved
@@ -245,14 +286,14 @@ Create `docs/DOC_INDEX.md` listing all authoritative current docs.
 
 **Goal:** Zero undocumented/orphan code.
 
-#### 5.1 Superseded Components (Decision Required)
+#### 5.1 Superseded Components (ARCHIVE FIRST)
 
-| Component | Superseded By | Recommendation | Decision |
-|-----------|---------------|----------------|----------|
-| `PropositionScraperTest.tsx` | `PropositionRiksdagenScraperTest.tsx` | DELETE | 🔲 PENDING |
-| `DirectiveMetadataScraper.tsx` | `DirectiveRiksdagenScraperTest.tsx` | DELETE | 🔲 PENDING |
-| `scrape-sou-metadata/` | N/A (still used?) | EVALUATE | 🔲 PENDING |
-| `scrape-directive-metadata/` | `scrape-directives-riksdagen/` | DELETE | 🔲 PENDING |
+| Component | Superseded By | Action | Status |
+|-----------|---------------|--------|--------|
+| `PropositionScraperTest.tsx` | `PropositionRiksdagenScraperTest.tsx` | ARCHIVE → DELETE | 🔲 TODO |
+| `DirectiveMetadataScraper.tsx` | `DirectiveRiksdagenScraperTest.tsx` | ARCHIVE → DELETE | 🔲 TODO |
+| `scrape-sou-metadata/` | N/A | EVALUATE if still used | 🔲 TODO |
+| `scrape-directive-metadata/` | `scrape-directives-riksdagen/` | ARCHIVE → DELETE | 🔲 TODO |
 
 #### 5.2 Undocumented Admin Tools (Add Docs)
 
@@ -267,27 +308,33 @@ Create `docs/DOC_INDEX.md` listing all authoritative current docs.
 | useDocumentCount hook | `src/hooks/` | README or inline | 🔲 TODO |
 
 **Success Criteria:**
-- All 4 superseded components reviewed and archived/deleted
+- All 4 superseded components archived with notes
 - All 7 undocumented items now documented
+
+---
+
+## Execution Order (Per Max's Decision)
+
+| Order | Phase | Priority | Rationale |
+|-------|-------|----------|-----------|
+| 1 | Phase 1 | 🔴 HIGH | Critical data gaps |
+| 2 | Phase 3 | 🔴 HIGH | Documentation drift |
+| 3 | Phase 4 | 🟡 MEDIUM | Doc reorganization |
+| 4 | Phase 2 | 🟡 MEDIUM | Reference resolution |
+| 5 | Phase 5 | 🟢 LOW | Code cleanup |
 
 ---
 
 ## Execution Checklist
 
-### Phase 1 Checklist (Critical)
+### Phase 1 Checklist (Critical) — START HERE
 - [ ] Create `process-proposition-pdf` edge function
 - [ ] Create `process-directive-pdf` edge function
 - [ ] Run lifecycle_stage backfill migration
 - [ ] Re-extract HC01FiU1
 - [ ] Verify all success criteria SQL queries pass
 
-### Phase 2 Checklist (Moderate)
-- [ ] Analyze reference corpus gaps
-- [ ] Decide on corpus expansion strategy
-- [ ] Re-run reference resolver
-- [ ] Document new resolution rate
-
-### Phase 3 Checklist (Documentation)
+### Phase 3 Checklist (Documentation) — PARALLEL WITH P1
 - [ ] Update PRODUCT_ROADMAP.md with all new metrics
 - [ ] Update phase-5.6-content-insights.md
 - [ ] Update PHASE_5_IMPLEMENTATION_PLAN.md
@@ -298,42 +345,35 @@ Create `docs/DOC_INDEX.md` listing all authoritative current docs.
 - [ ] Move 12 historical documents
 - [ ] Create `docs/DOC_INDEX.md`
 
+### Phase 2 Checklist (Moderate)
+- [ ] Analyze reference corpus gaps
+- [ ] Decide on corpus expansion strategy
+- [ ] Re-run reference resolver
+- [ ] Document new resolution rate
+
 ### Phase 5 Checklist (Cleanup)
-- [ ] Get Max decision on 4 superseded components
+- [ ] Archive 4 superseded components
 - [ ] Add docs for 7 undocumented items
+- [ ] Confirm deletion with Max
 
 ---
 
-## Approval Gates
-
-| Phase | Can Start | Requires Approval |
-|-------|-----------|-------------------|
-| Phase 1.3 (migration) | Now | Yes - migration approval |
-| Phase 1.1-1.2 (PDF extraction) | Now | Yes - new edge functions |
-| Phase 2 | After Phase 1 | Yes - corpus expansion decision |
-| Phase 3 | Now | No - doc updates only |
-| Phase 4 | Now | No - file moves only |
-| Phase 5 | Now | Yes - delete decisions |
-
----
-
-## Sign-Off Required
+## Sign-Off
 
 | Role | Name | Action | Status |
 |------|------|--------|--------|
-| Head Developer | Maximilian | APPROVE plan | 🔲 PENDING |
-| Architectural Authority | Lovable | Execute fixes | 🔲 PENDING |
+| Head Developer | Maximilian | APPROVE plan | ✅ APPROVED (2026-02-04) |
+| Architectural Authority | Lovable | Execute fixes | 🔲 READY |
 | Execution Coder | Codex | Assist with code | 🔲 PENDING |
 
 ---
 
-## Questions for Max
+## Next Steps
 
-1. **Phase 1:** Should we prioritize propositions or directives for PDF extraction first?
-2. **Phase 2:** What's the acceptable resolution rate target? (Currently 7.8%, suggest 30%+)
-3. **Phase 5:** Confirm DELETE for the 4 superseded components?
-4. **Scope:** Should we tackle all 5 phases in sequence, or prioritize P1+P3 first?
+With Max's approval received, execution can begin:
 
----
+1. **Immediate (Lovable):** Create `process-proposition-pdf` edge function
+2. **Immediate (Lovable):** Run lifecycle_stage backfill migration
+3. **Parallel (Lovable):** Update PRODUCT_ROADMAP.md with verified metrics
 
-**Awaiting APPROVAL to proceed with execution.**
+**Ready to execute Phase 1 + Phase 3.**
