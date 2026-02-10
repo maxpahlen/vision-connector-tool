@@ -22,7 +22,7 @@ Maintained by: **Lovable (Architectural Authority)**
 | 3 | `docs/development/branches/phase-6-riksdagen-api-migration.md` | **IN PROGRESS** - Propositions & Directives migration to riksdagen.se API |
 | 4 | `docs/development/RIKSDAGEN_API_RESEARCH.md` | API patterns, field mappings, rate limiting guidance |
 | 5 | `docs/development/SCRAPER_KNOWN_ISSUES.md` | Connection reset handling, retry strategies |
-| 6 | `docs/development/branches/phase-5.6-content-insights.md` | **COMPLETE** - Remissvar content extraction + stance detection |
+| 6 | `docs/archive/branches/phase-5.6-content-insights.md` | **COMPLETE** - Remissvar content extraction + stance detection (archived) |
 | 7 | `docs/CHECKLISTS.md` | Verification requirements before sign-off |
 | 8 | `docs/DECISION_LOG.md` | Approved decisions with triple sign-off |
 | 9 | `docs/development/PRODUCT_ROADMAP.md` | Overall progress and metrics |
@@ -102,7 +102,7 @@ Maintained by: **Lovable (Architectural Authority)**
 
 ## Secondary Context (If Needed)
 
-- `docs/development/branches/phase-5.4-committee-reports-laws.md` — Committee Reports + Laws (research complete)
+- `docs/archive/branches/phase-5.4-committee-reports-laws.md` — Committee Reports + Laws (archived, research complete)
 - `docs/development/branches/phase-6-advanced-analysis.md` — Future analytics planning
 - `docs/testing/README.md` — Test philosophy and patterns
 - `docs/operations/AGENT_RUNBOOK.md` — Agent operational procedures
