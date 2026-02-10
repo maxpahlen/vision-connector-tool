@@ -272,7 +272,7 @@ Each tab should include a short guidance card at the top:
 | Scrape remiss index | Remisser | Scraping | ✅ |
 | Process remiss pages | Remisser | Scraping | ✅ |
 | Scrape SOU index | SOUs | Scraping | ✅ |
-| Lagstiftningskedja scraper | Remisser | Scraping | ✅ |
+| Remiss discovery dashboard | Remisser | Scraping | ✅ |
 | Batch text extraction (all types) | Batch | Extraction | ✅ |
 | Committee report text extraction | Parliament | Extraction | ✅ |
 | Remissvar text extraction | Remisser | Extraction | ✅ |
@@ -350,13 +350,46 @@ Each tab should include a short guidance card at the top:
 ## Success Criteria
 
 - [x] Every current admin component has a disposition (keep/move/archive/delete)
-- [ ] Admin UI structure is understandable by operation type
-- [ ] Legacy tooling is clearly isolated or archived
-- [ ] Text extraction tools are in one place
-- [ ] Agent tools are in one place
-- [ ] Scraping tools are in one place
-- [ ] Plan is executable in small safe increments
-- [ ] No loss of functionality in first pass
+- [x] Admin UI structure is understandable by operation type
+- [x] Legacy tooling is clearly isolated or archived
+- [x] Text extraction tools are in one place
+- [x] Agent tools are in one place
+- [x] Scraping tools are in one place
+- [x] Plan is executable in small safe increments
+- [x] No loss of functionality in first pass
+
+---
+
+## Phase A Execution Log (2026-02-10)
+
+### Repo-wide Usage Checks
+All archive candidates confirmed referenced ONLY in `AdminScraper.tsx` (+ own files + build cache). No hidden dependencies found.
+
+### Archived Components (moved to `src/components/admin/_archive/`)
+1. `PropositionScraperTest.tsx` — superseded by `PropositionRiksdagenScraperTest`
+2. `DirectiveMetadataScraper.tsx` — superseded by `DirectiveRiksdagenScraperTest`
+3. `PropositionTextExtractorTest.tsx` — superseded by `BatchTextExtractor`
+4. `PropositionBatchProcessor.tsx` — superseded by `BatchTextExtractor`
+5. `RemissScraperTest.tsx` — superseded by `RemissIndexScraperTest`
+6. `SouUrlRepairTool.tsx` — one-time repair tool, no longer needed
+7. `SouLagstiftningskedjaScraper.tsx` — limited utility, secondary to RemissIndex approach
+8. `IntegrationTest.tsx` — never imported, unused
+9. `ScraperTest.tsx` — never imported, unused
+10. `TimelineAgentTest.tsx` — v1 agent, superseded by `TimelineAgentV2Test`
+
+### New Tab Structure (6 tabs)
+| Tab | Components |
+|-----|-----------|
+| Dashboard | ValidationDashboard |
+| Scraping | PropositionRiksdagenScraperTest, DirectiveRiksdagenScraperTest, CommitteeReportsScraperTest, LawsScraperTest, ScraperControls, RemissIndexScraperTest, RemissDiscoveryDashboard, ProcessRemissPagesTest |
+| Extraction | BatchTextExtractor, DocumentTextExtractor, CommitteeReportTextExtractor, RemissvarTextExtractorTest |
+| Agents | TimelineAgentV2Test, HeadDetectiveTest, MetadataAgentTest, PropositionAgentTest, RemissEntityLinkerTest, RemissvarStanceAnalyzerTest, EntityMatchApprovalQueue |
+| Monitoring | TaskQueueMonitor, ProcessList, DocumentList |
+| System | StateMachineTest, system info card |
+
+### Files Changed
+- `src/pages/AdminScraper.tsx` — complete rewrite (9 tabs → 6 workflow tabs)
+- 10 files moved to `src/components/admin/_archive/`
 
 ---
 
@@ -365,5 +398,5 @@ Each tab should include a short guidance card at the top:
 | Role | Name | Status | Date |
 |------|------|--------|------|
 | Proposer | Lovable | ✅ Complete | 2026-02-10 |
-| Approver | Max | Pending | — |
-| Executor | Lovable (Phase A) | Pending | — |
+| Approver | Max | ✅ AGREE | 2026-02-10 |
+| Executor | Lovable (Phase A) | ✅ Complete | 2026-02-10 |
