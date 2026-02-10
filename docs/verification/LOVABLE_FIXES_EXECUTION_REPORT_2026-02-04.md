@@ -125,13 +125,21 @@ AND pdf_url IS NOT NULL;
 | Create `process-directive-pdf` edge function | Lovable | None | ✅ DONE (2026-02-04) |
 | Add config.toml entry for new function | Lovable | 1.2.1 | ✅ DONE (2026-02-04) |
 | **Investigate missing pdf_url for directives** | Lovable | N/A | ✅ INVESTIGATED |
-| **Create process-directive-text edge function** | Lovable | 1.2.3 | 🔲 TODO |
+| **Create process-directive-text edge function** | Lovable | 1.2.3 | ✅ DONE (2026-02-10) |
 | Run text extraction on 127 riksdagen directives | Max (trigger) | 1.2.4 | 🔲 TODO |
 | Verify improved extraction coverage | Lovable | 1.2.5 | 🔲 TODO |
 
 **Edge Function Created:** `supabase/functions/process-directive-pdf/index.ts`
 - Uses shared `pdf-extractor.ts` and `text-utils.ts`
 - For regeringen.se directives (56 total) that have pdf_url
+
+**Edge Function Created:** `supabase/functions/process-directive-text/index.ts`
+- Fetches text from `https://data.riksdagen.se/dokument/{riksdagen_id}.text` (dot format, confirmed correct)
+- Strips HTML tags with `stripHtmlTags()`, then sanitizes with shared `sanitizeText()`
+- Guards: skips redirect pages (`<!DOCTYPE`/`<html` prefix) and responses < 50 chars
+- Filters to `metadata->>'source' = 'riksdagen'` in code
+- Supports `limit`, `dry_run`, `document_id` parameters
+- Rate limiting: 500ms between requests, 1000ms initial delay, exponential backoff with jitter
 
 **✅ INVESTIGATION COMPLETE (2026-02-04):**
 
@@ -143,15 +151,7 @@ Database breakdown:
 127 directives from riksdagen.se → NO pdf_url (API doesn't provide PDFs)
 ```
 
-**Solution:** The Riksdagen API provides full text via `dokument_url_text` endpoint:
-- Example: `https://data.riksdagen.se/dokument/HCB1122/text`
-- This returns HTML-formatted text that can be sanitized and stored
-
-**Proposed Fix:** Create `process-directive-text` edge function that:
-1. Queries directives with `metadata->>'source' = 'riksdagen'` AND `raw_content IS NULL`
-2. Fetches text from `https://data.riksdagen.se/dokument/{riksdagen_id}/text`
-3. Sanitizes HTML to plain text
-4. Updates `raw_content` and `processed_at`
+**Solution:** Text extraction via `.text` endpoint (NOT `/text` — dot format confirmed via `scrape-laws/index.ts`).
 
 **Updated Success Criteria:**
 ```sql
