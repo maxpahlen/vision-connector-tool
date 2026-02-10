@@ -9,6 +9,7 @@ import { TaskQueueMonitor } from '@/components/admin/TaskQueueMonitor';
 import { ProcessList } from '@/components/admin/ProcessList';
 import { DocumentList } from '@/components/admin/DocumentList';
 import { DocumentTextExtractor } from '@/components/admin/DocumentTextExtractor';
+import { BatchTextExtractor } from '@/components/admin/BatchTextExtractor';
 import { PropositionScraperTest } from '@/components/admin/PropositionScraperTest';
 import { PropositionTextExtractorTest } from '@/components/admin/PropositionTextExtractorTest';
 import { PropositionAgentTest } from '@/components/admin/PropositionAgentTest';
@@ -172,11 +173,12 @@ export default function AdminScraper() {
             <CardHeader>
               <CardTitle>Batch Processing</CardTitle>
               <CardDescription>
-                Process propositions in batches of 5: text extraction → process setup → Timeline Agent → Metadata Agent
+                Text extraction and batch processing for all document types
               </CardDescription>
             </CardHeader>
           </Card>
           
+          <BatchTextExtractor />
           <PropositionBatchProcessor />
         </TabsContent>
 
