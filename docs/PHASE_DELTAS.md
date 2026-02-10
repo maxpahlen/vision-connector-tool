@@ -1,5 +1,46 @@
 # Phase Deltas
 
+## 2026-02-10: Admin UI Phase A Cleanup — COMPLETE
+
+**Status:** ✅ COMPLETE — Workflow-based tab architecture implemented
+
+### Summary
+
+Restructured Admin UI from 9 phase/source-based tabs to 6 workflow-based tabs: Dashboard, Scraping, Extraction, Agents, Monitoring, System. Added run-order guidance cards to each workflow tab.
+
+### Changes
+
+| Action | Component | Destination |
+|--------|-----------|-------------|
+| Kept | ValidationDashboard | Dashboard tab |
+| Moved | All scrapers | Scraping tab |
+| Moved | All text extractors | Extraction tab |
+| Moved | All AI agents + entity linking | Agents tab |
+| Moved | TaskQueueMonitor, ProcessList, DocumentList | Monitoring tab |
+| Moved | StateMachineTest | System tab |
+| Archived | 10 legacy components | `src/components/admin/_archive/` |
+
+### Archived Components
+
+- PropositionScraperTest.tsx (superseded by PropositionRiksdagenScraperTest)
+- DirectiveMetadataScraper.tsx (superseded by DirectiveRiksdagenScraperTest)
+- PropositionTextExtractorTest.tsx (superseded by BatchTextExtractor)
+- PropositionBatchProcessor.tsx (superseded by BatchTextExtractor)
+- RemissScraperTest.tsx (superseded by RemissIndexScraperTest)
+- SouUrlRepairTool.tsx (one-time repair, no longer needed)
+- SouLagstiftningskedjaScraper.tsx (superseded by head-detective agent)
+- IntegrationTest.tsx (unused)
+- ScraperTest.tsx (unused)
+- TimelineAgentTest.tsx (v1, superseded by TimelineAgentV2Test)
+
+### Files Modified
+
+- `src/pages/AdminScraper.tsx` — Rewritten with 6-tab workflow architecture
+- `src/components/admin/_archive/` — 10 components archived
+- `docs/verification/LOVABLE_ADMIN_UI_CLEANUP_PLAN_2026-02-10.md` — Execution log updated
+
+---
+
 ## 2026-02-10: Phase 1.2 — `process-directive-text` Edge Function Created
 
 **Status:** ✅ COMPLETE — Function deployed, ready for batch execution

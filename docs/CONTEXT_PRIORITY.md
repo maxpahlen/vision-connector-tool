@@ -1,6 +1,6 @@
 # Context Priority
 
-**Last Updated:** 2026-01-30  
+**Last Updated:** 2026-02-10  
 **Current Phase:** 6.1/6.2 (Riksdagen API Migration) — IN PROGRESS
 
 ---
@@ -29,15 +29,14 @@ Maintained by: **Lovable (Architectural Authority)**
 
 ---
 
-## Recent Changes (2026-01-30)
+## Recent Changes (2026-02-10)
 
+- **COMPLETE:** Admin UI Phase A cleanup — 9 tabs → 6 workflow-based tabs (Dashboard, Scraping, Extraction, Agents, Monitoring, System)
+- **COMPLETE:** 10 legacy components archived to `src/components/admin/_archive/`
+- **COMPLETE:** Run-order guidance cards added to each workflow tab
 - **COMPLETE:** Committee report PDF extraction pipeline verified (3 pilot docs)
-- **COMPLETE:** Kommittébeteckning extraction fix (tempbeteckning + subtitel fallbacks)
-- **IN PROGRESS:** Phase 6.1 Propositions scraper created + pilot tested (10 docs)
-- **IN PROGRESS:** Phase 6.2 Directives scraper created + pilot tested (10 docs)
-- **CREATED:** Admin UI components for Riksdagen scrapers (PropositionRiksdagenScraperTest, DirectiveRiksdagenScraperTest)
-- **DOCUMENTED:** Connection reset handling for riksdagen.se API (Issue #4 in SCRAPER_KNOWN_ISSUES.md)
-- **COMPLETE:** Phase 5.6 Remissvar content insights (3,363 analyzed)
+- **IN PROGRESS:** Phase 6.1/6.2 Riksdagen API migration (pilots complete, backfill pending)
+- **KNOWN ISSUE:** HC01FiU1 (Statens budget) download timeout — large PDF exceeds 30s limit
 
 ---
 
