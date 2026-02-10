@@ -42,7 +42,7 @@
 | **Phase 4.1** | ✅ Complete | Search Walking Skeleton | Full-text search, filters, pagination, highlights |
 | **Phase 4.2** | ✅ Complete | Entity Features | Entity autocomplete, entity detail pages, relations FK |
 | **Phase 4.3** | ✅ Complete | Discovery MVP | Enhanced doc detail, process pages, related docs (deterministic) |
-| **Phase 5** | 🚀 In Progress | Legislative Graph Expansion | New doc types, Timeline Agent v2, Content Insights |
+| **Phase 5** | ✅ Complete | Legislative Graph Expansion | New doc types, Timeline Agent v2, Content Insights |
 | **Phase 6** | 📋 Planned | Relationship Inference | Blackboard agent, case reconstruction |
 | **Phase 7** | 📋 Planned | Advanced Insights | Stakeholder mapping, predictions |
 
@@ -80,7 +80,7 @@
 - ✅ PDF content extracted with page markers
 - ✅ Documents linked to processes
 
-**Documentation:** `docs/development/PHASE_2_COMPLETION_SUMMARY.md`
+**Documentation:** `docs/archive/summaries/PHASE_2_COMPLETION_SUMMARY.md`
 
 ---
 
@@ -121,7 +121,7 @@
 - No external reference scraping (e.g., "Genvägar" links)
 - No document-to-document relationship inference
 
-**Documentation:** `docs/development/branches/phase-3-multi-agent-ai.md`, `docs/development/PHASE_3_REFINEMENT_SUMMARY.md`
+**Documentation:** `docs/archive/branches/phase-3-multi-agent-ai.md`, `docs/archive/summaries/PHASE_3_REFINEMENT_SUMMARY.md`
 
 ---
 
@@ -166,7 +166,7 @@
 - Timeline visualization
 - Related documents suggestions
 
-**Documentation:** `docs/development/PHASE_4.1_COMPLETION_SUMMARY.md`, `docs/development/branches/phase-4-search-and-discovery.md`
+**Documentation:** `docs/archive/summaries/PHASE_4.1_COMPLETION_SUMMARY.md`, `docs/archive/branches/phase-4-search-and-discovery.md`
 
 ---
 
@@ -255,7 +255,7 @@ Relations table now enforces referential integrity:
 - [ ] Entity filtering in main search
 - [ ] Materialized views for performance optimization
 
-**Documentation:** `docs/development/branches/phase-4-search-and-discovery.md`
+**Documentation:** `docs/archive/branches/phase-4-search-and-discovery.md`
 
 ---
 
@@ -388,7 +388,7 @@ These were **NOT** implemented until MVP is validated:
 
 **Rationale:** Single-process discovery first. Inter-process relationships represent Phase 4.4+ scope.
 
-**Documentation:** `docs/development/PHASE_4.3_COMPLETION_SUMMARY.md`
+**Documentation:** `docs/archive/summaries/PHASE_4.3_COMPLETION_SUMMARY.md`
 
 ---
 
@@ -427,7 +427,7 @@ These were **NOT** implemented until MVP is validated:
 
 ### Phase 5.5: Cross-Document Insights Foundation
 
-**Documentation:** `docs/development/branches/phase-5.5-cross-document-insights.md`
+**Documentation:** `docs/archive/branches/phase-5.5-cross-document-insights.md`
 
 **Delivered:**
 - Reference resolution: 76 citations matched to corpus documents
@@ -438,7 +438,7 @@ These were **NOT** implemented until MVP is validated:
 ### Phase 5.4: Committee Reports + Laws ✅ COMPLETE
 
 **Status:** COMPLETE (2026-01)  
-**Documentation:** `docs/development/branches/phase-5.4-committee-reports-laws.md`
+**Documentation:** `docs/archive/branches/phase-5.4-committee-reports-laws.md`
 
 **Delivered:**
 - Riksdagen API integration for committee reports (446 scraped)
@@ -450,7 +450,7 @@ These were **NOT** implemented until MVP is validated:
 ### Phase 5.6: Remissvar Content Insights ✅ COMPLETE
 
 **Status:** COMPLETE (2026-02)  
-**Documentation:** `docs/development/branches/phase-5.6-content-insights.md`
+**Documentation:** `docs/archive/branches/phase-5.6-content-insights.md`
 
 **Delivered (5.6.1-5.6.3):**
 - Schema: `extraction_status`, `raw_content`, `extracted_at` columns
@@ -479,7 +479,7 @@ These were **NOT** implemented until MVP is validated:
 - [x] 99.91% response linking
 - [x] Entity deduplication complete
 
-**Documentation:** `docs/development/branches/phase-5-legislative-graph-expansion.md`, `docs/development/PHASE_5_IMPLEMENTATION_PLAN.md`
+**Documentation:** `docs/archive/branches/phase-5-legislative-graph-expansion.md`, `docs/archive/plans/PHASE_5_IMPLEMENTATION_PLAN.md`
 
 ---
 
@@ -758,9 +758,9 @@ This roadmap reflects the **refined product vision** while maintaining strict de
 - **Phase 6:** Relationship inference (blackboard agent, case reconstruction)
 - **Phase 7:** Advanced insights (stakeholder mapping, predictions)
 
-**Current Status:** Phase 4.3 complete (Search & Discovery MVP shipped).
+**Current Status:** Phase 5 COMPLETE. Phase 6.1/6.2 IN PROGRESS (Riksdagen API Migration).
 
 **Next Immediate Steps:**
-1. Collect user feedback on Phase 4.3 discovery experience
-2. Validate which deferred features should be prioritized (Phase 4.4 candidates)
-3. Do NOT start Phase 5 until Phase 4 discovery features are validated by users
+1. Complete historical backfill for propositions and directives (Phase 6.1/6.2)
+2. Phase 6.3: SOU hybrid pipeline (riksdagen + regeringen)
+3. Phase 7: Relationship Inference & Case Reconstruction
