@@ -26,11 +26,57 @@ Running log of approved decisions for the Legislative Intelligence Platform.
 | 2026-01-20 | Phase 5.5.4 Velocity Dashboard: marked NEEDS DEBUGGING | N/A | NONE | AGREE | AGREE | AGREE |
 | 2026-01-20 | Remissvar structure guidance documented for Phase 5.6 | N/A | NONE | AGREE | AGREE | AGREE |
 | 2026-01-20 | Phase 5.5.3 Participation Dashboard MVP | N/A | NONE | AGREE | AGREE | AGREE |
+| 2026-02-10 | Markdown governance cleanup executed | N/A | NONE | AGREE | AGREE | AGREE |
+| 2026-02-10 | Archive policy + DOC_INDEX adopted | N/A | NONE | AGREE | AGREE | AGREE |
+| 2026-02-10 | Historical docs archived (37 files) | N/A | NONE | AGREE | AGREE | AGREE |
 | 2026-01-05 | Operating agreement adopted | N/A | NONE | AGREE | AGREE | AGREE |
 
 ---
 
 ## Decision Details
+
+### 2026-02-10 — Markdown Governance Cleanup
+
+**Description:** Full markdown disposition review and execution:
+- Cross-referenced all 62 `.md` files against Codex's keep/archive/review list
+- Lovable produced independent disposition review with 10 disagreements resolved
+- Max approved final keep (22 files) / archive (37 files) plan
+
+**Actions Taken:**
+- Archived 37 historical docs to `docs/archive/` (branches, summaries, plans, audits, reset-events, testing)
+- Moved `AGENT_BEHAVIORS.md` from `docs/testing/` to `docs/operations/`
+- Created `docs/archive/ARCHIVE_POLICY.md` (retention rules, naming, who can archive/delete)
+- Created `docs/DOC_INDEX.md` (master index of all active docs)
+- Updated broken links in `PRODUCT_ROADMAP.md` and `CONTEXT_PRIORITY.md`
+- Rewrote `docs/development/README.md` (removed stale references to nonexistent paths)
+- Rewrote `docs/testing/README.md` (converted to archive-era index)
+- Updated `docs/operations/AGENT_RUNBOOK.md` to v2 (current tabs, tools, verification split)
+- Updated `docs/operations/AGENT_BEHAVIORS.md` to v2 (current behavior notes, deprecated assumptions)
+
+**Data Risk:** NONE — Documentation-only changes
+
+**Approvals:**
+- AGREE – Max ✓
+- AGREE – Lovable ✓
+- AGREE – Codex ✓
+
+---
+
+### 2026-02-10 — Archive Policy + DOC_INDEX Adopted
+
+**Description:** Established canonical archive governance:
+- `docs/archive/ARCHIVE_POLICY.md`: Archive-first policy, no deletions without Max approval, structured subdirectories
+- `docs/DOC_INDEX.md`: Master index covering governance, development, testing, operations, verification, services, and archive docs
+- Protected source-of-truth docs (WORKFLOW, CHECKLISTS, DECISION_LOG, etc.) explicitly excluded from archival
+
+**Data Risk:** NONE — Documentation only
+
+**Approvals:**
+- AGREE – Max ✓
+- AGREE – Lovable ✓
+- AGREE – Codex ✓
+
+---
 
 ### 2026-01-20 — Phase 5.5.3 Participation Dashboard MVP
 
