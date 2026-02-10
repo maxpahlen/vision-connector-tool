@@ -95,3 +95,6 @@ verify_jwt = false
 
 [functions.process-directive-pdf]
 verify_jwt = false
+
+[functions.process-directive-text]
+verify_jwt = false

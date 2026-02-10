@@ -1,5 +1,36 @@
 # Phase Deltas
 
+## 2026-02-10: Phase 1.2 — `process-directive-text` Edge Function Created
+
+**Status:** ✅ COMPLETE — Function deployed, ready for batch execution
+
+### Summary
+
+Created `process-directive-text` edge function to extract text content for 127 Riksdagen-sourced directives that lack `pdf_url`. Uses the `.text` endpoint (dot format, not slash) confirmed via existing `scrape-laws/index.ts`.
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| `.text` endpoint (not `/text`) | Confirmed correct format from working `scrape-laws` code |
+| `stripHtmlTags()` inline | `.text` returns HTML-formatted content unlike laws which skip HTML entirely |
+| Client-side source filter | PostgREST JSONB filtering can be unreliable; filter `metadata.source = 'riksdagen'` in code |
+| Shared `sanitizeText()` reuse | Consistent text cleaning across all extraction pipelines |
+
+### Files Created/Modified
+
+- `supabase/functions/process-directive-text/index.ts` — NEW edge function
+- `supabase/config.toml` — Added function entry
+- `docs/verification/LOVABLE_FIXES_EXECUTION_REPORT_2026-02-04.md` — Phase 1.2 status updated
+- `docs/PHASE_DELTAS.md` — This entry
+
+### Next Steps
+
+1. Max triggers batch extraction: `{ "limit": 20 }` (start small, verify output quality)
+2. Verify success criteria: `SELECT COUNT(*) FROM documents WHERE doc_type = 'directive' AND raw_content IS NULL AND metadata->>'source' = 'riksdagen';`
+
+---
+
 ## 2026-01-30: Phase 6 Riksdagen API Migration — Progress Update
 
 **Status:** IN PROGRESS — Pilot scrapers complete, extraction verified
