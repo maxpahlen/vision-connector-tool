@@ -1,6 +1,6 @@
 # Product Roadmap — Legislative Intelligence Platform
 
-**Last Updated:** 2026-02-04  
+**Last Updated:** 2026-02-10  
 **Current Phase:** Phase 5.6 ✅ COMPLETE (Remissvar Content Insights)
 
 ---
@@ -396,17 +396,17 @@ These were **NOT** implemented until MVP is validated:
 
 **Goal:** Expand beyond SOUs to build comprehensive legislative process graph.
 
-### Current Database Metrics (2026-02-04)
+### Current Database Metrics (2026-02-10)
 
 | Table | Count | Notes |
 |-------|-------|-------|
-| **Documents** | 863 total | 61 SOUs, 183 directives, 126 propositions, 446 committee reports, 47 laws |
-| **Processes** | 127 | All with linked documents |
-| **Entities** | 1,760 | Organizations (cleaned, deduplicated) |
-| **Timeline Events** | 1,050 | Extracted with citations |
+| **Documents** | 863 total | 60 SOUs, 183 directives, 126 propositions, 333 committee reports, 161 laws |
+| **Processes** | 464 | All with linked documents |
+| **Entities** | 1,780 | Organizations (cleaned, deduplicated) |
+| **Timeline Events** | 1,070 | Extracted with citations |
 | **Document References** | 1,083 | Cross-document citations (84 resolved, 7.8%) |
 | **Remiss Documents** | 54 | All scraped with remissinstanser PDFs |
-| **Remiss Responses** | 3,424 | 98.4% text extracted, 99.91% linked to entities |
+| **Remiss Responses** | 3,421 | 98.4% text extracted, 99.91% linked to entities |
 | **Remiss Invitees** | 4,321 | 100% linked to entities |
 
 ### Completion Summary
@@ -441,8 +441,8 @@ These were **NOT** implemented until MVP is validated:
 **Documentation:** `docs/archive/branches/phase-5.4-committee-reports-laws.md`
 
 **Delivered:**
-- Riksdagen API integration for committee reports (446 scraped)
-- Riksdagen API integration for laws (47 scraped)
+- Riksdagen API integration for committee reports (333 scraped)
+- Riksdagen API integration for laws (161 scraped)
 - Committee report PDF extraction pipeline
 - Timeline events derived from committee report `dokaktivitet`
 - Cross-linking to propositions via `has_committee_report` reference type
@@ -473,8 +473,8 @@ These were **NOT** implemented until MVP is validated:
 ### Success Criteria (Phase 5.3) ✅
 - [x] Propositions end-to-end ingestion and searchable
 - [x] Remisser matched to SOUs (54/54)
-- [x] Remissvar extracted (3,424)
-- [x] Entity pipeline operational (1,473 entities)
+- [x] Remissvar extracted (3,421)
+- [x] Entity pipeline operational (1,780 entities)
 - [x] 100% invitee linking
 - [x] 99.91% response linking
 - [x] Entity deduplication complete
@@ -707,10 +707,10 @@ CREATE TABLE entity_stance_themes (
 **New Hook:** `useDocumentContext` for fetching document context and related documents
 **Features:** Deterministic related documents, entity deduplication, full navigation mesh
 
-### Phase 5 📋 (Planned)
-**New Tables:** `document_references`, `external_links`  
+### Phase 5 ✅ (Complete)
+**New Tables:** `document_references`, `remiss_documents`, `remiss_responses`, `remiss_invitees`, `stance_keyword_suggestions`, `entity_name_rules`  
 **Enhanced Agents:** Timeline Agent v2, Metadata Agent v2  
-**New Scrapers:** Propositioner, Remisser, Remissvar, Motioner, Committee Reports, Laws
+**New Scrapers:** Propositions, Directives, Committee Reports, Laws (Riksdagen API), Remiss Index, Remiss Pages
 
 ### Phase 6 📋 (Planned)
 **New Tables:** `legislative_cases`, `case_documents`  
@@ -758,9 +758,9 @@ This roadmap reflects the **refined product vision** while maintaining strict de
 - **Phase 6:** Relationship inference (blackboard agent, case reconstruction)
 - **Phase 7:** Advanced insights (stakeholder mapping, predictions)
 
-**Current Status:** Phase 5 COMPLETE. Phase 6.1/6.2 IN PROGRESS (Riksdagen API Migration).
+**Current Status:** Phase 5 COMPLETE. Operational closure in progress. Phase 6 GO pending readiness gate approval.
 
 **Next Immediate Steps:**
-1. Complete historical backfill for propositions and directives (Phase 6.1/6.2)
-2. Phase 6.3: SOU hybrid pipeline (riksdagen + regeringen)
-3. Phase 7: Relationship Inference & Case Reconstruction
+1. Complete operational closure (SOU lifecycle backfill, Admin UI cleanup, roadmap reconciliation)
+2. Phase 6 readiness gate approval
+3. Phase 6.1: Riksdagen API historical backfill for propositions and directives
