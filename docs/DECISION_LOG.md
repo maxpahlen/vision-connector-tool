@@ -22,6 +22,7 @@ Running log of approved decisions for the Legislative Intelligence Platform.
 
 | Date | Change Title | PR/Issue | Data Risk | Max | Lovable | Codex |
 |------|--------------|----------|-----------|-----|---------|-------|
+| 2026-02-11 | Phase 6A.1: Deterministic reference resolution pass | N/A | NONE | AGREE | AGREE | AGREE |
 | 2026-01-20 | Phase 5.6 Concept Brief created | N/A | NONE | AGREE | AGREE | AGREE |
 | 2026-01-20 | Phase 5.5.4 Velocity Dashboard: marked NEEDS DEBUGGING | N/A | NONE | AGREE | AGREE | AGREE |
 | 2026-01-20 | Remissvar structure guidance documented for Phase 5.6 | N/A | NONE | AGREE | AGREE | AGREE |
@@ -36,6 +37,58 @@ Running log of approved decisions for the Legislative Intelligence Platform.
 ---
 
 ## Decision Details
+
+### 2026-02-11 — Phase 6A.1: Deterministic Reference Resolution Pass
+
+**Description:** First execution slice of Phase 6 Relationship Inference. Enhanced the `resolve-document-references` edge function and ran a full deterministic resolution pass across all 6,801 `document_references`.
+
+**Key Enhancements:**
+- Added `Bet.` (committee report) pattern → Riksdagen session code conversion (e.g., `Bet. 2024/25:FiU21` → `HC01FiU21`)
+- Added Title+DocNumber combo extraction (e.g., "En förbättrad elevhälsa, SOU 2025:113" → `SOU 2025:113`)
+- Fixed double-encoded HTML entities (`&amp;#xF6;` → `ö`)
+- Implemented pagination for both reference and document fetches (bypasses 1000-row limit)
+- Batched DB updates (parallel groups of 50) for performance
+
+**Before/After Metrics:**
+| Metric | Before | After |
+|--------|--------|-------|
+| Total references | 6,801 | 6,801 |
+| Resolved | 84 (1.2%) | 2,157 (31.7%) |
+| Unresolved | 6,717 | 4,644 |
+| **New resolutions** | — | **2,073** |
+
+**Resolved by Evidence Type:**
+| Evidence Type | Count |
+|---------------|-------|
+| prop_pattern (Prop. YYYY/YY:NN) | 1,025 |
+| bet_pattern (Bet. → Riksdagen code) | 923 |
+| dir_pattern (Dir. YYYY:NN) | 171 |
+| sou_pattern (SOU YYYY:NN) | 38 |
+
+**Remaining Unresolved — Categorized:**
+| Category | Count | Notes |
+|----------|-------|-------|
+| Title-only / unparseable | 2,946 | No doc number in text (e.g., "Om lagstiftningen i Sverige") |
+| Bet. not in corpus | 1,278 | Extracted but committee report not yet in DB (older sessions) |
+| SOU not in corpus | 171 | Mostly 2025 SOUs not yet ingested |
+| Prop not in corpus | 136 | Pre-2015 or very recent propositions |
+| Dir not in corpus | 78 | Directives outside backfill window |
+| HTML-encoded title-only | 19 | Decoded but no doc number pattern |
+| Ministry dossier | 11 | Dossier format, not in documents table |
+| Ds not in corpus | 3 | Departementsserie not yet tracked |
+| FPM not in corpus | 2 | Faktapromemoria not yet tracked |
+
+**Spot Validation:** 10/10 sampled `bet_pattern` resolutions verified correct (e.g., `Bet. 2024/25:FiU21` → `HC01FiU21` "Vårändringsbudget för 2025" ✓).
+
+**Data Risk:** NONE — Only updates `target_doc_number` (cleanup) and `target_document_id` (linking) on existing rows. No deletions, no schema changes.
+
+**Approvals:**
+- AGREE – Max ✓
+- AGREE – Lovable ✓
+- AGREE – Codex ✓
+
+---
+
 
 ### 2026-02-10 — Markdown Governance Cleanup
 
