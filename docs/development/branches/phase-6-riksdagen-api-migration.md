@@ -3,9 +3,11 @@
 ## Branch Information
 - **Branch Name**: `phase-6-riksdagen-api-migration`
 - **Created**: 2026-01-28
-- **Status**: IN PROGRESS — Pilots Complete
-- **Last Updated**: 2026-01-30
+- **Status**: IN PROGRESS — Historical Backfill
+- **Last Updated**: 2026-02-11
 - **Depends On**: Phase 5.4 completion (Committee Reports & Laws)
+- **Completion Criteria**: P0 (recent backfill) + P1 (committee extraction) — approved 2026-02-11
+- **Sequencing**: This branch → phase-6-relationship-inference → phase-6-advanced-analysis
 
 ## Goal
 
@@ -36,12 +38,12 @@ Migrate Propositions and Directives ingestion from the fragile regeringen.se Fil
 | Historical Backfill Dirs | 6,361 available, 10 ingested |
 | Batch Committee Extraction | 330 remaining (3 pilot complete) |
 
-### Pending 🔲
+### Deferred (P2 — post-branch-completion)
 
 | Component | Notes |
 |-----------|-------|
-| Freshness Integration | 7-day dual-source verification |
-| Deep Historical Backfill | 1971-2010 props, 1988-2010 dirs |
+| Freshness Integration | 7-day dual-source verification — operational enhancement |
+| Deep Historical Backfill | 1971-2010 props, 1988-2010 dirs — not foundational |
 
 ---
 
@@ -65,13 +67,19 @@ Migrate Propositions and Directives ingestion from the fragile regeringen.se Fil
 
 ## Success Criteria
 
-- [ ] Propositions: Ingest 31,598 documents (vs current ~10)
-- [ ] Directives: Ingest 6,361 documents (vs current ~56)
-- [ ] Cross-references: Extract proposition→betänkande links via `dokreferens`
-- [ ] Timeline events: Generate events from `dokaktivitet` data
-- [ ] No duplicate documents (dedup by `doc_number`)
-- [ ] API resilience: Handle connection resets with exponential backoff
-- [ ] Freshness: Documents from last 7 days verified against regeringen.se
+### P0 — Required for branch completion
+- [ ] Propositions: Backfill sessions 2020/21–2024/25 (~1,000-1,200 docs)
+- [ ] Directives: Backfill sessions 2015–2025 (~800-1,000 docs)
+- [x] Cross-references: Extract proposition→betänkande links via `dokreferens`
+- [x] No duplicate documents (dedup by `doc_number`)
+- [x] API resilience: Handle connection resets with exponential backoff
+
+### P1 — Required for branch completion
+- [ ] Committee report text extraction: 330 remaining PDFs
+
+### P2 — Deferred (tracked as follow-up tasks)
+- [ ] Deep historical: Pre-2010 props, pre-2010 dirs
+- [ ] Freshness: 7-day dual-source verification
 
 ---
 
