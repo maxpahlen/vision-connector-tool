@@ -122,7 +122,6 @@ export default function AdminScraper() {
             <LawsScraperTest />
             <ScraperControls />
             <RemissIndexScraperTest />
-            <RemissDiscoveryDashboard />
             <ProcessRemissPagesTest />
           </div>
         </TabsContent>
@@ -199,6 +198,7 @@ export default function AdminScraper() {
 
           <div className="grid gap-6">
             <TaskQueueMonitor />
+            <RemissDiscoveryDashboard />
             <ProcessList />
             <DocumentList />
           </div>
