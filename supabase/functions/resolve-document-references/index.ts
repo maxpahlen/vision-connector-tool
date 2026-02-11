@@ -6,12 +6,20 @@ import {
   createSuccessResponse,
 } from '../_shared/http-utils.ts';
 
+// ============================================
+// Reference Resolution Utilities
+// Phase 6A.1 — Deterministic document linking
+// ============================================
+
 /**
  * Decode HTML entities commonly found in scraped text
- * P2 FIX: Handles both numeric (&#xF6;) and named (&ouml;) entities
+ * Handles both numeric (&#xF6;) and named (&ouml;) entities
  */
 function decodeHtmlEntities(text: string): string {
   if (!text) return text;
+  
+  // First pass: decode &amp; back to & (handles double-encoding from scrapers)
+  let result = text.replace(/&amp;/gi, '&');
   
   const entities: Record<string, string> = {
     '&ouml;': 'ö', '&#xF6;': 'ö', '&#246;': 'ö',
@@ -24,9 +32,9 @@ function decodeHtmlEntities(text: string): string {
     '&nbsp;': ' ', '&#160;': ' ',
     '&ndash;': '–', '&#x2013;': '–', '&#8211;': '–',
     '&mdash;': '—', '&#x2014;': '—', '&#8212;': '—',
+    '&eacute;': 'é', '&#xE9;': 'é', '&#233;': 'é',
   };
   
-  let result = text;
   for (const [entity, char] of Object.entries(entities)) {
     result = result.replace(new RegExp(entity, 'gi'), char);
   }
@@ -34,65 +42,103 @@ function decodeHtmlEntities(text: string): string {
 }
 
 /**
- * Extract clean document number from text
- * Returns only the canonical number (e.g., "Dir. 2023:171"), not full titles
+ * Convert Riksdag session year (e.g., "2024/25") to the 2-char rm code used in doc_numbers.
+ * 
+ * Mapping is based on observed data:
+ *   2020/21 → H8, 2021/22 → H9, 2022/23 → HA, 2023/24 → HB, 2024/25 → HC, 2025/26 → HD
+ * 
+ * Algorithm: anchor 2020 = index 260 (H=7th letter × 36 + 8), then offset by year diff.
+ * Second char cycles 0-9, A-Z (36 values), first char increments A-Z.
+ */
+function sessionToRiksdagCode(startYear: number): string | null {
+  const ANCHOR_YEAR = 2020;
+  const ANCHOR_INDEX = 7 * 36 + 8; // H8 = 260
+  const CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  
+  const offset = startYear - ANCHOR_YEAR;
+  const absIndex = ANCHOR_INDEX + offset;
+  
+  if (absIndex < 0 || absIndex >= 26 * 36) return null;
+  
+  const firstCharIndex = Math.floor(absIndex / 36);
+  const secondCharIndex = absIndex % 36;
+  
+  const firstChar = String.fromCharCode(65 + firstCharIndex); // A=0, B=1, ...
+  const secondChar = CHARS[secondCharIndex];
+  
+  return `${firstChar}${secondChar}`;
+}
+
+/**
+ * Extract clean document number from text.
+ * Returns only the canonical number in the format stored in documents.doc_number.
  * 
  * Supported formats:
- * - SOU YYYY:NN (Statens offentliga utredningar)
- * - Dir. YYYY:NN (Kommittédirektiv)
- * - Prop. YYYY/YY:NN (Propositioner)
- * - Ds YYYY:NN (Departementsserie)
- * - FPM YYYY/YY:NN (Faktapromemoria)
- * - XX20YY/NNNNN (Ministry dossier numbers, e.g., Ju2025/00680)
+ * - SOU YYYY:NN
+ * - Dir. YYYY:NN
+ * - Prop. YYYY/YY:NN
+ * - Ds YYYY:NN
+ * - Bet. YYYY/YY:CommNN → converted to Riksdagen code (e.g., HC01FiU21)
+ * - FPM YYYY/YY:NN
+ * - Ministry dossier (e.g., Ju2025/00680)
  */
-function extractDocNumber(urlOrText: string): string | null {
-  // Decode HTML entities first
+function extractDocNumber(urlOrText: string): { docNumber: string; evidenceType: string } | null {
   const text = decodeHtmlEntities(urlOrText);
-  
-  // Try SOU pattern - STRICT
+
+  // Try Bet. (committee report) pattern — convert to Riksdagen doc_number format
+  // Bet. 2024/25:FiU21 → HC01FiU21
+  const betMatch = text.match(/\bBet\.?\s*(\d{4})\s*[\/\-]\s*(\d{2})\s*[:\-]\s*([A-Za-z]+\d+)/i);
+  if (betMatch) {
+    const startYear = parseInt(betMatch[1]);
+    const rmCode = sessionToRiksdagCode(startYear);
+    if (rmCode) {
+      return { docNumber: `${rmCode}01${betMatch[3]}`, evidenceType: 'bet_pattern' };
+    }
+  }
+
+  // Try SOU pattern
   const souMatch = text.match(/\bSOU\s*(\d{4})\s*[:\-]\s*(\d+)/i);
   if (souMatch) {
-    return `SOU ${souMatch[1]}:${souMatch[2]}`;
+    return { docNumber: `SOU ${souMatch[1]}:${souMatch[2]}`, evidenceType: 'sou_pattern' };
   }
 
-  // Try Directive pattern - STRICT
+  // Try Directive pattern
   const dirMatch = text.match(/\bDir\.?\s*(\d{4})\s*[:\-]\s*(\d+)/i);
   if (dirMatch) {
-    return `Dir. ${dirMatch[1]}:${dirMatch[2]}`;
+    return { docNumber: `Dir. ${dirMatch[1]}:${dirMatch[2]}`, evidenceType: 'dir_pattern' };
   }
 
-  // Try Proposition pattern - STRICT
+  // Try Proposition pattern
   const propMatch = text.match(/\bProp\.?\s*(\d{4})\s*[\/\-]\s*(\d{2})\s*[:\-]\s*(\d+)/i);
   if (propMatch) {
-    return `Prop. ${propMatch[1]}/${propMatch[2]}:${propMatch[3]}`;
+    return { docNumber: `Prop. ${propMatch[1]}/${propMatch[2]}:${propMatch[3]}`, evidenceType: 'prop_pattern' };
   }
 
-  // Try Ds pattern - STRICT
+  // Try Ds pattern
   const dsMatch = text.match(/\bDs\s*(\d{4})\s*[:\-]\s*(\d+)/i);
   if (dsMatch) {
-    return `Ds ${dsMatch[1]}:${dsMatch[2]}`;
+    return { docNumber: `Ds ${dsMatch[1]}:${dsMatch[2]}`, evidenceType: 'ds_pattern' };
   }
 
-  // Try FPM pattern (Faktapromemoria)
+  // Try FPM pattern
   const fpmMatch = text.match(/\b(\d{4}\/\d{2})\s*[:\-]?\s*FPM\s*(\d+)/i);
   if (fpmMatch) {
-    return `${fpmMatch[1]}:FPM${fpmMatch[2]}`;
+    return { docNumber: `${fpmMatch[1]}:FPM${fpmMatch[2]}`, evidenceType: 'fpm_pattern' };
   }
 
-  // Try Ministry dossier number pattern (e.g., Ju2025/00680, Fi2025/00974, U2025/02147)
-  // Format: 1-3 letter ministry code + year + / + 4-5 digit number
+  // Try Ministry dossier number (e.g., Ju2025/00680)
   const dossierMatch = text.match(/\b([A-Za-z]{1,3})(\d{4})\/(\d{4,5})\b/);
   if (dossierMatch) {
     const ministryCode = dossierMatch[1].charAt(0).toUpperCase() + dossierMatch[1].slice(1).toLowerCase();
-    return `${ministryCode}${dossierMatch[2]}/${dossierMatch[3]}`;
+    return { docNumber: `${ministryCode}${dossierMatch[2]}/${dossierMatch[3]}`, evidenceType: 'dossier_pattern' };
   }
 
   return null;
 }
 
 /**
- * Normalize doc_number for comparison
- * Handles variations like "SOU 2024:55" vs "SOU 2024:55" or "Prop. 2025/26:36"
+ * Normalize doc_number for comparison.
+ * Makes matching case-insensitive and whitespace-tolerant.
  */
 function normalizeDocNumber(docNumber: string): string {
   return docNumber
@@ -109,149 +155,169 @@ serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const batchSize = body.batchSize || 100;
+    const batchSize = body.batchSize || 500;
     const dryRun = body.dryRun || false;
 
-    console.log(`[resolve-document-references] Starting batch resolution (batchSize: ${batchSize}, dryRun: ${dryRun})`);
+    console.log(`[resolve-refs] Starting (batchSize: ${batchSize}, dryRun: ${dryRun})`);
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch unresolved document references
-    const { data: unresolvedRefs, error: fetchError } = await supabase
-      .from('document_references')
-      .select('id, target_doc_number, target_url, reference_type')
-      .is('target_document_id', null)
-      .limit(batchSize);
+    // Fetch unresolved references (paginated to avoid 1000-row limit)
+    let allUnresolved: Array<{
+      id: string;
+      target_doc_number: string | null;
+      target_url: string | null;
+      reference_type: string;
+    }> = [];
+    
+    let page = 0;
+    const pageSize = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from('document_references')
+        .select('id, target_doc_number, target_url, reference_type')
+        .is('target_document_id', null)
+        .range(page * pageSize, (page + 1) * pageSize - 1);
 
-    if (fetchError) {
-      console.error('Error fetching unresolved references:', fetchError);
-      throw fetchError;
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      allUnresolved = allUnresolved.concat(data);
+      if (data.length < pageSize) break;
+      page++;
     }
 
-    if (!unresolvedRefs || unresolvedRefs.length === 0) {
+    if (allUnresolved.length === 0) {
       return createSuccessResponse({
         message: 'No unresolved references found',
         processed: 0,
         resolved: 0,
-        failed: 0,
       });
     }
 
-    console.log(`[resolve-document-references] Found ${unresolvedRefs.length} unresolved references`);
+    console.log(`[resolve-refs] Found ${allUnresolved.length} unresolved references`);
 
-    // Fetch all documents for matching
-    const { data: allDocuments, error: docsError } = await supabase
-      .from('documents')
-      .select('id, doc_number, doc_type');
+    // Fetch all documents for matching (paginated)
+    let allDocuments: Array<{ id: string; doc_number: string; doc_type: string }> = [];
+    page = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('documents')
+        .select('id, doc_number, doc_type')
+        .range(page * pageSize, (page + 1) * pageSize - 1);
 
-    if (docsError) {
-      console.error('Error fetching documents:', docsError);
-      throw docsError;
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      allDocuments = allDocuments.concat(data);
+      if (data.length < pageSize) break;
+      page++;
     }
 
-    // Create normalized lookup map
+    // Build normalized lookup map
     const docLookup = new Map<string, string>();
-    for (const doc of allDocuments || []) {
+    for (const doc of allDocuments) {
       if (doc.doc_number) {
-        const normalized = normalizeDocNumber(doc.doc_number);
-        docLookup.set(normalized, doc.id);
+        docLookup.set(normalizeDocNumber(doc.doc_number), doc.id);
       }
     }
 
-    console.log(`[resolve-document-references] Built lookup map with ${docLookup.size} documents`);
+    console.log(`[resolve-refs] Built lookup with ${docLookup.size} documents`);
+
+    // Process ALL refs in memory first, then batch DB updates
+    const toProcess = allUnresolved.slice(0, batchSize);
 
     const results = {
       processed: 0,
       resolved: 0,
-      alreadyClean: 0,
       noMatch: 0,
       extractionFailed: 0,
-      updates: [] as Array<{ id: string; oldDocNumber: string | null; newDocNumber: string; targetDocumentId: string }>,
-      failures: [] as Array<{ id: string; reason: string; targetDocNumber: string | null }>,
+      resolvedByEvidence: {} as Record<string, number>,
+      failureReasons: {} as Record<string, number>,
+      sampleUpdates: [] as Array<{ id: string; oldDocNumber: string | null; newDocNumber: string; targetDocumentId: string; evidenceType: string }>,
+      sampleFailures: [] as Array<{ id: string; reason: string; targetDocNumber: string | null; extracted: string | null }>,
     };
 
-    for (const ref of unresolvedRefs) {
+    const incrementMap = (map: Record<string, number>, key: string) => {
+      map[key] = (map[key] || 0) + 1;
+    };
+
+    // Collect updates in memory
+    const resolvedUpdates: Array<{ id: string; docNumber: string; targetDocId: string }> = [];
+    const cleanupUpdates: Array<{ id: string; docNumber: string }> = [];
+
+    for (const ref of toProcess) {
       results.processed++;
-
-      // Try to extract clean doc number from existing target_doc_number or target_url
       const sourceText = ref.target_doc_number || ref.target_url || '';
-      const cleanDocNumber = extractDocNumber(sourceText);
+      const extracted = extractDocNumber(sourceText);
 
-      if (!cleanDocNumber) {
+      if (!extracted) {
         results.extractionFailed++;
-        results.failures.push({
-          id: ref.id,
-          reason: 'Could not extract doc number from text',
-          targetDocNumber: ref.target_doc_number,
-        });
+        incrementMap(results.failureReasons, 'extraction_failed');
+        if (results.sampleFailures.length < 20) {
+          results.sampleFailures.push({ id: ref.id, reason: 'No extractable doc number pattern', targetDocNumber: ref.target_doc_number, extracted: null });
+        }
         continue;
       }
 
-      // Check if doc number was already clean (no change needed)
-      const wasAlreadyClean = ref.target_doc_number === cleanDocNumber;
-      if (wasAlreadyClean) {
-        results.alreadyClean++;
-      }
-
-      // Try to find matching document
-      const normalizedClean = normalizeDocNumber(cleanDocNumber);
+      const { docNumber, evidenceType } = extracted;
+      const normalizedClean = normalizeDocNumber(docNumber);
       const matchedDocId = docLookup.get(normalizedClean);
 
       if (!matchedDocId) {
         results.noMatch++;
-        results.failures.push({
-          id: ref.id,
-          reason: `No document found for ${cleanDocNumber}`,
-          targetDocNumber: cleanDocNumber,
-        });
-
-        // Still update the target_doc_number to clean version if it changed
-        if (!wasAlreadyClean && !dryRun) {
-          await supabase
-            .from('document_references')
-            .update({ target_doc_number: cleanDocNumber })
-            .eq('id', ref.id);
+        incrementMap(results.failureReasons, `no_corpus_match_${evidenceType}`);
+        if (results.sampleFailures.length < 20) {
+          results.sampleFailures.push({ id: ref.id, reason: 'Extracted but no corpus match', targetDocNumber: ref.target_doc_number, extracted: docNumber });
+        }
+        if (ref.target_doc_number !== docNumber) {
+          cleanupUpdates.push({ id: ref.id, docNumber });
         }
         continue;
       }
 
-      // Success - update the reference
       results.resolved++;
-      results.updates.push({
-        id: ref.id,
-        oldDocNumber: ref.target_doc_number,
-        newDocNumber: cleanDocNumber,
-        targetDocumentId: matchedDocId,
-      });
-
-      if (!dryRun) {
-        const { error: updateError } = await supabase
-          .from('document_references')
-          .update({
-            target_doc_number: cleanDocNumber,
-            target_document_id: matchedDocId,
-          })
-          .eq('id', ref.id);
-
-        if (updateError) {
-          console.error(`Failed to update reference ${ref.id}:`, updateError);
-        }
+      incrementMap(results.resolvedByEvidence, evidenceType);
+      resolvedUpdates.push({ id: ref.id, docNumber, targetDocId: matchedDocId });
+      if (results.sampleUpdates.length < 20) {
+        results.sampleUpdates.push({ id: ref.id, oldDocNumber: ref.target_doc_number, newDocNumber: docNumber, targetDocumentId: matchedDocId, evidenceType });
       }
     }
 
-    console.log(`[resolve-document-references] Completed: ${results.resolved} resolved, ${results.noMatch} no match, ${results.extractionFailed} extraction failed`);
+    // Execute DB updates in batches of 50 (parallel within batch)
+    if (!dryRun) {
+      const DB_BATCH = 50;
+      for (let i = 0; i < resolvedUpdates.length; i += DB_BATCH) {
+        const batch = resolvedUpdates.slice(i, i + DB_BATCH);
+        await Promise.all(batch.map(u =>
+          supabase.from('document_references')
+            .update({ target_doc_number: u.docNumber, target_document_id: u.targetDocId })
+            .eq('id', u.id)
+        ));
+      }
+      for (let i = 0; i < cleanupUpdates.length; i += DB_BATCH) {
+        const batch = cleanupUpdates.slice(i, i + DB_BATCH);
+        await Promise.all(batch.map(u =>
+          supabase.from('document_references')
+            .update({ target_doc_number: u.docNumber })
+            .eq('id', u.id)
+        ));
+      }
+    }
+
+    console.log(`[resolve-refs] Done: ${results.resolved} resolved, ${results.noMatch} no match, ${results.extractionFailed} extraction failed`);
 
     return createSuccessResponse({
       dryRun,
+      totalUnresolved: allUnresolved.length,
       processed: results.processed,
       resolved: results.resolved,
-      alreadyClean: results.alreadyClean,
       noMatch: results.noMatch,
       extractionFailed: results.extractionFailed,
-      sampleUpdates: results.updates.slice(0, 10),
-      sampleFailures: results.failures.slice(0, 10),
+      resolvedByEvidence: results.resolvedByEvidence,
+      failureReasons: results.failureReasons,
+      sampleUpdates: results.sampleUpdates,
+      sampleFailures: results.sampleFailures,
     });
 
   } catch (error) {
