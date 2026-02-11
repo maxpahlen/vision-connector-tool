@@ -1,86 +1,128 @@
 
 
-# Phase 1.2: Create `process-directive-text` Edge Function
+# Phase 6.1 Execution Plan: Riksdagen API Historical Backfill
 
-## Summary
+## Executive Summary
 
-Create a new edge function to extract text content for 127 Riksdagen-sourced directives that lack `pdf_url`. The function fetches HTML-formatted text from the Riksdagen API text endpoint and sanitizes it for storage.
+Complete the `phase-6-riksdagen-api-migration` branch by executing historical backfill for propositions and directives, then batch committee report text extraction. This is the DATA FOUNDATION step — without it, the relationship inference agent (next branch) has too little data to build meaningful legislative cases.
 
-## Critical Finding: Endpoint Format
+## Completion Criteria for `phase-6-riksdagen-api-migration`
 
-The user's concern is **confirmed**. The correct Riksdagen text endpoint format uses a **dot**, not a slash:
+To mark this branch as COMPLETE, all 5 remaining items must be addressed:
+
+| Item | Action | Priority |
+|------|--------|----------|
+| Proposition backfill (recent) | Sessions 2020/21 through 2024/25 | P0 |
+| Directive backfill (recent) | Sessions 2010 through 2025 | P0 |
+| Committee report text extraction | 330 remaining PDFs | P1 |
+| Deep historical backfill | Pre-2010 props, pre-2010 dirs | P2 (defer or scope-reduce) |
+| Freshness integration | 7-day dual-source check | P2 (defer to operational phase) |
+
+### Recommended Scope Decision
+
+**Mark branch COMPLETE after P0 + P1.** Deep historical (pre-2010) and freshness integration are operational enhancements, not foundational. They can be tracked as follow-up tasks without blocking Phase 6.2 (relationship inference).
+
+## Backfill Execution Plan
+
+### Propositions (P0)
+
+**Target sessions:** 2020/21 through 2024/25 (5 recent sessions)
+
+- Expected volume: ~1,000-1,200 documents (roughly 200-240 per session)
+- Already ingested: 126 (mostly 2024/25)
+- Batch size per edge function call: 20 documents (with 500ms inter-request delay)
+- Pages per session: ~12 pages at sz=20
+- Estimated API calls per session: ~12 list + ~240 detail = ~252
+- Rate limiting: 500ms delay = ~2 minutes per page of 20
+
+**Execution approach:**
+- Run session-by-session via Admin UI (`PropositionRiksdagenScraperTest`)
+- Start with 2023/24 (most recent not yet backfilled)
+- Work backwards: 2022/23, 2021/22, 2020/21
+- Dedup handles overlap with existing 126 docs automatically
+
+### Directives (P0)
+
+**Target sessions:** 2015 through 2025 (10 recent years)
+
+- Expected volume: ~800-1,000 documents
+- Already ingested: 183
+- Same batch pattern as propositions
+- Smaller per-session counts (~80-130 per year)
+
+**Execution approach:**
+- Run year-by-year via Admin UI (`DirectiveRiksdagenScraperTest`)
+- Start with 2023, work backwards
+- Dedup handles overlap automatically
+
+### Committee Report Text Extraction (P1)
+
+- 330 PDFs remaining (3 pilot complete)
+- Uses existing `process-committee-report-pdf` edge function
+- Batch via Admin UI (`CommitteeReportTextExtractor`)
+- Rate: ~10-20 per batch (PDF extraction is slower)
+
+## What Lovable Should Execute
+
+1. **No new edge functions needed** — scrapers already exist and are pilot-validated
+2. **No schema changes** — existing tables handle all data
+3. **Admin UI already supports batch execution** — no UI changes needed
+4. **Documentation updates only:**
+   - Update `phase-6-riksdagen-api-migration.md` status and metrics after each batch
+   - Update `PRODUCT_ROADMAP.md` counts after backfill complete
+
+## Sequencing After This Branch
 
 ```text
-CORRECT:  https://data.riksdagen.se/dokument/{dok_id}.text
-WRONG:    https://data.riksdagen.se/dokument/{dok_id}/text
+phase-6-riksdagen-api-migration (NOW)
+  |  Complete backfill, mark COMPLETE
+  v
+phase-6-relationship-inference (NEXT)
+  |  Case reconstruction agent, legislative_cases table
+  |  Needs: large corpus of props + dirs + committee reports
+  v
+phase-6-advanced-analysis (LATER)
+  |  Sentiment, impact, trends
+  |  Needs: cases + relationships to analyze
 ```
 
-Evidence: `scrape-laws/index.ts` line 85 uses `.text` and is already working in production.
+`phase-6-advanced-analysis` is NOT the logical next step after migration. `phase-6-relationship-inference` is, because:
+- It builds on the data foundation (more docs = better case matching)
+- It creates the `legislative_cases` structure that advanced analysis operates on
+- It is the roadmap-defined Phase 6 goal (blackboard agent, case reconstruction)
 
-## Implementation Plan
+## Risk Assessment
 
-### 1. Create `supabase/functions/process-directive-text/index.ts`
+| Risk | Mitigation |
+|------|------------|
+| Edge function timeouts on large batches | Keep batch size at 20; paginate manually |
+| API rate limiting during sustained backfill | 500ms delay already validated; monitor for 429s |
+| Duplicate documents | Dedup by doc_number already implemented |
+| Committee report PDF extraction failures | Track error rate; accept same 1.6% OCR limit |
 
-A new edge function modeled after the `scrape-laws` backfill pattern (`handleBackfill` in `scrape-laws/index.ts` lines 125-178). Key behaviors:
+## Decision Required from Max
 
-- **Query**: `documents` where `doc_type = 'directive'`, `raw_content IS NULL`, and `metadata->>'source' = 'riksdagen'` (excludes the 56 regeringen directives that already have PDF-extracted content)
-- **Fetch**: `https://data.riksdagen.se/dokument/{riksdagen_id}.text` using the same `fetchWithRetry` pattern and `FETCH_HEADERS` as existing scrapers
-- **Sanitize**: Reuse shared `sanitizeText()` from `_shared/text-utils.ts`, plus strip HTML tags (the `.text` endpoint returns HTML-formatted content -- the laws scraper handles this by checking for `<!DOCTYPE`/`<html` prefixes and skipping those, but directive text responses may be partial HTML that needs tag stripping)
-- **Guard**: Skip responses starting with `<!DOCTYPE` or `<html` (redirect pages), and responses shorter than 50 chars
-- **Update**: Set `raw_content`, `processed_at`, and update `metadata` with extraction status fields
-- **Parameters**: `limit` (default 10), `dry_run` (default false), `document_id` (optional single-doc mode)
-- **Rate limiting**: 500ms delay between requests, 1000ms initial delay, same retry/backoff logic
+1. **Agree with P0+P1 scope** (recent sessions + committee extraction) as completion criteria, deferring deep historical and freshness to follow-up tasks?
+2. **Agree with sequencing**: migration -> relationship inference -> advanced analysis?
+3. **Should Lovable begin the backfill execution now**, or should we first create a formal branch plan update and get triple sign-off?
 
-### 2. Add HTML tag stripping utility
+## Technical Details
 
-Add a `stripHtmlTags` function to the edge function (or to `_shared/text-utils.ts`) since the `.text` endpoint may return content with HTML markup that needs cleaning. The laws scraper skips HTML responses entirely, but directive text responses are expected to contain useful content wrapped in HTML.
+### Existing Edge Functions (no changes needed)
 
-### 3. Update `supabase/config.toml`
+- `scrape-propositions-riksdagen` — paginated ingestion, dedup, cross-refs
+- `scrape-directives-riksdagen` — paginated ingestion, dedup, kommittebeteckning
+- `process-committee-report-pdf` — PDF extraction via Vercel service
 
-Add entry for the new function:
-```toml
-[functions.process-directive-text]
-verify_jwt = false
-```
+### Admin UI Components (no changes needed)
 
-### 4. Update documentation
+- `PropositionRiksdagenScraperTest.tsx` — session selector, page/limit controls
+- `DirectiveRiksdagenScraperTest.tsx` — same pattern
+- `CommitteeReportTextExtractor.tsx` — batch extraction controls
 
-- `docs/verification/LOVABLE_FIXES_EXECUTION_REPORT_2026-02-04.md`: Mark Phase 1.2 `process-directive-text` as DONE, note the `.text` endpoint format correction
-- `docs/development/PHASE_DELTAS.md`: Log the new function creation
+### Monitoring
 
-### Technical Details
-
-**Data flow:**
-```text
-Query DB (127 riksdagen directives with NULL raw_content)
-  -> For each: fetch {RIKSDAGEN_API}/dokument/{riksdagen_id}.text
-  -> Strip HTML tags
-  -> sanitizeText() (null bytes, line normalization, Unicode NFC)
-  -> Guard: skip if < 50 chars or is redirect page
-  -> UPDATE documents SET raw_content, processed_at, metadata
-```
-
-**Key reuse from existing codebase:**
-- `fetchWithRetry` pattern from `scrape-laws/index.ts`
-- `sanitizeText` from `_shared/text-utils.ts`
-- `corsHeaders` + response helpers from `_shared/http-utils.ts`
-- Same `FETCH_HEADERS` User-Agent string as all other scrapers
-
-**Success criteria:**
-```sql
-SELECT COUNT(*) FROM documents 
-WHERE doc_type = 'directive' 
-AND raw_content IS NULL 
-AND metadata->>'source' = 'riksdagen';
--- Expected: 0 (after batch run)
-```
-
-### Files to create/modify
-
-| File | Action |
-|------|--------|
-| `supabase/functions/process-directive-text/index.ts` | CREATE |
-| `supabase/config.toml` | ADD entry |
-| `docs/verification/LOVABLE_FIXES_EXECUTION_REPORT_2026-02-04.md` | UPDATE Phase 1.2 |
-| `docs/development/PHASE_DELTAS.md` | LOG change |
+- Track ingestion counts after each session batch
+- Compare against expected API totals
+- Monitor for error rate spikes
 
