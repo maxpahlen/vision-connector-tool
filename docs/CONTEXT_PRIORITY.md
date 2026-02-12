@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-02-12  
 **Current Phase:** 6A — Relationship Inference (Deterministic Graph)
-**Active Slice:** 6A.2 — Corpus backfill (H5–H7+HD committee reports)
+**Active Slice:** 6A.3 — Process linkage (next)
 
 ---
 
@@ -33,11 +33,10 @@ Maintained by: **Lovable (Architectural Authority)**
 
 ## Recent Changes (2026-02-12)
 
+- **COMPLETE:** Slice 6A.2 — Corpus backfill: +1,292 committee reports (H5–H7+HD), resolver converged at 37.1% (2,807/7,566)
 - **COMPLETE:** Slice 6A.1 — Deterministic reference resolution (84 → 2,157 resolved, 31.7%)
 - **APPROVED:** Motions (Mot.) deferred to Phase 7 — 2,820 refs documented as known gap
-- **APPROVED:** Committee report backfill scope: H5–H7 + HD (2017–2026)
-- **REJECTED:** Title-matching heuristic — low ROI, high false-positive risk
-- **NEXT:** Slice 6A.2 — Backfill committee reports for H5–H7+HD, then re-run resolver
+- **NEXT:** Slice 6A.3 — Process linkage for orphan documents
 
 ---
 
@@ -46,20 +45,24 @@ Maintained by: **Lovable (Architectural Authority)**
 | Component | Status | Notes |
 |-----------|--------|-------|
 | 6A.1 Reference Resolution | ✅ COMPLETE | 2,157/6,801 resolved (31.7%) |
-| 6A.2 Corpus Backfill | 🔲 PENDING | H5–H7+HD committee reports → re-resolve |
+| 6A.2 Corpus Backfill | ✅ COMPLETE | +1,292 docs, 2,807/7,566 resolved (37.1%) |
 | 6A.3 Process Linkage | 🔲 PENDING | ~5,200 orphan docs |
 | 6A.4 M2M Schema | 🔲 PENDING | Needs approval |
 | 6B.1 AI Inference | 🔲 PENDING | Only for unresolvable-by-rules links |
 | Motions (Mot.) | ⏸️ DEFERRED | Phase 7 — 2,820 refs, ~60k docs in API |
 
-### Current Database Metrics (verified 2026-01-30)
+### Current Database Metrics (verified 2026-02-12)
 
 | Metric | Count |
 |--------|-------|
-| Propositions (riksdagen source) | 10 |
-| Directives (riksdagen source) | 10 |
-| Committee reports with extracted text | 3 |
-| Cross-references extracted | 6 |
+| Propositions | 2,029 |
+| Directives | 1,397 |
+| Committee Reports | 3,143 |
+| Laws | 161 |
+| SOUs | 60 |
+| Total documents | 6,790 |
+| Total references | 7,566 |
+| Resolved references | 2,807 (37.1%) |
 
 ---
 
@@ -91,11 +94,9 @@ Maintained by: **Lovable (Architectural Authority)**
 
 ## Next Steps
 
-1. **6A.2 Execution:** Backfill committee reports for sessions H5, H6, H7, HD via `scrape-committee-reports`
-2. **6A.2 Re-resolve:** Re-run `resolve-document-references` after corpus expansion
-3. **6A.3:** Process linkage for ~5,200 orphan documents (needs approval)
-4. **6A.4:** `document_relationships` M2M schema (needs approval)
-5. **Phase 7:** Motions ingestion + advanced insights (future)
+1. **6A.3:** Process linkage for orphan documents (needs approval)
+2. **6A.4:** `document_relationships` M2M schema (needs approval)
+3. **Phase 7:** Motions ingestion + advanced insights (future)
 
 ---
 
