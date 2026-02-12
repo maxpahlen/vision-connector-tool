@@ -98,3 +98,6 @@ verify_jwt = false
 
 [functions.process-directive-text]
 verify_jwt = false
+
+[functions.link-orphan-processes]
+verify_jwt = false
