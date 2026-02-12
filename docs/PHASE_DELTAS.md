@@ -1,5 +1,27 @@
 # Phase Deltas
 
+## 2026-02-12: Phase 6A.2 Scope Decisions
+
+**Status:** ✅ APPROVED — Motions deferred, backfill range set
+
+### Decisions
+
+1. **Motions (Mot.) deferred to Phase 7** — 2,820 unresolved refs (60.7%) are parliamentary motions. Not ingested now; documented as known gap. Future `doktyp=mot` plan scoped for Phase 7 if product need emerges.
+2. **Committee report backfill: H5–H7 + HD (2017–2026)** — Covers sessions missing from corpus that account for ~1,278 unresolved Bet. references. H3–H4 (2013–2017) deferred.
+3. **Title-matching heuristic rejected** — Only ~50 addressable free-text titles; high false-positive risk. Not worth implementing.
+
+### Refined Unresolved Reference Breakdown (post-6A.1)
+
+| Category | Count | Path |
+|----------|-------|------|
+| Motions (Mot.) | 2,820 | Phase 7 |
+| Bet. not in corpus | 1,278 | 6A.2 backfill |
+| SOU/Prop/Dir not in corpus | 385 | 6A.2 corpus growth |
+| Title-only (non-Mot.) | 126 | Phase 6B (AI) |
+| Other (dossiers, Ds, FPM, HTML) | 35 | Out of scope |
+
+---
+
 ## 2026-02-10: Admin UI Phase A Cleanup — COMPLETE
 
 **Status:** ✅ COMPLETE — Workflow-based tab architecture implemented
