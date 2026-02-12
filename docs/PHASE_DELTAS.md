@@ -1,5 +1,39 @@
 # Phase Deltas
 
+## 2026-02-12: Slice 6A.2 Corpus Backfill — COMPLETE
+
+**Status:** ✅ COMPLETE — 1,292 committee reports backfilled, resolver converged at 37.1%
+
+### Results
+
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| Committee reports | 1,850 | 3,142 | +1,292 |
+| Total references | 6,801 | 7,566 | +759 |
+| Resolved references | 2,181 | 2,807 | +626 |
+| Resolution rate | 32.1% | 37.1% | +5.0pp |
+| Total documents | 5,497 | 6,790 | +1,292 |
+
+### Sessions Backfilled
+
+- H5 (2017/18): 454 docs
+- H6 (2018/19): 334 docs
+- H7 (2019/20): 373 docs
+- HD (2025/26): 131 docs
+
+### Remaining Unresolved (4,759)
+
+- ~4,163 extraction-failed (motions + free-text titles → Phase 7 / 6B)
+- ~549 extracted-but-no-corpus-match (pre-2015, 2025+ SOUs, Ds, FPM)
+- 1 Bet. edge case
+
+### Next Steps
+
+- 6A.3: Process linkage (cluster orphan docs into processes)
+- 6A.4: `document_relationships` M2M schema
+
+---
+
 ## 2026-02-12: Phase 6A.2 Scope Decisions
 
 **Status:** ✅ APPROVED — Motions deferred, backfill range set

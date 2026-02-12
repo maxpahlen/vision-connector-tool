@@ -1,9 +1,9 @@
 # Phase 6: Relationship Inference & Case Reconstruction
 
-**Status:** IN PROGRESS — Slice 6A.1 Complete  
+**Status:** IN PROGRESS — Slice 6A.2 Complete  
 **Branch:** `phase-6-relationship-inference`  
 **Dependencies:** Phase 6.1 (Riksdagen API Migration — corpus backfill)  
-**Last Updated:** 2026-02-11
+**Last Updated:** 2026-02-12
 
 ---
 
@@ -22,7 +22,7 @@
 | Slice | Description | Status | Notes |
 |-------|-------------|--------|-------|
 | 6A.1 | Reference resolution: Bet. pattern, HTML decode, full pass | ✅ DONE | 84 → 2,157 resolved (31.7%) |
-| 6A.2 | Corpus backfill: Bet. H5–H7+HD sessions → re-resolve refs | 🔲 TODO | ~1,278 Bet. + 385 other refs addressable via corpus growth |
+| 6A.2 | Corpus backfill: Bet. H5–H7+HD sessions → re-resolve refs | ✅ DONE | +1,292 docs, 2,181 → 2,807 resolved (37.1%) |
 | 6A.3 | Process linkage: cluster orphan documents into processes | 🔲 TODO | ~5,200 orphan docs |
 | 6A.4 | `document_relationships` M2M schema + migration | 🔲 TODO | Needs approval |
 
@@ -82,6 +82,55 @@
 - Ingesting motions without product context risks data bloat without user value
 
 **Future scope (Phase 7):** If product priorities demand motion tracking (e.g., "which MPs supported/opposed this SOU?"), create a scoped ingestion plan for `doktyp=mot` with clear success criteria.
+
+---
+
+## Slice 6A.2 Results (2026-02-12)
+
+### Corpus Backfill
+
+| Session | RM Code | Documents Added | Cross-Refs Created |
+|---------|---------|-----------------|-------------------|
+| 2017/18 | H5 | 454 | ~200 |
+| 2018/19 | H6 | 334 | ~150 |
+| 2019/20 | H7 | 373 | ~170 |
+| 2025/26 | HD | 131 | ~240 |
+| **Total** | — | **1,292** | **759** |
+
+Committee report corpus: 1,850 → 3,142 (+69%)
+
+### Reference Resolution — Before/After
+
+| Metric | Before 6A.2 | After 6A.2 |
+|--------|-------------|------------|
+| Total references | 6,801 | 7,566 (+759 from backfill) |
+| Resolved | 2,181 (32.1%) | 2,807 (37.1%) |
+| Unresolved | 4,620 | 4,759 |
+| **New resolutions** | — | **626** |
+
+### Resolver Pass Breakdown
+
+| Pass | Batch | Resolved | By Evidence |
+|------|-------|----------|-------------|
+| Pass 1 | 5,000 | 561 | 514 prop, 36 dir, 11 sou |
+| Pass 2 | 4,871 | 159 | 112 prop, 36 dir, 11 sou |
+| **Total** | — | **720** | — |
+
+Note: 720 newly resolved but total only increased by 626 from pre-6A.2 baseline (2,181) because some references were resolved in the earlier partial pass.
+
+### Remaining Unresolved — Categorized (post-6A.2)
+
+| Category | Count | Resolution Path |
+|----------|-------|-----------------|
+| Extraction failed (titles, free text) | 4,163 | Phase 6B (AI) or out of scope |
+| Prop not in corpus | 251 | Pre-2015 or very recent |
+| SOU not in corpus | 236 | Mostly 2025+ pending ingest |
+| Dir not in corpus | 43 | Outside current window |
+| Dossier numbers | 11 | Not tracked |
+| Ds / FPM | 8 | Not tracked |
+| Bet. not in corpus | 1 | Likely edge case |
+
+**Key insight:** The remaining 4,163 "extraction failed" references are overwhelmingly parliamentary motions (Mot.) and free-text titles without extractable doc number patterns — aligned with the Phase 7 deferral decision.
 
 ---
 
@@ -161,7 +210,7 @@ Enhanced patterns:
 
 ## Success Criteria
 
-- [x] Deterministic resolution achieves 30%+ resolution rate (achieved: 31.7%)
+- [x] Deterministic resolution achieves 30%+ resolution rate (achieved: 37.1% after 6A.2)
 - [ ] Process linkage reduces orphan documents by 50%+
 - [ ] All resolved links are 100% accurate (spot-validated ✓)
 - [ ] AI agent only handles cases that deterministic methods cannot resolve
