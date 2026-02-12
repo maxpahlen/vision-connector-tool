@@ -22,7 +22,7 @@
 | Slice | Description | Status | Notes |
 |-------|-------------|--------|-------|
 | 6A.1 | Reference resolution: Bet. pattern, HTML decode, full pass | ✅ DONE | 84 → 2,157 resolved (31.7%) |
-| 6A.2 | Reference resolution: remaining corpus gaps (as corpus grows) | 🔲 TODO | 1,700 refs extractable but target not in DB |
+| 6A.2 | Corpus backfill: Bet. H5–H7+HD sessions → re-resolve refs | 🔲 TODO | ~1,278 Bet. + 385 other refs addressable via corpus growth |
 | 6A.3 | Process linkage: cluster orphan documents into processes | 🔲 TODO | ~5,200 orphan docs |
 | 6A.4 | `document_relationships` M2M schema + migration | 🔲 TODO | Needs approval |
 
@@ -58,15 +58,30 @@
 
 | Category | Count | Resolution Path |
 |----------|-------|-----------------|
-| Title-only / unparseable | 2,946 | Phase 6B (AI) or title-matching heuristic |
-| Bet. not in corpus | 1,278 | 6A.2 — will auto-resolve as corpus grows |
+| **Motions (Mot.)** | **2,820** | **Phase 7 — deferred (see below)** |
+| Bet. not in corpus (H5–H7, HD) | 1,278 | 6A.2 — backfill H5–H7+HD sessions |
 | SOU not in corpus | 171 | 6A.2 — mostly 2025 SOUs pending ingest |
 | Prop not in corpus | 136 | 6A.2 — pre-2015 or very recent |
 | Dir not in corpus | 78 | 6A.2 — outside current backfill window |
+| Title-only / unparseable (non-Mot.) | 126 | Phase 6B (AI) — no doc number pattern |
 | HTML-encoded title-only | 19 | Phase 6B (AI) |
 | Ministry dossier | 11 | Not a document type we track |
 | Ds not in corpus | 3 | Departementsserie not yet tracked |
 | FPM not in corpus | 2 | Faktapromemoria not yet tracked |
+
+### Known Gap: Parliamentary Motions (Deferred to Phase 7)
+
+**Decision date:** 2026-02-12 | **Approved by:** Max, Lovable, Codex
+
+2,820 unresolved references (60.7% of all unresolved) target parliamentary motions (`Mot. YYYY/YY:NNNN`). These are individual MP proposals — a fundamentally different document class from government bills, SOUs, and committee reports.
+
+**Why deferred:**
+- ~60,000+ motions available via `doktyp=mot` in Riksdagen API — massive corpus expansion
+- No clear product demand yet for motion-level tracking
+- Motions are processed by committees and referenced in committee reports (already tracked)
+- Ingesting motions without product context risks data bloat without user value
+
+**Future scope (Phase 7):** If product priorities demand motion tracking (e.g., "which MPs supported/opposed this SOU?"), create a scoped ingestion plan for `doktyp=mot` with clear success criteria.
 
 ---
 

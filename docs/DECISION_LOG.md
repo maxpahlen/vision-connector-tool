@@ -22,6 +22,7 @@ Running log of approved decisions for the Legislative Intelligence Platform.
 
 | Date | Change Title | PR/Issue | Data Risk | Max | Lovable | Codex |
 |------|--------------|----------|-----------|-----|---------|-------|
+| 2026-02-12 | Phase 6A.2 scope: Motions deferred, H5–H7+HD backfill approved | N/A | NONE | AGREE | AGREE | AGREE |
 | 2026-02-11 | Phase 6A.1: Deterministic reference resolution pass | N/A | NONE | AGREE | AGREE | AGREE |
 | 2026-01-20 | Phase 5.6 Concept Brief created | N/A | NONE | AGREE | AGREE | AGREE |
 | 2026-01-20 | Phase 5.5.4 Velocity Dashboard: marked NEEDS DEBUGGING | N/A | NONE | AGREE | AGREE | AGREE |
@@ -37,6 +38,31 @@ Running log of approved decisions for the Legislative Intelligence Platform.
 ---
 
 ## Decision Details
+
+### 2026-02-12 — Phase 6A.2 Scope: Motions Deferred, Backfill Range Approved
+
+**Description:** Two scoping decisions for Phase 6A.2 corpus expansion:
+
+**Decision 1 — Motions (Mot.) deferred to Phase 7:**
+- 2,820 of 4,644 unresolved references (60.7%) target parliamentary motions (`Mot. YYYY/YY:NNNN`)
+- Motions are a fundamentally different document class (individual MP proposals, ~60k+ in Riksdagen API)
+- Ingesting motions would massively expand corpus size without clear product need yet
+- Documented as a known categorized gap; future `doktyp=mot` ingestion scoped for Phase 7 if product priorities demand it
+
+**Decision 2 — Committee report backfill range: H5–H7 + HD (2017–2026):**
+- 1,278 unresolved references target committee reports in sessions H3–H7 (2013–2019) and HD (2025/26)
+- Approved scope: H5 (2017/18), H6 (2018/19), H7 (2019/20), HD (2025/26)
+- H3–H4 (2013–2017) deferred as lower priority; can be added later if needed
+- Estimated yield: ~800-1,200 additional committee reports
+
+**Data Risk:** NONE — Documentation-only decision; execution requires separate approval.
+
+**Approvals:**
+- AGREE – Max ✓
+- AGREE – Lovable ✓
+- AGREE – Codex ✓
+
+---
 
 ### 2026-02-11 — Phase 6A.1: Deterministic Reference Resolution Pass
 

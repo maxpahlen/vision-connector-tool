@@ -1,7 +1,8 @@
 # Context Priority
 
-**Last Updated:** 2026-02-10  
-**Current Phase:** 6.1/6.2 (Riksdagen API Migration) — IN PROGRESS
+**Last Updated:** 2026-02-12  
+**Current Phase:** 6A — Relationship Inference (Deterministic Graph)
+**Active Slice:** 6A.2 — Corpus backfill (H5–H7+HD committee reports)
 
 ---
 
@@ -19,7 +20,8 @@ Maintained by: **Lovable (Architectural Authority)**
 |---|------|-------------------|
 | 1 | `docs/WORKFLOW.md` | Operating agreement: roles, phases, message discipline |
 | 2 | `docs/PHASE_DELTAS.md` | Most recent changes since last sync |
-| 3 | `docs/development/branches/phase-6-riksdagen-api-migration.md` | **IN PROGRESS** - Propositions & Directives migration to riksdagen.se API |
+| 3 | `docs/development/branches/phase-6-relationship-inference.md` | **ACTIVE** - Deterministic graph building, reference resolution |
+| 4 | `docs/development/branches/phase-6-riksdagen-api-migration.md` | Corpus backfill context (propositions, directives, committee reports) |
 | 4 | `docs/development/RIKSDAGEN_API_RESEARCH.md` | API patterns, field mappings, rate limiting guidance |
 | 5 | `docs/development/SCRAPER_KNOWN_ISSUES.md` | Connection reset handling, retry strategies |
 | 6 | `docs/archive/branches/phase-5.6-content-insights.md` | **COMPLETE** - Remissvar content extraction + stance detection (archived) |
@@ -29,14 +31,13 @@ Maintained by: **Lovable (Architectural Authority)**
 
 ---
 
-## Recent Changes (2026-02-10)
+## Recent Changes (2026-02-12)
 
-- **COMPLETE:** Admin UI Phase A cleanup — 9 tabs → 6 workflow-based tabs (Dashboard, Scraping, Extraction, Agents, Monitoring, System)
-- **COMPLETE:** 10 legacy components archived to `src/components/admin/_archive/`
-- **COMPLETE:** Run-order guidance cards added to each workflow tab
-- **COMPLETE:** Committee report PDF extraction pipeline verified (3 pilot docs)
-- **IN PROGRESS:** Phase 6.1/6.2 Riksdagen API migration (pilots complete, backfill pending)
-- **KNOWN ISSUE:** HC01FiU1 (Statens budget) download timeout — large PDF exceeds 30s limit
+- **COMPLETE:** Slice 6A.1 — Deterministic reference resolution (84 → 2,157 resolved, 31.7%)
+- **APPROVED:** Motions (Mot.) deferred to Phase 7 — 2,820 refs documented as known gap
+- **APPROVED:** Committee report backfill scope: H5–H7 + HD (2017–2026)
+- **REJECTED:** Title-matching heuristic — low ROI, high false-positive risk
+- **NEXT:** Slice 6A.2 — Backfill committee reports for H5–H7+HD, then re-run resolver
 
 ---
 
@@ -44,14 +45,12 @@ Maintained by: **Lovable (Architectural Authority)**
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| 6.1 Propositions Scraper | ✅ PILOT COMPLETE | 10 docs ingested, cross-refs extracted |
-| 6.2 Directives Scraper | ✅ PILOT COMPLETE | 10 docs ingested, kommittébeteckning fixed |
-| 6.1 Admin UI | ✅ COMPLETE | PropositionRiksdagenScraperTest.tsx |
-| 6.2 Admin UI | ✅ COMPLETE | DirectiveRiksdagenScraperTest.tsx |
-| Committee Report Extraction | ✅ PILOT COMPLETE | 3 docs extracted (129, 48, 144 pages) |
-| Historical Backfill Props | 🔲 PENDING | 31,598 total available |
-| Historical Backfill Dirs | 🔲 PENDING | 6,361 total available |
-| Freshness Integration | 🔲 PENDING | 7-day dual-source verification |
+| 6A.1 Reference Resolution | ✅ COMPLETE | 2,157/6,801 resolved (31.7%) |
+| 6A.2 Corpus Backfill | 🔲 PENDING | H5–H7+HD committee reports → re-resolve |
+| 6A.3 Process Linkage | 🔲 PENDING | ~5,200 orphan docs |
+| 6A.4 M2M Schema | 🔲 PENDING | Needs approval |
+| 6B.1 AI Inference | 🔲 PENDING | Only for unresolvable-by-rules links |
+| Motions (Mot.) | ⏸️ DEFERRED | Phase 7 — 2,820 refs, ~60k docs in API |
 
 ### Current Database Metrics (verified 2026-01-30)
 
@@ -92,11 +91,11 @@ Maintained by: **Lovable (Architectural Authority)**
 
 ## Next Steps
 
-1. **Historical backfill:** Ingest 2024/25 propositions (full session)
-2. **Historical backfill:** Ingest 2024 directives (full year)
-3. **Older session test:** Verify kommittébeteckning extraction on pre-2015 directives
-4. **Phase 6.3:** SOU hybrid pipeline (riksdagen + regeringen)
-5. **Phase 7:** Relationship Inference & Case Reconstruction
+1. **6A.2 Execution:** Backfill committee reports for sessions H5, H6, H7, HD via `scrape-committee-reports`
+2. **6A.2 Re-resolve:** Re-run `resolve-document-references` after corpus expansion
+3. **6A.3:** Process linkage for ~5,200 orphan documents (needs approval)
+4. **6A.4:** `document_relationships` M2M schema (needs approval)
+5. **Phase 7:** Motions ingestion + advanced insights (future)
 
 ---
 
