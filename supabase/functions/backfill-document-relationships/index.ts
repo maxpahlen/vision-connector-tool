@@ -25,7 +25,9 @@ const DIRECTED_RULES: Record<string, Classification> = {
   "proposition|committee_report": { relationship_type: "proposition_to_committee_report", confidence_score: 0.95, confidence_class: "high" },
   "committee_report|proposition": { relationship_type: "committee_report_to_proposition", confidence_score: 0.95, confidence_class: "high" },
   "sou|proposition": { relationship_type: "sou_to_proposition", confidence_score: 0.9, confidence_class: "high" },
+  "proposition|sou": { relationship_type: "sou_to_proposition", confidence_score: 0.9, confidence_class: "high" },
   "directive|sou": { relationship_type: "directive_to_sou", confidence_score: 0.9, confidence_class: "high" },
+  "sou|directive": { relationship_type: "directive_to_sou", confidence_score: 0.9, confidence_class: "high" },
   "proposition|law": { relationship_type: "proposition_to_law", confidence_score: 0.9, confidence_class: "high" },
 };
 
