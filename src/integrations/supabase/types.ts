@@ -208,6 +208,62 @@ export type Database = {
           },
         ]
       }
+      document_summaries: {
+        Row: {
+          core_recommendations: Json | null
+          created_at: string | null
+          document_id: string
+          embedding: string | null
+          id: string
+          key_actors: Json | null
+          keywords: string[] | null
+          model_version: string
+          outcome_status: string | null
+          policy_aim: string | null
+          policy_domains: string[] | null
+          summary_text: string
+          updated_at: string | null
+        }
+        Insert: {
+          core_recommendations?: Json | null
+          created_at?: string | null
+          document_id: string
+          embedding?: string | null
+          id?: string
+          key_actors?: Json | null
+          keywords?: string[] | null
+          model_version: string
+          outcome_status?: string | null
+          policy_aim?: string | null
+          policy_domains?: string[] | null
+          summary_text: string
+          updated_at?: string | null
+        }
+        Update: {
+          core_recommendations?: Json | null
+          created_at?: string | null
+          document_id?: string
+          embedding?: string | null
+          id?: string
+          key_actors?: Json | null
+          keywords?: string[] | null
+          model_version?: string
+          outcome_status?: string | null
+          policy_aim?: string | null
+          policy_domains?: string[] | null
+          summary_text?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_summaries_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: true
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       documents: {
         Row: {
           created_at: string | null

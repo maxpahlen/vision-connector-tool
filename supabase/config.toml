@@ -119,3 +119,9 @@ verify_jwt = false
 
 [functions.test-org-matcher]
 verify_jwt = false
+
+[functions.generate-document-summary]
+verify_jwt = false
+
+[functions.generate-embeddings]
+verify_jwt = false
