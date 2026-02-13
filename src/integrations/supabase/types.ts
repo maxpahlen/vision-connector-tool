@@ -131,6 +131,83 @@ export type Database = {
           },
         ]
       }
+      document_relationships: {
+        Row: {
+          canonical_source_id: string | null
+          canonical_target_id: string | null
+          confidence_class: Database["public"]["Enums"]["confidence_class"]
+          confidence_score: number
+          created_at: string
+          derived_by: Database["public"]["Enums"]["derived_by_source"]
+          evidence_details: Json
+          id: string
+          relationship_type: Database["public"]["Enums"]["relationship_type"]
+          source_document_id: string
+          source_process_id: string | null
+          source_reference_id: string | null
+          target_document_id: string
+        }
+        Insert: {
+          canonical_source_id?: string | null
+          canonical_target_id?: string | null
+          confidence_class: Database["public"]["Enums"]["confidence_class"]
+          confidence_score: number
+          created_at?: string
+          derived_by?: Database["public"]["Enums"]["derived_by_source"]
+          evidence_details?: Json
+          id?: string
+          relationship_type: Database["public"]["Enums"]["relationship_type"]
+          source_document_id: string
+          source_process_id?: string | null
+          source_reference_id?: string | null
+          target_document_id: string
+        }
+        Update: {
+          canonical_source_id?: string | null
+          canonical_target_id?: string | null
+          confidence_class?: Database["public"]["Enums"]["confidence_class"]
+          confidence_score?: number
+          created_at?: string
+          derived_by?: Database["public"]["Enums"]["derived_by_source"]
+          evidence_details?: Json
+          id?: string
+          relationship_type?: Database["public"]["Enums"]["relationship_type"]
+          source_document_id?: string
+          source_process_id?: string | null
+          source_reference_id?: string | null
+          target_document_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_relationships_source_document_id_fkey"
+            columns: ["source_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_relationships_source_process_id_fkey"
+            columns: ["source_process_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_relationships_source_reference_id_fkey"
+            columns: ["source_reference_id"]
+            isOneToOne: false
+            referencedRelation: "document_references"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_relationships_target_document_id_fkey"
+            columns: ["target_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       documents: {
         Row: {
           created_at: string | null
@@ -825,6 +902,16 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "user"
+      confidence_class: "high" | "medium" | "low"
+      derived_by_source: "system" | "resolver" | "agent" | "manual"
+      relationship_type:
+        | "proposition_to_committee_report"
+        | "committee_report_to_proposition"
+        | "sou_to_proposition"
+        | "directive_to_sou"
+        | "proposition_to_law"
+        | "remiss_to_sou"
+        | "references"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -953,6 +1040,17 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "user"],
+      confidence_class: ["high", "medium", "low"],
+      derived_by_source: ["system", "resolver", "agent", "manual"],
+      relationship_type: [
+        "proposition_to_committee_report",
+        "committee_report_to_proposition",
+        "sou_to_proposition",
+        "directive_to_sou",
+        "proposition_to_law",
+        "remiss_to_sou",
+        "references",
+      ],
     },
   },
 } as const

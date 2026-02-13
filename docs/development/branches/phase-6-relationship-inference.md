@@ -24,7 +24,7 @@
 | 6A.1 | Reference resolution: Bet. pattern, HTML decode, full pass | ✅ DONE | 84 → 2,157 resolved (31.7%) |
 | 6A.2 | Corpus backfill: Bet. H5–H7+HD sessions → re-resolve refs | ✅ DONE | +1,292 docs, 2,181 → 2,807 resolved (37.1%) |
 | 6A.3 | Process linkage: cluster orphan documents into processes | 🔲 TODO | ~5,200 orphan docs |
-| 6A.4 | `document_relationships` M2M schema + migration | 🔲 TODO | Needs approval |
+| 6A.4 | `document_relationships` M2M schema + migration | ✅ DONE | Enum-constrained types, canonical symmetric dedup, provenance FKs |
 
 ### Phase 6B: AI Inference (Gaps Only)
 
