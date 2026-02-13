@@ -1,135 +1,126 @@
-# Phase 7.2 Fix: Intelligent Section Extraction for Document Summarization
-
-## Problem Statement
-
-The current summarizer sends the **first 12,000 characters** of each document to GPT-4o. For large documents (SOUs average 1M chars), this captures only the table of contents -- not the actual content. The model produces summaries that:
-
-- Miss entire proposal categories (only sees TOC headings, not proposal text)
-- Flip negations (cannot distinguish "proposed X" from "concluded against X")
-- Over-generalize (no access to specific mechanism details)
-
-The ChatGPT critique of SOU 2025:51 is accurate on all counts.
-
-## Design: Smart Section Extraction
-
-Instead of "first N characters," extract the **semantically richest sections** from Swedish government documents. All Swedish betankanden follow a standardized structure with a "Sammanfattning" (executive summary) section near the front, typically 5-30 pages long, which already contains the distilled proposals, conclusions, and key context.
-
-### Strategy by Document Type
 
 
-| Doc Type                 | Avg Size   | Extraction Strategy                           |
-| ------------------------ | ---------- | --------------------------------------------- |
-| SOU (60)                 | 1M chars   | Sammanfattning section + TOC structure        |
-| Proposition (2,028)      | 341K chars | Sammanfattning + Forfattningsforslag headings |
-| Committee report (1,844) | 115K chars | First 80K (fits most reports fully)           |
-| Directive (1,397)        | 18K chars  | Full text (well under limit)                  |
-| Law (161)                | 7K chars   | Full text                                     |
+# Phase 7.2b: Doc-Type-Specific Summarization Prompts
 
+## Problem
 
-### Section Extraction Logic
+The current single system prompt is optimized for SOUs. It produces incorrect or misleading output for other document types:
 
-1. Locate the "Sammanfattning" section body (not the TOC entry) by finding it after the table of contents
-2. Extract from there until the next major chapter heading (typically "Forfattningsforslag" or "1 ")
-3. Supplement with the TOC (chapter headings) as structural context
-4. If Sammanfattning is not found, fall back to a larger window (~80K chars from the start)
+- **Directives**: Mandate tasks are listed as "proposals" (they are not)
+- **Committee reports**: Miss reservationer, tillkannagivanden, and the committee's stance on the proposition
+- **Laws**: "proposals" framing is nonsensical for enacted legislation
+- **Propositions**: Work reasonably well but could be tighter
 
-### Why This Works
+## Design: Per-Type Prompt Sections
 
-- Swedish SOUs' Sammanfattning sections are **written by the committee specifically to summarize all proposals and conclusions**
-- They contain the negations ("vi bedomde att det inte finns skall att infora...") that the full chapters discuss
-- They enumerate proposals explicitly
-- Typically 10-40K chars -- well within GPT-4o's 128K token context window
+Rather than 5 completely separate prompts (expensive to maintain, duplicates shared rules), use a **base prompt + doc-type-specific instruction block** pattern.
 
-## Prompt Improvements
+### Shared Base (all types)
 
-### Current Prompt Issues
+- Output format (JSON schema)
+- Language rules (Swedish, factual, no filler)
+- Field definitions for universal fields: `summary_text`, `policy_aim`, `policy_domains`, `keywords`, `outcome_status`, `key_actors`
 
-1. No instruction to handle "considered but not proposed" items
-2. `core_recommendations` conflates "proposals" with "assessments"
-3. No instruction to distinguish between formal proposals (forslag) and background assessments (bedomningar)
+### Per-Type Instruction Blocks
 
-### Updated Schema
+#### SOU / Proposition (current prompt works well)
 
-Add two new fields to the extraction:
+- `core_recommendations`: Formal legislative proposals (forslag)
+- `proposals_not_adopted`: Considered but rejected items
+- `proposal_count`: Explicit count if stated
+- Instructions: Skip mandate preamble, look for "Vi foreslagar", exhaustive extraction checklist
 
-- `proposals_not_adopted`: Array of items the inquiry explicitly considered but decided against (prevents negation flipping)
-- `proposal_count`: Integer count of formal legislative proposals (from Forfattningsforslag chapter), as a sanity check
+#### Directive
 
-Update prompt rules to include:
+- `core_recommendations` repurposed as: **Key mandate questions/tasks** the inquiry must address
+- `proposals_not_adopted` repurposed as: **Explicit scope limitations** (what is outside the mandate)
+- `proposal_count`: Always `null` (directives don't contain proposals)
+- Additional instructions:
+  - "A directive (kommittedirektiv) instructs an inquiry -- it does NOT contain legislative proposals"
+  - "List the specific questions the inquiry must answer under core_recommendations"
+  - "List explicit scope limitations under proposals_not_adopted"
+  - "Capture the deadline (redovisningsdatum) in summary_text"
+  - outcome_status should always be "pending"
 
-- "Distinguish sharply between formal proposals (forslag) and assessments/conclusions that did NOT result in proposals (bedomningar som inte lett till forslag)"
-- "If the document explicitly states that something is NOT proposed or is outside the mandate, do NOT list it as a core_recommendation"
-- "core_recommendations must only contain items the document formally proposes"
+#### Committee Report (betankande)
 
-## Technical Changes
+- `core_recommendations`: The committee's formal positions (ställningstaganden) and any tillkannagivanden
+- `proposals_not_adopted`: Reservationer (dissenting opinions with party attribution)
+- `proposal_count`: Number of tillkannagivanden if any
+- Additional instructions:
+  - "A committee report (betankande) evaluates a government proposition. Focus on whether the committee SUPPORTS or REJECTS each proposal."
+  - "List reservationer under proposals_not_adopted with party names"
+  - "List tillkannagivanden (parliamentary directives to the government) under core_recommendations"
+  - "Note the vote outcome if stated"
 
-### Files to Modify
+#### Law
 
-`**supabase/functions/generate-document-summary/index.ts**`
+- `core_recommendations`: Key provisions/obligations the law establishes
+- `proposals_not_adopted`: Empty (not applicable)
+- `proposal_count`: `null`
+- Additional instructions:
+  - "A law (lag/forordning) is enacted legislation. Summarize what it regulates, key obligations, scope, and affected parties."
+  - "outcome_status must be 'enacted'"
+  - "Capture the effective date (ikraftträdande) in summary_text"
+  - "Do NOT describe the law as 'proposing' anything -- it IS the law"
 
-1. Replace `truncateText()` with `extractKeyContent()` function:
-  - Scans for "Sammanfattning" section body (after TOC)
-  - Extracts that section (up to ~60K chars)
-  - Prepends TOC headings as structural context (~5K chars)
-  - Falls back to first 80K chars if no Sammanfattning found
-  - Increase MAX_INPUT_CHARS from 12,000 to 80,000
-2. Update SYSTEM_PROMPT:
-  - Add negation-awareness rules
-  - Add `proposals_not_adopted` field
-  - Tighten `core_recommendations` to formal proposals only
-  - Add instruction: "The input may contain a Sammanfattning (executive summary) section. Treat it as authoritative for the document's conclusions."
-3. Update SummaryResult interface and upsert logic for new fields
-4. Bump MODEL_VERSION to `"gpt-4o-v2"` to trigger re-summarization of existing documents
+## Implementation
 
-### Database Migration
+### File: `supabase/functions/generate-document-summary/index.ts`
 
-Add columns to `document_summaries`:
+1. Split `SYSTEM_PROMPT` into `BASE_PROMPT` + `DOC_TYPE_INSTRUCTIONS` map
+2. New function `buildSystemPrompt(docType: string): string` that concatenates base + type-specific block
+3. Pass `docType` into `summarizeDocument` to select the right prompt
+4. No schema changes needed -- the existing JSONB fields are flexible enough to hold different semantic content per type
 
-- `proposals_not_adopted` (JSONB, default `'[]'`)
-- `proposal_count` (INTEGER, nullable)
+### Prompt Structure (pseudocode)
 
-### Cost Impact
+```text
+BASE_PROMPT = """
+You are a Swedish legislative policy analyst...
+[shared output format, language rules, universal field definitions]
+"""
 
-Current: ~3K tokens input per doc (from 12K chars)
-New: ~20K tokens input per doc (from 60K chars Sammanfattning)
+DOC_TYPE_INSTRUCTIONS = {
+  "sou": "... [current SOU-specific rules] ...",
+  "proposition": "... [proposition-specific rules] ...",
+  "directive": "... [directive-specific rules] ...",
+  "committee_report": "... [committee report-specific rules] ...",
+  "law": "... [law-specific rules] ..."
+}
 
-At GPT-4o pricing ($2.50/1M input tokens):
+systemPrompt = BASE_PROMPT + DOC_TYPE_INSTRUCTIONS[docType]
+```
 
-- 5,490 docs x 20K tokens = 110M tokens = ~$275 total
-- vs current: 5,490 x 3K = 16.5M tokens = ~$41
+### No Database Migration Needed
 
-Delta: ~$234 additional for dramatically better quality. This is a one-time batch cost.
+The existing `document_summaries` schema uses JSONB for `core_recommendations` and `proposals_not_adopted`, which can hold different semantic content per document type. The field names remain the same; only the interpretation changes per type. This avoids schema bloat and keeps the table clean.
 
-### Embedding Impact
+### Documentation Update
 
-Better summaries produce better embeddings. The 512-token E5-Large input window remains the same -- we still truncate the summary_text to ~1,800 chars before vectorizing. But the summary itself will be more representative of the actual document content, improving similarity search quality.
+Update `docs/development/PHASE_7_2_SUMMARIZER_STATUS.md` with:
+- Per-type prompt strategy
+- Semantic meaning of fields per doc type
+- Test results for each type
 
-## Verification Plan
+## Verification
 
-1. Re-run SOU 2025:51 with the updated function
-2. Send the new summary to ChatGPT for the same critique
-3. Check that:
-  - "samordningsansvar" is listed under `proposals_not_adopted`, not `core_recommendations`
-  - "nationella riktlinjer" is described as "discussed but outside mandate"
-  - All major proposal areas from chapters 8-9 appear in `core_recommendations`
-  - Dispens from strandskydd, ledningsratt, VA-huvudman duties, etc. are mentioned
-4. Validate against 2-3 more documents from the golden test set before running full batch
+1. Re-run one document of each type with the new prompts
+2. Check:
+   - Directive: mandate tasks listed (not "proposals"), scope limitations captured, deadline in summary
+   - Committee report: stance on proposition stated, reservationer listed, tillkannagivanden captured
+   - Law: provisions described as enacted rules, effective date captured, outcome_status = "enacted"
+   - SOU/Proposition: no regression from current quality
+3. Compare before/after for the 4 existing test documents
+
+## Cost Impact
+
+None -- same model, same token budget. Prompt is ~200 tokens longer per type-specific block, negligible.
 
 ## Sequencing
 
-1. Database migration (add new columns)
-2. Update edge function (extraction logic + prompt + schema)
-3. Deploy and test on SOU 2025:51
-4. Validate with ChatGPT critique
-5. Run batch after validation passes
-6. Generate embeddings (after DeepInfra balance is topped up)
+1. Refactor prompt into base + type-specific blocks
+2. Test one document per type
+3. Validate quality
+4. Run pilot batch of 100 documents (balanced mix)
 
-&nbsp;
-
-# NOTE FROM MAX:
-
-I agree with this approach BUT to keep costs down, lets only summarise 100 documents (est cost 5 USD). This is VERY important.
-
-Secondly lets make these 100 documents a good mix of the different types of documents (SOU, Dir, prop, etc).
-
-&nbsp;
