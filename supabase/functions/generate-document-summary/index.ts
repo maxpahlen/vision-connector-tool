@@ -5,7 +5,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SUMMARY_MODEL = "gpt-4o-2024-08-06";
+const SUMMARY_MODEL = "gpt-4o-mini";
 const MODEL_VERSION = "gpt-4o-v2";
 const BATCH_SIZE = 10;
 const MAX_INPUT_CHARS = 80000;
@@ -76,13 +76,11 @@ function extractKeyContent(rawContent: string, docType: string): { text: string;
 /**
  * Locate the body of the "Sammanfattning" section in Swedish government documents.
  *
- * The challenge: the word "Sammanfattning" appears in the TOC as well as the section heading.
- * Strategy: find the LAST standalone occurrence of the heading pattern (which is the actual section),
- * or find it after the TOC block ends.
+ * Strategy: find all standalone "Sammanfattning" headings, then pick the one
+ * that has the most substantial body text (>500 chars). This avoids picking
+ * TOC entries or appendix (Bilaga) headings.
  */
 function extractSammanfattning(text: string): string | null {
-  // Pattern: "Sammanfattning" as a heading (standalone line, possibly with chapter number)
-  // We search for all matches and pick the one that's most likely the section body.
   const headingPattern = /^(?:\d+\s+)?Sammanfattning\s*$/gim;
   const matches: number[] = [];
 
@@ -93,44 +91,40 @@ function extractSammanfattning(text: string): string | null {
 
   if (matches.length === 0) return null;
 
-  // Heuristic: if there are multiple matches, the first one is usually in the TOC,
-  // the second one is the actual section heading. If only one match, use it.
-  // Also: if the match is very early (< 5000 chars), it might be the TOC entry in a small doc.
-  let sectionStart: number;
+  // Try each match and pick the one with the longest body text
+  // (the real Sammanfattning is 10-40K chars; appendix ones are short)
+  let bestBody: string | null = null;
+  let bestLength = 0;
 
-  if (matches.length >= 2) {
-    // Use the second match — typically the actual section heading
-    sectionStart = matches[1];
-  } else {
-    // Only one match — use it, but verify it's not just a TOC line
-    // by checking if substantial text follows before the next major heading
-    sectionStart = matches[0];
+  for (const matchPos of matches) {
+    // Skip matches that appear in appendix area (after 80% of doc)
+    if (matchPos > text.length * 0.8) continue;
+
+    const headingEnd = text.indexOf("\n", matchPos);
+    if (headingEnd === -1) continue;
+    const bodyStart = headingEnd + 1;
+
+    // Find end: next major chapter heading
+    const endPattern = /^(?:Författningsförslag|Förslag till riksdagsbeslut|Summary|1\s+[A-ZÅÄÖ])/m;
+    const endMatch = endPattern.exec(text.slice(bodyStart));
+
+    let bodyEnd: number;
+    if (endMatch) {
+      bodyEnd = bodyStart + endMatch.index;
+    } else {
+      bodyEnd = Math.min(bodyStart + 60000, text.length);
+    }
+
+    const body = text.slice(bodyStart, bodyEnd).trim();
+
+    // Pick the match with the longest body (the real Sammanfattning)
+    if (body.length > 500 && body.length > bestLength) {
+      bestBody = body;
+      bestLength = body.length;
+    }
   }
 
-  // Move past the heading line itself
-  const headingEnd = text.indexOf("\n", sectionStart);
-  if (headingEnd === -1) return null;
-  const bodyStart = headingEnd + 1;
-
-  // Find the end: next major chapter heading
-  // Swedish betänkanden use patterns like "Författningsförslag", "1 " (chapter 1), "Summary" (English)
-  const endPattern = /^(?:Författningsförslag|Förslag till|Summary|1\s+[A-ZÅÄÖ])/m;
-  const endMatch = endPattern.exec(text.slice(bodyStart));
-
-  let bodyEnd: number;
-  if (endMatch) {
-    bodyEnd = bodyStart + endMatch.index;
-  } else {
-    // No clear end found — take up to 60K chars from section start
-    bodyEnd = Math.min(bodyStart + 60000, text.length);
-  }
-
-  const body = text.slice(bodyStart, bodyEnd).trim();
-
-  // Sanity check: if the extracted section is too short, it was likely just a TOC entry
-  if (body.length < 500) return null;
-
-  return body;
+  return bestBody;
 }
 
 /**
@@ -214,11 +208,57 @@ async function summarizeDocument(
   title: string,
   docType: string,
   docNumber: string,
-  apiKey: string
-): Promise<SummaryResult & { extraction_strategy: string }> {
+  apiKey: string,
+  options: { modelOverride?: string; twoPass?: boolean } = {}
+): Promise<SummaryResult & { extraction_strategy: string; model_used: string; input_chars: number }> {
   const { text: extractedText, strategy } = extractKeyContent(rawContent, docType);
+  const modelToUse = options.modelOverride || SUMMARY_MODEL;
 
-  const userPrompt = `Dokument: ${docNumber} - ${title} (typ: ${docType})\n\n${extractedText}`;
+  let finalPromptText = extractedText;
+
+  // Two-pass mode: first extract proposals, then summarize
+  if (options.twoPass) {
+    console.log(`Two-pass mode: extracting proposals first with ${modelToUse}...`);
+    const extractionPrompt = `Läs igenom hela texten nedan noggrant. Lista ALLA konkreta lagförslag (förslag) som dokumentet faktiskt lägger fram. Skippa mandatbeskrivning ("vi har haft i uppdrag att..."). Fokusera på fraser som "Vi föreslår", "Vi lämnar förslag", "Förslagen innebär".
+
+Lista också separat saker som utredningen övervägde men INTE föreslog (med fraser som "det saknas skäl att införa", "det ingår inte i uppdraget").
+
+Svara med en numrerad lista, på svenska. Var specifik om varje förslags innehåll.
+
+Dokument: ${docNumber} - ${title}
+
+${extractedText}`;
+
+    const pass1Response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: modelToUse,
+        messages: [
+          { role: "system", content: "Du är en svensk lagstiftningsanalytiker. Extrahera konkreta förslag ur betänkanden. Var noggrann och läs hela texten." },
+          { role: "user", content: extractionPrompt },
+        ],
+        temperature: 0.1,
+      }),
+    });
+
+    if (!pass1Response.ok) {
+      const errText = await pass1Response.text();
+      throw new Error(`OpenAI pass-1 error ${pass1Response.status}: ${errText}`);
+    }
+
+    const pass1Data = await pass1Response.json();
+    const proposalList = pass1Data.choices?.[0]?.message?.content || "";
+    console.log(`Pass 1 extracted ${proposalList.length} chars of proposals`);
+
+    // Pass 2: use the extracted proposals as input for structured summary
+    finalPromptText = `EXTRAHERADE FÖRSLAG (från pass 1):\n${proposalList}\n\nORIGINALTEXT (för kontext):\n${extractedText.slice(0, 20000)}`;
+  }
+
+  const userPrompt = `Dokument: ${docNumber} - ${title} (typ: ${docType})\n\n${finalPromptText}`;
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -227,7 +267,7 @@ async function summarizeDocument(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: SUMMARY_MODEL,
+      model: modelToUse,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
@@ -265,6 +305,8 @@ async function summarizeDocument(
       ? parsed.outcome_status
       : "unknown",
     extraction_strategy: strategy,
+    model_used: modelToUse,
+    input_chars: finalPromptText.length,
   };
 }
 
@@ -308,8 +350,39 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
     const body = await req.json().catch(() => ({}));
     const mode = body.mode || "batch";
-    const batchSize = Math.min(body.batch_size || BATCH_SIZE, 100); // Hard cap at 100
+    const batchSize = Math.min(body.batch_size || BATCH_SIZE, 100);
     const documentId = body.document_id;
+    const modelOverride = body.model; // e.g. "gpt-4-turbo", "gpt-4o-mini"
+    const twoPass = body.two_pass === true;
+    const debug = body.debug === true;
+
+    // ---------- Debug mode: show extracted text without calling AI ----------
+    if (mode === "debug" && documentId) {
+      const { data: doc, error: docErr } = await supabase
+        .from("documents")
+        .select("id, title, doc_type, doc_number, raw_content")
+        .eq("id", documentId)
+        .single();
+
+      if (docErr || !doc) {
+        return new Response(JSON.stringify({ error: "Document not found" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { text, strategy } = extractKeyContent(doc.raw_content || "", doc.doc_type);
+      return new Response(JSON.stringify({
+        document_id: doc.id,
+        doc_number: doc.doc_number,
+        doc_type: doc.doc_type,
+        raw_content_length: (doc.raw_content || "").length,
+        extracted_text_length: text.length,
+        extraction_strategy: strategy,
+        extracted_text_preview: text.slice(0, 3000),
+        extracted_text_end: text.slice(-1000),
+        system_prompt_length: SYSTEM_PROMPT.length,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     // ---------- Single mode ----------
     if (mode === "single" && documentId) {
@@ -321,28 +394,30 @@ Deno.serve(async (req) => {
 
       if (docErr || !doc) {
         return new Response(JSON.stringify({ error: "Document not found", details: docErr?.message }), {
-          status: 404,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
       if (!doc.raw_content) {
         return new Response(JSON.stringify({ error: "Document has no text content" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      const summary = await summarizeDocument(doc.raw_content, doc.title, doc.doc_type, doc.doc_number, openaiKey);
+      const summary = await summarizeDocument(doc.raw_content, doc.title, doc.doc_type, doc.doc_number, openaiKey, {
+        modelOverride,
+        twoPass,
+      });
 
-      const { error: upsertErr } = await supabase
-        .from("document_summaries")
-        .upsert(buildUpsertRow(doc.id, summary), { onConflict: "document_id" });
-
-      if (upsertErr) throw new Error(`Upsert failed: ${upsertErr.message}`);
+      if (!debug) {
+        const { error: upsertErr } = await supabase
+          .from("document_summaries")
+          .upsert(buildUpsertRow(doc.id, summary), { onConflict: "document_id" });
+        if (upsertErr) throw new Error(`Upsert failed: ${upsertErr.message}`);
+      }
 
       return new Response(
-        JSON.stringify({ success: true, document_id: doc.id, extraction_strategy: summary.extraction_strategy, summary }),
+        JSON.stringify({ success: true, document_id: doc.id, model_used: summary.model_used, input_chars: summary.input_chars, extraction_strategy: summary.extraction_strategy, summary }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
