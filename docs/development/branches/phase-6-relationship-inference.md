@@ -1,6 +1,6 @@
 # Phase 6: Relationship Inference & Case Reconstruction
 
-**Status:** IN PROGRESS — Phase 6A Complete, 6B.1 Next  
+**Status:** ✅ COMPLETE — Phase 6A + 6B Done, ready for Phase 7  
 **Branch:** `phase-6-relationship-inference`  
 **Dependencies:** Phase 6.1 (Riksdagen API Migration — corpus backfill)  
 **Last Updated:** 2026-02-13
@@ -31,7 +31,7 @@
 
 | Slice | Description | Status | Notes |
 |-------|-------------|--------|-------|
-| 6B.1 | Case Reconstruction Agent (shared entities, ministry matching) | 🔲 TODO | Only for unresolvable-by-rules links |
+| 6B.1 | Title-match via trigram similarity (Option A — no AI) | ✅ DONE | 17/24 matched, 3 new relationships, 7 remain for manual review |
 
 ---
 
@@ -243,6 +243,48 @@ Added two new matching strategies to `resolve-document-references`:
 | Ds / FPM | 8 | Not tracked |
 
 **Key insight:** The 3,527 "extraction failed" references are overwhelmingly parliamentary motions and free-text titles — the true AI-addressable scope (non-motion title-only) is ~565 references.
+
+---
+
+## Slice 6B.1 Results (2026-02-13)
+
+### Decision: Option A (No AI Pipeline)
+
+Deep investigation revealed only **24 true title-only** refs (not 586). Building an AI pipeline for this scope was rejected as over-engineered. Instead:
+
+1. **6A.5b regex fix:** `Dir` without trailing dot already handled by existing `\.?` — no change needed
+2. **Trigram title matching:** New `match-title-references` edge function using client-side trigram similarity with ILIKE candidate search
+
+### Results
+
+| Metric | Value |
+|--------|-------|
+| Title-only refs found | 24 |
+| Unique titles | 18 |
+| Matched (≥0.35 similarity) | 17 (71%) |
+| New relationships created | 3 |
+| Refs updated with target_document_id | 17 |
+| Unmatched (manual review) | 7 |
+
+### Match Quality
+
+- 10 matches at similarity 1.0 (exact title match after HTML decode + prefix strip)
+- 1 match at 0.84 (tilläggsdirektiv with/without dossier number)
+- 3 matches at ~0.48 (partial title overlap, same legislative topic)
+- 2 matches at ~0.36 (weakest — topic-adjacent, acceptable as `references` with `medium` confidence)
+- 1 match at 0.36 (short title matched to full title)
+
+### Unmatched (7 refs — Manual Review)
+
+| Title | Reason |
+|-------|--------|
+| Livsmedelsverkets rapport om författningsändringar... | Best candidate at 0.22, below threshold |
+| Uppdrag Utökade möjligheter att säga upp bostadsrättshavare... (×4) | No candidates in corpus |
+| Tilläggsdirektiv till Utredningen om registret nationell läkemedelslista, Dir. 2024124 (×2) | Malformed doc number (missing colon) |
+
+### Phase 6B Closure
+
+Per plan Step 4: Remaining unresolved non-motion, non-missing-corpus count is **7** (well below 50 threshold). **Phase 6B is closed.** No AI pipeline needed. Move to Phase 7.
 
 ---
 

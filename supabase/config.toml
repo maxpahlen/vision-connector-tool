@@ -104,3 +104,6 @@ verify_jwt = false
 
 [functions.backfill-document-relationships]
 verify_jwt = false
+
+[functions.match-title-references]
+verify_jwt = false
