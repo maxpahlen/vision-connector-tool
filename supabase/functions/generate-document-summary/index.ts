@@ -194,7 +194,15 @@ CRITICAL RULES:
 - The first 1-3 paragraphs of a Sammanfattning describe the inquiry's MANDATE (uppdrag) — what it was tasked to investigate ("Vi har haft i uppdrag att..."). These are BACKGROUND, not proposals. SKIP past the mandate description to find the actual proposals.
 - Look for phrases like "Vi föreslår", "Vi lämnar förslag", "Förslagen innebär", "Vi lämnar X förslag" — these introduce the actual proposals that belong in core_recommendations.
 - Each core_recommendation should describe a SPECIFIC legislative change. Example: "Kommunen ska i översiktsplanen redovisa vilka klimatanpassningsåtgärder kommunen avser att initiera" — NOT "Förbättra kommunernas möjligheter".
-- If the text says "vi lämnar elva förslag" or similar, your core_recommendations should reflect approximately that many distinct proposals.
+- EXHAUSTIVE EXTRACTION: You must capture ALL distinct proposals, including:
+  * Dispensregler / undantag (e.g. strandskyddsdispens, bygglovsdispens)
+  * Informationsskyldigheter for different actors (e.g. VA-huvudman ska informera om kapacitet, byggnadsnämnd ska informera om risker — these are SEPARATE proposals)
+  * Dimensioneringskrav / tekniska standarder (e.g. dagvattensystem ska dimensioneras för tioårsregn)
+  * Ändringar i befintliga lagar (PBL, MB, ledningsrättslagen, vattentjänstlagen, etc.)
+  * Nya lagar eller förordningar
+  * Myndighetsuppdrag och bemyndiganden
+- Do NOT merge multiple distinct proposals into one vague recommendation. If the text describes separate duties for different actors, list each separately.
+- For proposal_count: only state a specific number if the document itself states it explicitly ("vi lämnar elva förslag"). Otherwise use null. Do not count sub-proposals yourself.
 - Distinguish sharply between formal proposals (förslag) and assessments/conclusions that did NOT result in proposals (bedömningar som inte lett till förslag).
 - If the document explicitly states that something is NOT proposed, lacks grounds for, or is outside the mandate, list it under proposals_not_adopted, NOT core_recommendations.
 - Phrases like "det saknas skäl att införa", "det inte ingår i uppdraget", "vi bedömer att det inte finns anledning" signal proposals_not_adopted items.
