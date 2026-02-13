@@ -72,12 +72,17 @@ function useCorpusStats() {
   });
 }
 
+const DOC_TYPES = ['sou', 'proposition', 'committee_report', 'directive', 'law'] as const;
+
 export function DocumentSummaryRunner() {
   const [mode, setMode] = useState<'batch' | 'single'>('batch');
   const [batchSize, setBatchSize] = useState(5);
+  const [batchCount, setBatchCount] = useState(1);
+  const [docTypeFilter, setDocTypeFilter] = useState<string>('mixed');
   const [documentId, setDocumentId] = useState('');
   const [twoPass, setTwoPass] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [currentBatch, setCurrentBatch] = useState(0);
   const [results, setResults] = useState<BatchResult[]>([]);
   const [lastResponse, setLastResponse] = useState<Record<string, unknown> | null>(null);
 
@@ -91,39 +96,63 @@ export function DocumentSummaryRunner() {
     setIsRunning(true);
     setResults([]);
     setLastResponse(null);
+    setCurrentBatch(0);
 
     try {
-      const body: Record<string, unknown> = {};
-
       if (mode === 'single') {
         if (!documentId.trim()) {
           toast.error('Enter a document ID');
           setIsRunning(false);
           return;
         }
-        body.mode = 'single';
-        body.document_id = documentId.trim();
-        body.two_pass = twoPass;
-      } else {
-        body.mode = 'batch';
-        body.batch_size = batchSize;
-      }
-
-      const { data, error } = await supabase.functions.invoke('generate-document-summary', {
-        body,
-      });
-
-      if (error) {
-        toast.error(`Edge function error: ${error.message}`);
-        setLastResponse({ error: error.message });
-      } else {
-        setLastResponse(data);
-        if (data.results) {
-          setResults(data.results);
+        const { data, error } = await supabase.functions.invoke('generate-document-summary', {
+          body: { mode: 'single', document_id: documentId.trim(), two_pass: twoPass },
+        });
+        if (error) {
+          toast.error(`Error: ${error.message}`);
+          setLastResponse({ error: error.message });
+        } else {
+          setLastResponse(data);
+          toast.success('Summary generated');
+          refetchStats();
         }
-        const succeeded = data.succeeded ?? (data.success ? 1 : 0);
-        const errors = data.errors ?? 0;
-        toast.success(`Done: ${succeeded} succeeded, ${errors} errors`);
+      } else {
+        // Multi-batch loop
+        const allResults: BatchResult[] = [];
+        for (let i = 0; i < batchCount; i++) {
+          setCurrentBatch(i + 1);
+          const body: Record<string, unknown> = {
+            mode: 'batch',
+            batch_size: batchSize,
+          };
+          if (docTypeFilter !== 'mixed') {
+            body.doc_type = docTypeFilter;
+          }
+
+          const { data, error } = await supabase.functions.invoke('generate-document-summary', { body });
+
+          if (error) {
+            toast.error(`Batch ${i + 1} error: ${error.message}`);
+            break;
+          }
+
+          if (data.results) {
+            allResults.push(...data.results);
+            setResults([...allResults]);
+          }
+
+          const succeeded = data.succeeded ?? 0;
+          const noMore = data.processed === 0;
+          toast.info(`Batch ${i + 1}/${batchCount}: ${succeeded} succeeded`);
+
+          if (noMore) {
+            toast.success('No more documents to summarize');
+            break;
+          }
+
+          refetchStats();
+        }
+        setLastResponse({ total_batches: batchCount, total_results: allResults.length });
         refetchStats();
       }
     } catch (err) {
@@ -132,6 +161,7 @@ export function DocumentSummaryRunner() {
       setLastResponse({ error: msg });
     } finally {
       setIsRunning(false);
+      setCurrentBatch(0);
     }
   };
 
@@ -176,11 +206,11 @@ export function DocumentSummaryRunner() {
           </TabsList>
 
           <TabsContent value="batch" className="space-y-4 pt-4">
-            <div className="flex items-end gap-4">
+            <div className="flex items-end gap-4 flex-wrap">
               <div className="space-y-2">
                 <Label>Batch Size</Label>
                 <Select value={String(batchSize)} onValueChange={v => setBatchSize(Number(v))}>
-                  <SelectTrigger className="w-32">
+                  <SelectTrigger className="w-28">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -188,20 +218,48 @@ export function DocumentSummaryRunner() {
                     <SelectItem value="5">5 docs</SelectItem>
                     <SelectItem value="10">10 docs</SelectItem>
                     <SelectItem value="20">20 docs</SelectItem>
-                    <SelectItem value="50">50 docs</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Batches</Label>
+                <Select value={String(batchCount)} onValueChange={v => setBatchCount(Number(v))}>
+                  <SelectTrigger className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1×</SelectItem>
+                    <SelectItem value="3">3×</SelectItem>
+                    <SelectItem value="5">5×</SelectItem>
+                    <SelectItem value="10">10×</SelectItem>
+                    <SelectItem value="20">20×</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Doc Type</Label>
+                <Select value={docTypeFilter} onValueChange={setDocTypeFilter}>
+                  <SelectTrigger className="w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mixed">Mixed (all types)</SelectItem>
+                    {DOC_TYPES.map(t => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <Button onClick={runSummary} disabled={isRunning}>
                 {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                {isRunning ? 'Running…' : 'Run Batch'}
+                {isRunning ? `Batch ${currentBatch}/${batchCount}…` : `Run ${batchCount}× ${batchSize} docs`}
               </Button>
               <Button variant="outline" size="icon" onClick={() => refetchStats()} title="Refresh stats">
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              ⚠️ Batch size &gt;5 may timeout (150s limit). Progress is saved even on timeout.
+              Total: {batchSize * batchCount} docs across {batchCount} sequential calls. Progress saved even on timeout.
             </p>
           </TabsContent>
 

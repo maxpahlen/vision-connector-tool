@@ -451,6 +451,7 @@ Deno.serve(async (req) => {
     const modelOverride = body.model;
     const twoPass = body.two_pass === true;
     const debug = body.debug === true;
+    const docTypeFilter: string | undefined = body.doc_type; // optional: filter batch to single type
 
     // ---------- Debug mode ----------
     if (mode === "debug" && documentId) {
@@ -529,7 +530,8 @@ Deno.serve(async (req) => {
       .eq("model_version", MODEL_VERSION);
     const existingIds = new Set((allExisting || []).map((s: any) => s.document_id));
 
-    const docTypes = ["sou", "proposition", "committee_report", "directive", "law"];
+    const allDocTypes = ["sou", "proposition", "committee_report", "directive", "law"];
+    const docTypes = docTypeFilter ? [docTypeFilter] : allDocTypes;
     const perType = Math.max(Math.floor(batchSize / docTypes.length), 1);
     const remainder = batchSize - perType * docTypes.length;
 
