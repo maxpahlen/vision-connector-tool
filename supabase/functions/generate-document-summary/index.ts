@@ -6,7 +6,7 @@ const corsHeaders = {
 };
 
 const SUMMARY_MODEL = "gpt-4o-mini";
-const MODEL_VERSION = "gpt-4o-v2";
+const MODEL_VERSION = "gpt-4o-v3";
 const BATCH_SIZE = 10;
 const MAX_INPUT_CHARS = 80000;
 
@@ -57,29 +57,19 @@ function extractKeyContent(rawContent: string, docType: string): { text: string;
   const extracted = extractSammanfattning(rawContent);
   if (extracted) {
     const toc = extractTOC(rawContent);
-    // Put Sammanfattning FIRST so the model reads proposals before TOC structure
     const combined = toc
       ? `[SAMMANFATTNING]\n${extracted}\n\n[INNEHÅLLSFÖRTECKNING (för strukturell kontext)]\n${toc}`
       : `[SAMMANFATTNING]\n${extracted}`;
 
-    // Cap at MAX_INPUT_CHARS
     if (combined.length <= MAX_INPUT_CHARS) {
       return { text: combined, strategy: "sammanfattning_with_toc" };
     }
     return { text: combined.slice(0, MAX_INPUT_CHARS), strategy: "sammanfattning_truncated" };
   }
 
-  // Fallback: first 80K
   return { text: rawContent.slice(0, MAX_INPUT_CHARS), strategy: "fallback_first_80k" };
 }
 
-/**
- * Locate the body of the "Sammanfattning" section in Swedish government documents.
- *
- * Strategy: find all standalone "Sammanfattning" headings, then pick the one
- * that has the most substantial body text (>500 chars). This avoids picking
- * TOC entries or appendix (Bilaga) headings.
- */
 function extractSammanfattning(text: string): string | null {
   const headingPattern = /^(?:\d+\s+)?Sammanfattning\s*$/gim;
   const matches: number[] = [];
@@ -91,20 +81,16 @@ function extractSammanfattning(text: string): string | null {
 
   if (matches.length === 0) return null;
 
-  // Try each match and pick the one with the longest body text
-  // (the real Sammanfattning is 10-40K chars; appendix ones are short)
   let bestBody: string | null = null;
   let bestLength = 0;
 
   for (const matchPos of matches) {
-    // Skip matches that appear in appendix area (after 80% of doc)
     if (matchPos > text.length * 0.8) continue;
 
     const headingEnd = text.indexOf("\n", matchPos);
     if (headingEnd === -1) continue;
     const bodyStart = headingEnd + 1;
 
-    // Find end: next major chapter heading
     const endPattern = /^(?:Författningsförslag|Förslag till riksdagsbeslut|Summary|1\s+[A-ZÅÄÖ])/m;
     const endMatch = endPattern.exec(text.slice(bodyStart));
 
@@ -117,7 +103,6 @@ function extractSammanfattning(text: string): string | null {
 
     const body = text.slice(bodyStart, bodyEnd).trim();
 
-    // Pick the match with the longest body (the real Sammanfattning)
     if (body.length > 500 && body.length > bestLength) {
       bestBody = body;
       bestLength = body.length;
@@ -127,35 +112,25 @@ function extractSammanfattning(text: string): string | null {
   return bestBody;
 }
 
-/**
- * Extract table of contents headings from the document.
- * Looks for numbered chapter headings in the first portion of the document.
- */
 function extractTOC(text: string): string | null {
-  // TOC is typically in the first 10K-20K chars
   const tocRegion = text.slice(0, 20000);
 
-  // Find "Innehåll" or "Innehållsförteckning" heading
   const tocStart = tocRegion.search(/^(?:Innehåll|Innehållsförteckning)\s*$/im);
   if (tocStart === -1) return null;
 
-  // Extract from there until we hit the first major content section
   const afterToc = tocRegion.slice(tocStart);
   const tocEnd = afterToc.search(/^(?:Sammanfattning|Författningsförslag|1\s+[A-ZÅÄÖ])/m);
 
   const tocText = tocEnd > 0 ? afterToc.slice(0, tocEnd).trim() : afterToc.slice(0, 5000).trim();
 
-  // Filter to lines that look like chapter headings (numbered or short capitalized)
   const lines = tocText.split("\n").filter((line) => {
     const trimmed = line.trim();
     if (!trimmed) return false;
-    // Keep numbered headings and short descriptive lines
     return /^\d+(\.\d+)*\s+/.test(trimmed) || /^[A-ZÅÄÖ]/.test(trimmed);
   });
 
   if (lines.length < 3) return null;
 
-  // Cap TOC at ~5K chars
   let result = "";
   for (const line of lines) {
     if (result.length + line.length > 5000) break;
@@ -165,49 +140,153 @@ function extractTOC(text: string): string | null {
   return result.trim();
 }
 
-// ---------- Prompt ----------
+// ---------- Per-Type Prompt System ----------
 
-const SYSTEM_PROMPT = `You are a Swedish legislative policy analyst. Given content extracted from a Swedish government document (SOU, proposition, directive, committee report, or law), produce a structured summary in Swedish.
+const BASE_PROMPT = `You are a Swedish legislative policy analyst. Given content extracted from a Swedish government document, produce a structured summary in Swedish.
 
 The input may contain:
 - A "[INNEHÅLLSFÖRTECKNING]" (table of contents) section showing the document's structure
 - A "[SAMMANFATTNING]" (executive summary) section containing the document's own distilled summary
 - Or the full/partial document text
 
-If a Sammanfattning section is provided, treat it as authoritative for the document's conclusions and proposals. It is written by the committee/author specifically to capture all key proposals and assessments.
-
 Your output MUST be a JSON object with these fields:
-- summary_text: A 300-600 word summary in Swedish covering the document's purpose, key proposals, and conclusions. Be specific about mechanisms and details. Focus on WHAT is proposed, not on what the mandate was.
-- policy_aim: One sentence describing the policy goal.
-- core_recommendations: Array of 3-15 key formal proposals (förslag) that the document actually puts forward. Each string should describe a SPECIFIC legislative or regulatory change, not a general task or goal. Example of GOOD: "Kommunen ska i översiktsplanen redovisa vilka klimatanpassningsåtgärder kommunen avser att initiera." Example of BAD: "Identifiera hinder mot klimatanpassningsåtgärder." (this is a mandate task, not a proposal).
-- proposals_not_adopted: Array of items the inquiry explicitly considered but decided against, or assessed as outside the mandate. This prevents misattribution.
-- proposal_count: Integer count of formal legislative proposals (from Författningsförslag chapter), or null if not determinable. If the document states "vi lämnar X förslag", use that number.
+- summary_text: A 300-600 word summary in Swedish. Be specific about mechanisms and details.
+- policy_aim: One sentence describing the policy goal or purpose.
+- core_recommendations: Array of strings (see doc-type-specific instructions below for what to put here).
+- proposals_not_adopted: Array of strings (see doc-type-specific instructions below).
+- proposal_count: Integer or null (see doc-type-specific instructions below).
 - key_actors: Array of objects {name, role} for key people/organizations mentioned.
-- policy_domains: Array of 2-5 policy domain tags in Swedish (e.g. "utbildning", "miljö", "hälsa", "arbetsmarknad").
+- policy_domains: Array of 2-5 policy domain tags in Swedish (e.g. "utbildning", "miljö", "hälsa").
 - keywords: Array of 5-15 specific keywords in Swedish relevant for search and linking.
 - outcome_status: One of "enacted", "rejected", "pending", "superseded", "unknown".
 
-CRITICAL RULES:
+UNIVERSAL RULES:
 - Write everything in Swedish.
 - Be factual and specific. No filler text.
-- MANDATORY: Read the ENTIRE Sammanfattning section carefully before generating output. Do not stop after the first few paragraphs.
-- The first 1-3 paragraphs of a Sammanfattning describe the inquiry's MANDATE (uppdrag) — what it was tasked to investigate ("Vi har haft i uppdrag att..."). These are BACKGROUND, not proposals. SKIP past the mandate description to find the actual proposals.
-- Look for phrases like "Vi föreslår", "Vi lämnar förslag", "Förslagen innebär", "Vi lämnar X förslag" — these introduce the actual proposals that belong in core_recommendations.
-- Each core_recommendation should describe a SPECIFIC legislative change. Example: "Kommunen ska i översiktsplanen redovisa vilka klimatanpassningsåtgärder kommunen avser att initiera" — NOT "Förbättra kommunernas möjligheter".
-- EXHAUSTIVE EXTRACTION: You must capture ALL distinct proposals, including:
+- Read the ENTIRE input carefully before generating output.
+- Return ONLY valid JSON, no markdown fences.`;
+
+const DOC_TYPE_INSTRUCTIONS: Record<string, string> = {
+  sou: `
+DOC-TYPE: SOU (Statens offentliga utredningar)
+
+An SOU is a government inquiry report that investigates a policy area and proposes legislative changes.
+
+FIELD INSTRUCTIONS:
+- core_recommendations: Array of 3-15 key formal proposals (förslag) that the document puts forward. Each string should describe a SPECIFIC legislative or regulatory change. Example of GOOD: "Kommunen ska i översiktsplanen redovisa vilka klimatanpassningsåtgärder kommunen avser att initiera." Example of BAD: "Identifiera hinder mot klimatanpassningsåtgärder."
+- proposals_not_adopted: Array of items the inquiry explicitly considered but decided against, or assessed as outside the mandate. Phrases like "det saknas skäl att införa", "det inte ingår i uppdraget" signal these items.
+- proposal_count: Integer count of formal legislative proposals (from Författningsförslag chapter), or null if not determinable. If the document states "vi lämnar X förslag", use that number. Do NOT count sub-proposals yourself.
+- outcome_status: Usually "pending" or "unknown" for SOUs.
+
+CRITICAL EXTRACTION RULES:
+- The first 1-3 paragraphs of a Sammanfattning describe the inquiry's MANDATE (uppdrag). These are BACKGROUND, not proposals. SKIP past the mandate description to find the actual proposals.
+- Look for phrases like "Vi föreslår", "Vi lämnar förslag", "Förslagen innebär", "Vi lämnar X förslag".
+- Each core_recommendation should describe a SPECIFIC legislative change, not a general goal.
+- EXHAUSTIVE EXTRACTION: Capture ALL distinct proposals, including:
   * Dispensregler / undantag (e.g. strandskyddsdispens, bygglovsdispens)
-  * Informationsskyldigheter for different actors (e.g. VA-huvudman ska informera om kapacitet, byggnadsnämnd ska informera om risker — these are SEPARATE proposals)
+  * Informationsskyldigheter for different actors (each actor's duty is a SEPARATE proposal)
   * Dimensioneringskrav / tekniska standarder (e.g. dagvattensystem ska dimensioneras för tioårsregn)
   * Ändringar i befintliga lagar (PBL, MB, ledningsrättslagen, vattentjänstlagen, etc.)
   * Nya lagar eller förordningar
   * Myndighetsuppdrag och bemyndiganden
-- Do NOT merge multiple distinct proposals into one vague recommendation. If the text describes separate duties for different actors, list each separately.
-- For proposal_count: only state a specific number if the document itself states it explicitly ("vi lämnar elva förslag"). Otherwise use null. Do not count sub-proposals yourself.
-- Distinguish sharply between formal proposals (förslag) and assessments/conclusions that did NOT result in proposals (bedömningar som inte lett till förslag).
-- If the document explicitly states that something is NOT proposed, lacks grounds for, or is outside the mandate, list it under proposals_not_adopted, NOT core_recommendations.
-- Phrases like "det saknas skäl att införa", "det inte ingår i uppdraget", "vi bedömer att det inte finns anledning" signal proposals_not_adopted items.
-- If the document text is too short or unclear to summarize, still produce your best effort with "unknown" for outcome_status.
-- Return ONLY valid JSON, no markdown fences.`;
+- Do NOT merge multiple distinct proposals into one vague recommendation.
+- Distinguish sharply between formal proposals (förslag) and assessments/conclusions that did NOT result in proposals (bedömningar).`,
+
+  proposition: `
+DOC-TYPE: Proposition (Regeringsproposition)
+
+A proposition is a government bill submitted to Parliament proposing specific legislative changes.
+
+FIELD INSTRUCTIONS:
+- core_recommendations: Array of 3-15 key legislative proposals the government puts forward. Each should describe a SPECIFIC change. Focus on "Regeringen föreslår" statements.
+- proposals_not_adopted: Array of items explicitly considered but not included in the proposition (e.g. remiss feedback that was rejected, SOU proposals not carried forward).
+- proposal_count: Integer count of formal proposals, or null if not determinable.
+- outcome_status: "pending" if not yet decided by Parliament, "enacted" if known to have passed, "rejected" if voted down.
+
+CRITICAL RULES:
+- Focus on WHAT the government proposes, not the background analysis.
+- Look for "Regeringen föreslår", "Förslag till riksdagsbeslut", "Propositionen innehåller förslag".
+- If based on an SOU, note which SOU proposals were adopted vs. modified vs. dropped.
+- EXHAUSTIVE EXTRACTION applies: capture all distinct proposals including amendments to multiple laws.`,
+
+  directive: `
+DOC-TYPE: Kommittédirektiv (Directive)
+
+A directive instructs a government inquiry (utredning) about what to investigate. It does NOT contain legislative proposals — it defines the inquiry's mandate and questions.
+
+FIELD INSTRUCTIONS:
+- core_recommendations: List the specific MANDATE TASKS and QUESTIONS the inquiry must address. These are NOT proposals — they are assignments. Example: "Utredaren ska föreslå hur kommunernas ansvar för klimatanpassning kan förtydligas."
+- proposals_not_adopted: List explicit SCOPE LIMITATIONS — what is outside the mandate. Look for phrases like "Uppdraget omfattar inte", "Utredaren ska inte", "Frågan om X ingår inte i uppdraget."
+- proposal_count: Always null. Directives do not contain proposals.
+- outcome_status: Always "pending" — a directive initiates work that has not yet concluded.
+
+CRITICAL RULES:
+- Do NOT describe mandate tasks as "proposals" or "recommendations" in the summary_text. Use words like "uppdraget omfattar", "utredaren ska", "frågor som ska belysas".
+- Capture the DEADLINE (redovisningsdatum / "Uppdraget ska redovisas senast") in the summary_text.
+- Identify the inquiry chair (särskild utredare) in key_actors if mentioned.
+- Note any additional directives (tilläggsdirektiv) if referenced.`,
+
+  committee_report: `
+DOC-TYPE: Betänkande (Committee Report)
+
+A committee report (betänkande) is produced by a parliamentary committee (utskott) evaluating a government proposition and any associated motions. The committee recommends whether Parliament should approve, modify, or reject the proposals.
+
+FIELD INSTRUCTIONS:
+- core_recommendations: List the committee's formal POSITIONS (ställningstaganden). Include:
+  * Whether the committee recommends approval (bifall) or rejection (avslag) of the proposition
+  * Any tillkännagivanden (formal parliamentary directives to the government)
+  * Modifications the committee proposes to the original bill
+- proposals_not_adopted: List RESERVATIONER (dissenting opinions) with party attribution. Format: "[Party/parties]: [Their position]". Example: "SD: Avslag på propositionen i sin helhet."
+- proposal_count: Number of tillkännagivanden, or null if none.
+- outcome_status: "enacted" if the committee recommends bifall, "rejected" if avslag, "pending" if not yet voted on.
+
+CRITICAL RULES:
+- Focus on the COMMITTEE'S STANCE, not just restating the proposition.
+- Clearly state whether the committee supports or opposes each major element.
+- Capture the vote outcome if stated (e.g. "Utskottet föreslår att riksdagen bifaller proposition X").
+- List ALL reservationer — each party/group that dissents should be captured with their specific objection.
+- Note any motioner that were considered alongside the proposition.`,
+
+  law: `
+DOC-TYPE: Lag / Förordning (Law / Regulation)
+
+This is enacted legislation. It IS the law — it does not "propose" anything.
+
+FIELD INSTRUCTIONS:
+- core_recommendations: List the KEY PROVISIONS and obligations the law establishes. Each entry should describe what the law requires, permits, or prohibits. Example: "Arbetsgivare med fler än 25 anställda ska upprätta en jämställdhetsplan." Do NOT use words like "föreslår" — say "föreskriver", "kräver", "stadgar".
+- proposals_not_adopted: Empty array []. Not applicable for enacted law.
+- proposal_count: null. Not applicable.
+- outcome_status: Always "enacted".
+
+CRITICAL RULES:
+- Describe provisions as ACTIVE LAW, not proposals. Use present tense.
+- Capture the EFFECTIVE DATE (ikraftträdande) in the summary_text. Look for "Denna lag träder i kraft den..."
+- Capture any TRANSITIONAL PROVISIONS (övergångsbestämmelser) if significant.
+- Note which existing laws are amended or repealed (upphävda).
+- Identify the regulated subjects (who must comply) and the regulatory authority (tillsynsmyndighet) if specified.`,
+};
+
+// Normalize doc_type variants to canonical keys
+function normalizeDocType(docType: string): string {
+  const mapping: Record<string, string> = {
+    sou: "sou",
+    proposition: "proposition",
+    prop: "proposition",
+    directive: "directive",
+    dir: "directive",
+    committee_report: "committee_report",
+    bet: "committee_report",
+    law: "law",
+    lag: "law",
+  };
+  return mapping[docType.toLowerCase()] || "sou"; // fallback to SOU prompt
+}
+
+function buildSystemPrompt(docType: string): string {
+  const canonical = normalizeDocType(docType);
+  const typeBlock = DOC_TYPE_INSTRUCTIONS[canonical] || DOC_TYPE_INSTRUCTIONS["sou"];
+  return `${BASE_PROMPT}\n\n${typeBlock}`;
+}
 
 // ---------- Summarize ----------
 
@@ -221,6 +300,7 @@ async function summarizeDocument(
 ): Promise<SummaryResult & { extraction_strategy: string; model_used: string; input_chars: number }> {
   const { text: extractedText, strategy } = extractKeyContent(rawContent, docType);
   const modelToUse = options.modelOverride || SUMMARY_MODEL;
+  const systemPrompt = buildSystemPrompt(docType);
 
   let finalPromptText = extractedText;
 
@@ -262,7 +342,6 @@ ${extractedText}`;
     const proposalList = pass1Data.choices?.[0]?.message?.content || "";
     console.log(`Pass 1 extracted ${proposalList.length} chars of proposals`);
 
-    // Pass 2: use the extracted proposals as input for structured summary
     finalPromptText = `EXTRAHERADE FÖRSLAG (från pass 1):\n${proposalList}\n\nORIGINALTEXT (för kontext):\n${extractedText.slice(0, 20000)}`;
   }
 
@@ -277,7 +356,7 @@ ${extractedText}`;
     body: JSON.stringify({
       model: modelToUse,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       temperature: 0.2,
@@ -360,11 +439,11 @@ Deno.serve(async (req) => {
     const mode = body.mode || "batch";
     const batchSize = Math.min(body.batch_size || BATCH_SIZE, 100);
     const documentId = body.document_id;
-    const modelOverride = body.model; // e.g. "gpt-4-turbo", "gpt-4o-mini"
+    const modelOverride = body.model;
     const twoPass = body.two_pass === true;
     const debug = body.debug === true;
 
-    // ---------- Debug mode: show extracted text without calling AI ----------
+    // ---------- Debug mode ----------
     if (mode === "debug" && documentId) {
       const { data: doc, error: docErr } = await supabase
         .from("documents")
@@ -379,16 +458,19 @@ Deno.serve(async (req) => {
       }
 
       const { text, strategy } = extractKeyContent(doc.raw_content || "", doc.doc_type);
+      const systemPrompt = buildSystemPrompt(doc.doc_type);
       return new Response(JSON.stringify({
         document_id: doc.id,
         doc_number: doc.doc_number,
         doc_type: doc.doc_type,
+        normalized_doc_type: normalizeDocType(doc.doc_type),
         raw_content_length: (doc.raw_content || "").length,
         extracted_text_length: text.length,
         extraction_strategy: strategy,
         extracted_text_preview: text.slice(0, 3000),
         extracted_text_end: text.slice(-1000),
-        system_prompt_length: SYSTEM_PROMPT.length,
+        system_prompt_length: systemPrompt.length,
+        system_prompt_preview: systemPrompt.slice(0, 500),
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -425,13 +507,12 @@ Deno.serve(async (req) => {
       }
 
       return new Response(
-        JSON.stringify({ success: true, document_id: doc.id, model_used: summary.model_used, input_chars: summary.input_chars, extraction_strategy: summary.extraction_strategy, summary }),
+        JSON.stringify({ success: true, document_id: doc.id, doc_type: doc.doc_type, normalized_doc_type: normalizeDocType(doc.doc_type), model_used: summary.model_used, input_chars: summary.input_chars, extraction_strategy: summary.extraction_strategy, summary }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     // ---------- Batch mode ----------
-    // Build a balanced sample across doc types (Max's requirement: good mix)
     const docTypes = ["sou", "proposition", "committee_report", "directive", "law"];
     const perType = Math.max(Math.floor(batchSize / docTypes.length), 1);
     const remainder = batchSize - perType * docTypes.length;
