@@ -1,155 +1,135 @@
-# Slice 6B.1 — Finalized Execution Plan
+# Phase 7.2 Fix: Intelligent Section Extraction for Document Summarization
 
-## Original Prompt (verbatim)
+## Problem Statement
 
-> Prepare and forward the finalized 6B.1 execution plan to Codex with updated scope, thresholds, and candidate filtering strategy
+The current summarizer sends the **first 12,000 characters** of each document to GPT-4o. For large documents (SOUs average 1M chars), this captures only the table of contents -- not the actual content. The model produces summaries that:
 
----
+- Miss entire proposal categories (only sees TOC headings, not proposal text)
+- Flip negations (cannot distinguish "proposed X" from "concluded against X")
+- Over-generalize (no access to specific mechanism details)
 
-## Critical Scope Correction
+The ChatGPT critique of SOU 2025:51 is accurate on all counts.
 
-**The previously estimated "586 AI-addressable refs" is wrong.** Deep investigation reveals:
+## Design: Smart Section Extraction
 
+Instead of "first N characters," extract the **semantically richest sections** from Swedish government documents. All Swedish betankanden follow a standardized structure with a "Sammanfattning" (executive summary) section near the front, typically 5-30 pages long, which already contains the distilled proposals, conclusions, and key context.
 
-| Category                                        | Count   | Resolution Path                                          |
-| ----------------------------------------------- | ------- | -------------------------------------------------------- |
-| Riksdagen codes NOT in corpus (H3xx, H4xx etc.) | 509     | Self-resolve with corpus expansion (Phase 6.1 follow-up) |
-| Title-text references (true AI candidates)      | 34      | AI matching OR additional deterministic regex            |
-| Protocol references (PROT)                      | 15      | Not a tracked doc type                                   |
-| Riksrevisionen reports (RIR)                    | 12      | Not a tracked doc type                                   |
-| Ministry dossiers                               | 11      | Not tracked (already decided)                            |
-| Short codes (FPM, generic headings)             | 5       | 2 FPM (not tracked), 3 generic headings (not real refs)  |
-| **True AI scope**                               | **~34** | See below                                                |
+### Strategy by Document Type
 
 
-Of those 34 title-text refs, 2 contain extractable doc numbers that a minor regex fix could catch:
+| Doc Type                 | Avg Size   | Extraction Strategy                           |
+| ------------------------ | ---------- | --------------------------------------------- |
+| SOU (60)                 | 1M chars   | Sammanfattning section + TOC structure        |
+| Proposition (2,028)      | 341K chars | Sammanfattning + Forfattningsforslag headings |
+| Committee report (1,844) | 115K chars | First 80K (fits most reports fully)           |
+| Directive (1,397)        | 18K chars  | Full text (well under limit)                  |
+| Law (161)                | 7K chars   | Full text                                     |
 
-- `"Dir 2024:109 Tillaggsdirektiv till..."` -- missing dot in `Dir` (current regex requires `Dir.`)
-- `"Tillaggsdirektiv till Miljostraffsrattsutredningen (M 2022:04)"` -- committee dossier in parentheses
 
-The remaining ~32 are free-text Swedish titles like:
+### Section Extraction Logic
 
-- `"Remiss av promemorian Sekretess for nya uppgifter i Schengens informationssystem"`
-- `"Om lagstiftningen i Sverige"` (a generic section heading, likely not a real document ref)
-- `"Tillganglighetskrav for vissa medier"`
+1. Locate the "Sammanfattning" section body (not the TOC entry) by finding it after the table of contents
+2. Extract from there until the next major chapter heading (typically "Forfattningsforslag" or "1 ")
+3. Supplement with the TOC (chapter headings) as structural context
+4. If Sammanfattning is not found, fall back to a larger window (~80K chars from the start)
 
----
+### Why This Works
 
-## Recommendation: Downscope 6B.1
+- Swedish SOUs' Sammanfattning sections are **written by the committee specifically to summarize all proposals and conclusions**
+- They contain the negations ("vi bedomde att det inte finns skall att infora...") that the full chapters discuss
+- They enumerate proposals explicitly
+- Typically 10-40K chars -- well within GPT-4o's 128K token context window
 
-Building a full AI inference pipeline (candidate builder, classifier, gating, review queue) for **~32 title refs** is over-engineered. The cost/benefit ratio is unfavorable.
+## Prompt Improvements
 
-### Proposed Revised Approach
+### Current Prompt Issues
 
-#### Step 1: Quick Deterministic Fix (6A.5b micro-hotfix)
+1. No instruction to handle "considered but not proposed" items
+2. `core_recommendations` conflates "proposals" with "assessments"
+3. No instruction to distinguish between formal proposals (forslag) and background assessments (bedomningar)
 
-Expand regex in `resolve-document-references` to also match `Dir` without the trailing dot (`Dir\s+\d{4}:\d+`). This catches 2 more refs deterministically.
+### Updated Schema
 
-#### Step 2: Title-Match Function (lightweight, no AI)
+Add two new fields to the extraction:
 
-For the remaining ~32 title refs:
+- `proposals_not_adopted`: Array of items the inquiry explicitly considered but decided against (prevents negation flipping)
+- `proposal_count`: Integer count of formal legislative proposals (from Forfattningsforslag chapter), as a sanity check
 
-1. Decode HTML entities in `target_doc_number`
-2. Normalize the decoded Swedish title
-3. Use `pg_trgm` similarity (`similarity()` function, already installed) to match against `documents.title`
-4. Accept matches above a similarity threshold (e.g., 0.4 for Swedish titles with HTML entity noise)
-5. Write to `document_relationships` with `derived_by = 'system'` and `confidence_class = 'medium'`
+Update prompt rules to include:
 
-This is fully deterministic (trigram similarity is a mathematical function, not AI), cheap, and testable.
+- "Distinguish sharply between formal proposals (forslag) and assessments/conclusions that did NOT result in proposals (bedomningar som inte lett till forslag)"
+- "If the document explicitly states that something is NOT proposed or is outside the mandate, do NOT list it as a core_recommendation"
+- "core_recommendations must only contain items the document formally proposes"
 
-#### Step 3: Manual Review of Remainder
+## Technical Changes
 
-Any title refs that fail trigram matching at threshold go into a simple report. Given the expected count (likely under 15), manual resolution by Max is faster than building an AI pipeline.
+### Files to Modify
 
-#### Step 4: Re-evaluate AI Need
+`**supabase/functions/generate-document-summary/index.ts**`
 
-If after Steps 1-3 the remaining unresolved non-motion, non-missing-corpus count exceeds 50, THEN build the AI agent. Otherwise, close 6B and move to Phase 7.
+1. Replace `truncateText()` with `extractKeyContent()` function:
+  - Scans for "Sammanfattning" section body (after TOC)
+  - Extracts that section (up to ~60K chars)
+  - Prepends TOC headings as structural context (~5K chars)
+  - Falls back to first 80K chars if no Sammanfattning found
+  - Increase MAX_INPUT_CHARS from 12,000 to 80,000
+2. Update SYSTEM_PROMPT:
+  - Add negation-awareness rules
+  - Add `proposals_not_adopted` field
+  - Tighten `core_recommendations` to formal proposals only
+  - Add instruction: "The input may contain a Sammanfattning (executive summary) section. Treat it as authoritative for the document's conclusions."
+3. Update SummaryResult interface and upsert logic for new fields
+4. Bump MODEL_VERSION to `"gpt-4o-v2"` to trigger re-summarization of existing documents
 
----
+### Database Migration
 
-## Alternative: If Max Prefers Full AI Pipeline Anyway
+Add columns to `document_summaries`:
 
-If the decision is to build the AI pipeline regardless (for future scalability when corpus grows), here is the refined Codex plan with corrections:
+- `proposals_not_adopted` (JSONB, default `'[]'`)
+- `proposal_count` (INTEGER, nullable)
 
-### 6B.1A — Candidate Set Builder
+### Cost Impact
 
-- Pull the ~32 unresolved title-text refs (exclude motions, Riksdagen codes not in corpus, PROT, RIR, dossiers)
-- For each, fetch candidate target docs via:
-  - `pg_trgm` title similarity (top 20 by `similarity()`)
-  - Same ministry filter
-  - Overlapping year range (+/- 2 years)
-- Output: candidate manifest JSON
+Current: ~3K tokens input per doc (from 12K chars)
+New: ~20K tokens input per doc (from 60K chars Sammanfattning)
 
-### 6B.1B — AI Inference Classifier
+At GPT-4o pricing ($2.50/1M input tokens):
 
-- Use existing `openai-client.ts` wrapper (OPENAI_API_KEY is configured)
-- Model: `gpt-4o` (via existing `callOpenAI`)
-- Prompt: Given source document title/metadata and candidate list, return best match with confidence
-- Output fields: `predicted_target_id`, `confidence_score`, `evidence_summary`, `decision` (accept/review/reject)
-- Write results to a staging array (not production table)
+- 5,490 docs x 20K tokens = 110M tokens = ~$275 total
+- vs current: 5,490 x 3K = 16.5M tokens = ~$41
 
-### 6B.1C — Deterministic Gating
+Delta: ~$234 additional for dramatically better quality. This is a one-time batch cost.
 
-- Auto-accept: `confidence >= 0.90` AND no conflict with existing deterministic links
-- Manual review: `0.70 - 0.89`
-- Auto-reject: `< 0.70`
-- Never overwrite `derived_by = 'resolver'` links
+### Embedding Impact
 
-### 6B.1D — Persist
+Better summaries produce better embeddings. The 512-token E5-Large input window remains the same -- we still truncate the summary_text to ~1,800 chars before vectorizing. But the summary itself will be more representative of the actual document content, improving similarity search quality.
 
-- Insert accepted links into `document_relationships` with:
-  - `derived_by = 'agent'` (enum value already exists)
-  - `confidence_class` based on score
-  - `evidence_details` containing AI reasoning and `run_id`
-- Rollback: `DELETE FROM document_relationships WHERE derived_by = 'agent'`
+## Verification Plan
 
-### Success Criteria
+1. Re-run SOU 2025:51 with the updated function
+2. Send the new summary to ChatGPT for the same critique
+3. Check that:
+  - "samordningsansvar" is listed under `proposals_not_adopted`, not `core_recommendations`
+  - "nationella riktlinjer" is described as "discussed but outside mandate"
+  - All major proposal areas from chapters 8-9 appear in `core_recommendations`
+  - Dispens from strandskydd, ledningsratt, VA-huvudman duties, etc. are mentioned
+4. Validate against 2-3 more documents from the golden test set before running full batch
 
-- False-positive rate < 10% on manual audit
-- 100% provenance on AI-created links
-- Zero deterministic link regressions
-- Idempotent reruns
+## Sequencing
 
----
+1. Database migration (add new columns)
+2. Update edge function (extraction logic + prompt + schema)
+3. Deploy and test on SOU 2025:51
+4. Validate with ChatGPT critique
+5. Run batch after validation passes
+6. Generate embeddings (after DeepInfra balance is topped up)
 
-## Decision Required from Max
+&nbsp;
 
-Given the true scope is **~32 refs** (not 586):
+# NOTE FROM MAX:
 
-**Option A (Recommended):** Skip AI. Do 6A.5b regex fix + pg_trgm title match + manual remainder. Close Phase 6B. Move to Phase 7.
+I agree with this approach BUT to keep costs down, lets only summarise 100 documents (est cost 5 USD). This is VERY important.
 
-**Option B:** Build AI pipeline anyway for future scalability. Execute Codex's plan with corrected scope.
+Secondly lets make these 100 documents a good mix of the different types of documents (SOU, Dir, prop, etc).
 
----
-
-## Technical Details
-
-### Files to Create/Modify
-
-**Option A (lightweight):**
-
-- `supabase/functions/resolve-document-references/index.ts` — Add `Dir` (no dot) regex variant
-- New function or extension: `match-title-references` — pg_trgm similarity matching
-- `docs/development/branches/phase-6-relationship-inference.md` — Update with 6B.1 closure
-
-**Option B (full AI):**
-
-- New: `supabase/functions/infer-document-links/index.ts` — Combined candidate builder + AI classifier
-- Modify: `supabase/functions/backfill-document-relationships/index.ts` — Accept `derived_by = 'agent'` rows
-- `docs/development/branches/phase-6-relationship-inference.md` — Full 6B.1 slice documentation
-
-### Infrastructure Already in Place
-
-- `pg_trgm` extension: installed
-- `OPENAI_API_KEY` secret: configured
-- `openai-client.ts` shared module: ready with retry logic
-- `document_relationships` table: has `derived_by = 'agent'` enum value
-- `performance-tracker.ts`: ready for metrics
-
-#   
-NOTE FROM MAX: 
-
-I agree with Lovable that building a full AI inference pipeline (candidate builder, classifier, gating, review queue) for **~32 title refs** is over-engineered. The cost/benefit ratio is unfavorable.   
-  
-Let's proceed with **Option A (Recommended):** Skip AI. Do 6A.5b regex fix + pg_trgm title match + manual remainder. Close Phase 6B. Move to Phase 7.
-
+&nbsp;
