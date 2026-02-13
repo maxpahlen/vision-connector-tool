@@ -221,6 +221,8 @@ export type Database = {
           outcome_status: string | null
           policy_aim: string | null
           policy_domains: string[] | null
+          proposal_count: number | null
+          proposals_not_adopted: Json | null
           summary_text: string
           updated_at: string | null
         }
@@ -236,6 +238,8 @@ export type Database = {
           outcome_status?: string | null
           policy_aim?: string | null
           policy_domains?: string[] | null
+          proposal_count?: number | null
+          proposals_not_adopted?: Json | null
           summary_text: string
           updated_at?: string | null
         }
@@ -251,6 +255,8 @@ export type Database = {
           outcome_status?: string | null
           policy_aim?: string | null
           policy_domains?: string[] | null
+          proposal_count?: number | null
+          proposals_not_adopted?: Json | null
           summary_text?: string
           updated_at?: string | null
         }

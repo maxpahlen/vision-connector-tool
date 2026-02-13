@@ -6,41 +6,208 @@ const corsHeaders = {
 };
 
 const SUMMARY_MODEL = "gpt-4o-2024-08-06";
-const MODEL_VERSION = "gpt-4o-v1";
+const MODEL_VERSION = "gpt-4o-v2";
 const BATCH_SIZE = 10;
-const MAX_INPUT_CHARS = 12000; // ~3000 tokens, well within context
+const MAX_INPUT_CHARS = 80000;
+
+// ---------- Types ----------
 
 interface SummaryResult {
   summary_text: string;
   policy_aim: string;
   core_recommendations: string[];
+  proposals_not_adopted: string[];
+  proposal_count: number | null;
   key_actors: { name: string; role: string }[];
   policy_domains: string[];
   keywords: string[];
   outcome_status: string;
 }
 
-const SYSTEM_PROMPT = `You are a Swedish legislative policy analyst. Given the full text of a Swedish government document (SOU, proposition, directive, committee report, or law), produce a structured summary in Swedish.
+// ---------- Section Extraction ----------
+
+/**
+ * Extract the semantically richest content from a Swedish government document.
+ *
+ * Strategy:
+ *  - SOU / Proposition: locate "Sammanfattning" body (after TOC), extract it + TOC headings
+ *  - Committee report: first 80K chars (fits most fully)
+ *  - Directive / Law: full text (small documents)
+ *  - Fallback: first 80K chars
+ */
+function extractKeyContent(rawContent: string, docType: string): { text: string; strategy: string } {
+  const len = rawContent.length;
+
+  // Small documents: send full text
+  if (len <= MAX_INPUT_CHARS) {
+    return { text: rawContent, strategy: "full_text" };
+  }
+
+  // For directives and laws, always try full text (they should be small)
+  if (docType === "dir" || docType === "law") {
+    return { text: rawContent.slice(0, MAX_INPUT_CHARS), strategy: "full_text_truncated" };
+  }
+
+  // For committee reports, take first 80K
+  if (docType === "bet") {
+    return { text: rawContent.slice(0, MAX_INPUT_CHARS), strategy: "first_80k" };
+  }
+
+  // SOU and Proposition: try to find Sammanfattning section body
+  const extracted = extractSammanfattning(rawContent);
+  if (extracted) {
+    const toc = extractTOC(rawContent);
+    // Put Sammanfattning FIRST so the model reads proposals before TOC structure
+    const combined = toc
+      ? `[SAMMANFATTNING]\n${extracted}\n\n[INNEHÅLLSFÖRTECKNING (för strukturell kontext)]\n${toc}`
+      : `[SAMMANFATTNING]\n${extracted}`;
+
+    // Cap at MAX_INPUT_CHARS
+    if (combined.length <= MAX_INPUT_CHARS) {
+      return { text: combined, strategy: "sammanfattning_with_toc" };
+    }
+    return { text: combined.slice(0, MAX_INPUT_CHARS), strategy: "sammanfattning_truncated" };
+  }
+
+  // Fallback: first 80K
+  return { text: rawContent.slice(0, MAX_INPUT_CHARS), strategy: "fallback_first_80k" };
+}
+
+/**
+ * Locate the body of the "Sammanfattning" section in Swedish government documents.
+ *
+ * The challenge: the word "Sammanfattning" appears in the TOC as well as the section heading.
+ * Strategy: find the LAST standalone occurrence of the heading pattern (which is the actual section),
+ * or find it after the TOC block ends.
+ */
+function extractSammanfattning(text: string): string | null {
+  // Pattern: "Sammanfattning" as a heading (standalone line, possibly with chapter number)
+  // We search for all matches and pick the one that's most likely the section body.
+  const headingPattern = /^(?:\d+\s+)?Sammanfattning\s*$/gim;
+  const matches: number[] = [];
+
+  let match: RegExpExecArray | null;
+  while ((match = headingPattern.exec(text)) !== null) {
+    matches.push(match.index);
+  }
+
+  if (matches.length === 0) return null;
+
+  // Heuristic: if there are multiple matches, the first one is usually in the TOC,
+  // the second one is the actual section heading. If only one match, use it.
+  // Also: if the match is very early (< 5000 chars), it might be the TOC entry in a small doc.
+  let sectionStart: number;
+
+  if (matches.length >= 2) {
+    // Use the second match — typically the actual section heading
+    sectionStart = matches[1];
+  } else {
+    // Only one match — use it, but verify it's not just a TOC line
+    // by checking if substantial text follows before the next major heading
+    sectionStart = matches[0];
+  }
+
+  // Move past the heading line itself
+  const headingEnd = text.indexOf("\n", sectionStart);
+  if (headingEnd === -1) return null;
+  const bodyStart = headingEnd + 1;
+
+  // Find the end: next major chapter heading
+  // Swedish betänkanden use patterns like "Författningsförslag", "1 " (chapter 1), "Summary" (English)
+  const endPattern = /^(?:Författningsförslag|Förslag till|Summary|1\s+[A-ZÅÄÖ])/m;
+  const endMatch = endPattern.exec(text.slice(bodyStart));
+
+  let bodyEnd: number;
+  if (endMatch) {
+    bodyEnd = bodyStart + endMatch.index;
+  } else {
+    // No clear end found — take up to 60K chars from section start
+    bodyEnd = Math.min(bodyStart + 60000, text.length);
+  }
+
+  const body = text.slice(bodyStart, bodyEnd).trim();
+
+  // Sanity check: if the extracted section is too short, it was likely just a TOC entry
+  if (body.length < 500) return null;
+
+  return body;
+}
+
+/**
+ * Extract table of contents headings from the document.
+ * Looks for numbered chapter headings in the first portion of the document.
+ */
+function extractTOC(text: string): string | null {
+  // TOC is typically in the first 10K-20K chars
+  const tocRegion = text.slice(0, 20000);
+
+  // Find "Innehåll" or "Innehållsförteckning" heading
+  const tocStart = tocRegion.search(/^(?:Innehåll|Innehållsförteckning)\s*$/im);
+  if (tocStart === -1) return null;
+
+  // Extract from there until we hit the first major content section
+  const afterToc = tocRegion.slice(tocStart);
+  const tocEnd = afterToc.search(/^(?:Sammanfattning|Författningsförslag|1\s+[A-ZÅÄÖ])/m);
+
+  const tocText = tocEnd > 0 ? afterToc.slice(0, tocEnd).trim() : afterToc.slice(0, 5000).trim();
+
+  // Filter to lines that look like chapter headings (numbered or short capitalized)
+  const lines = tocText.split("\n").filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return false;
+    // Keep numbered headings and short descriptive lines
+    return /^\d+(\.\d+)*\s+/.test(trimmed) || /^[A-ZÅÄÖ]/.test(trimmed);
+  });
+
+  if (lines.length < 3) return null;
+
+  // Cap TOC at ~5K chars
+  let result = "";
+  for (const line of lines) {
+    if (result.length + line.length > 5000) break;
+    result += line + "\n";
+  }
+
+  return result.trim();
+}
+
+// ---------- Prompt ----------
+
+const SYSTEM_PROMPT = `You are a Swedish legislative policy analyst. Given content extracted from a Swedish government document (SOU, proposition, directive, committee report, or law), produce a structured summary in Swedish.
+
+The input may contain:
+- A "[INNEHÅLLSFÖRTECKNING]" (table of contents) section showing the document's structure
+- A "[SAMMANFATTNING]" (executive summary) section containing the document's own distilled summary
+- Or the full/partial document text
+
+If a Sammanfattning section is provided, treat it as authoritative for the document's conclusions and proposals. It is written by the committee/author specifically to capture all key proposals and assessments.
 
 Your output MUST be a JSON object with these fields:
-- summary_text: A 200-400 word summary in Swedish covering the document's purpose, key proposals, and conclusions.
+- summary_text: A 300-600 word summary in Swedish covering the document's purpose, key proposals, and conclusions. Be specific about mechanisms and details. Focus on WHAT is proposed, not on what the mandate was.
 - policy_aim: One sentence describing the policy goal.
-- core_recommendations: Array of 3-8 key recommendations or proposals (strings, in Swedish).
+- core_recommendations: Array of 3-15 key formal proposals (förslag) that the document actually puts forward. Each string should describe a SPECIFIC legislative or regulatory change, not a general task or goal. Example of GOOD: "Kommunen ska i översiktsplanen redovisa vilka klimatanpassningsåtgärder kommunen avser att initiera." Example of BAD: "Identifiera hinder mot klimatanpassningsåtgärder." (this is a mandate task, not a proposal).
+- proposals_not_adopted: Array of items the inquiry explicitly considered but decided against, or assessed as outside the mandate. This prevents misattribution.
+- proposal_count: Integer count of formal legislative proposals (from Författningsförslag chapter), or null if not determinable. If the document states "vi lämnar X förslag", use that number.
 - key_actors: Array of objects {name, role} for key people/organizations mentioned.
 - policy_domains: Array of 2-5 policy domain tags in Swedish (e.g. "utbildning", "miljö", "hälsa", "arbetsmarknad").
 - keywords: Array of 5-15 specific keywords in Swedish relevant for search and linking.
 - outcome_status: One of "enacted", "rejected", "pending", "superseded", "unknown".
 
-Rules:
+CRITICAL RULES:
 - Write everything in Swedish.
 - Be factual and specific. No filler text.
+- MANDATORY: Read the ENTIRE Sammanfattning section carefully before generating output. Do not stop after the first few paragraphs.
+- The first 1-3 paragraphs of a Sammanfattning describe the inquiry's MANDATE (uppdrag) — what it was tasked to investigate ("Vi har haft i uppdrag att..."). These are BACKGROUND, not proposals. SKIP past the mandate description to find the actual proposals.
+- Look for phrases like "Vi föreslår", "Vi lämnar förslag", "Förslagen innebär", "Vi lämnar X förslag" — these introduce the actual proposals that belong in core_recommendations.
+- Each core_recommendation should describe a SPECIFIC legislative change. Example: "Kommunen ska i översiktsplanen redovisa vilka klimatanpassningsåtgärder kommunen avser att initiera" — NOT "Förbättra kommunernas möjligheter".
+- If the text says "vi lämnar elva förslag" or similar, your core_recommendations should reflect approximately that many distinct proposals.
+- Distinguish sharply between formal proposals (förslag) and assessments/conclusions that did NOT result in proposals (bedömningar som inte lett till förslag).
+- If the document explicitly states that something is NOT proposed, lacks grounds for, or is outside the mandate, list it under proposals_not_adopted, NOT core_recommendations.
+- Phrases like "det saknas skäl att införa", "det inte ingår i uppdraget", "vi bedömer att det inte finns anledning" signal proposals_not_adopted items.
 - If the document text is too short or unclear to summarize, still produce your best effort with "unknown" for outcome_status.
 - Return ONLY valid JSON, no markdown fences.`;
 
-function truncateText(text: string, maxChars: number): string {
-  if (text.length <= maxChars) return text;
-  return text.slice(0, maxChars) + "\n\n[Texten har trunkerats]";
-}
+// ---------- Summarize ----------
 
 async function summarizeDocument(
   rawContent: string,
@@ -48,8 +215,10 @@ async function summarizeDocument(
   docType: string,
   docNumber: string,
   apiKey: string
-): Promise<SummaryResult> {
-  const userPrompt = `Dokument: ${docNumber} - ${title} (typ: ${docType})\n\n${truncateText(rawContent, MAX_INPUT_CHARS)}`;
+): Promise<SummaryResult & { extraction_strategy: string }> {
+  const { text: extractedText, strategy } = extractKeyContent(rawContent, docType);
+
+  const userPrompt = `Dokument: ${docNumber} - ${title} (typ: ${docType})\n\n${extractedText}`;
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -79,7 +248,6 @@ async function summarizeDocument(
 
   const parsed = JSON.parse(content) as SummaryResult;
 
-  // Validate required fields
   if (!parsed.summary_text || typeof parsed.summary_text !== "string") {
     throw new Error("Missing or invalid summary_text in response");
   }
@@ -88,14 +256,37 @@ async function summarizeDocument(
     summary_text: parsed.summary_text,
     policy_aim: parsed.policy_aim || "",
     core_recommendations: Array.isArray(parsed.core_recommendations) ? parsed.core_recommendations : [],
+    proposals_not_adopted: Array.isArray(parsed.proposals_not_adopted) ? parsed.proposals_not_adopted : [],
+    proposal_count: typeof parsed.proposal_count === "number" ? parsed.proposal_count : null,
     key_actors: Array.isArray(parsed.key_actors) ? parsed.key_actors : [],
     policy_domains: Array.isArray(parsed.policy_domains) ? parsed.policy_domains : [],
     keywords: Array.isArray(parsed.keywords) ? parsed.keywords : [],
     outcome_status: ["enacted", "rejected", "pending", "superseded", "unknown"].includes(parsed.outcome_status)
       ? parsed.outcome_status
       : "unknown",
+    extraction_strategy: strategy,
   };
 }
+
+// ---------- Upsert helper ----------
+
+function buildUpsertRow(docId: string, summary: SummaryResult) {
+  return {
+    document_id: docId,
+    summary_text: summary.summary_text,
+    policy_aim: summary.policy_aim,
+    core_recommendations: summary.core_recommendations,
+    proposals_not_adopted: summary.proposals_not_adopted,
+    proposal_count: summary.proposal_count,
+    key_actors: summary.key_actors,
+    policy_domains: summary.policy_domains,
+    keywords: summary.keywords,
+    outcome_status: summary.outcome_status,
+    model_version: MODEL_VERSION,
+  };
+}
+
+// ---------- Handler ----------
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -115,14 +306,13 @@ Deno.serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
-
     const body = await req.json().catch(() => ({}));
-    const mode = body.mode || "batch"; // 'batch' | 'single'
-    const batchSize = body.batch_size || BATCH_SIZE;
-    const documentId = body.document_id; // for single mode
+    const mode = body.mode || "batch";
+    const batchSize = Math.min(body.batch_size || BATCH_SIZE, 100); // Hard cap at 100
+    const documentId = body.document_id;
 
+    // ---------- Single mode ----------
     if (mode === "single" && documentId) {
-      // Summarize a single document
       const { data: doc, error: docErr } = await supabase
         .from("documents")
         .select("id, title, doc_type, doc_number, raw_content")
@@ -145,41 +335,42 @@ Deno.serve(async (req) => {
 
       const summary = await summarizeDocument(doc.raw_content, doc.title, doc.doc_type, doc.doc_number, openaiKey);
 
-      const { error: upsertErr } = await supabase.from("document_summaries").upsert(
-        {
-          document_id: doc.id,
-          summary_text: summary.summary_text,
-          policy_aim: summary.policy_aim,
-          core_recommendations: summary.core_recommendations,
-          key_actors: summary.key_actors,
-          policy_domains: summary.policy_domains,
-          keywords: summary.keywords,
-          outcome_status: summary.outcome_status,
-          model_version: MODEL_VERSION,
-        },
-        { onConflict: "document_id" }
-      );
+      const { error: upsertErr } = await supabase
+        .from("document_summaries")
+        .upsert(buildUpsertRow(doc.id, summary), { onConflict: "document_id" });
 
       if (upsertErr) throw new Error(`Upsert failed: ${upsertErr.message}`);
 
-      return new Response(JSON.stringify({ success: true, document_id: doc.id, summary }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ success: true, document_id: doc.id, extraction_strategy: summary.extraction_strategy, summary }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // Batch mode: find documents with text but no summary
-    const { data: docs, error: fetchErr } = await supabase
-      .from("documents")
-      .select("id, title, doc_type, doc_number, raw_content")
-      .not("raw_content", "is", null)
-      .not("raw_content", "eq", "")
-      .order("created_at", { ascending: true })
-      .limit(batchSize);
+    // ---------- Batch mode ----------
+    // Build a balanced sample across doc types (Max's requirement: good mix)
+    const docTypes = ["sou", "prop", "bet", "dir", "law"];
+    const perType = Math.max(Math.floor(batchSize / docTypes.length), 1);
+    const remainder = batchSize - perType * docTypes.length;
 
-    if (fetchErr) throw new Error(`Fetch error: ${fetchErr.message}`);
+    let allDocs: any[] = [];
 
-    // Filter out docs that already have summaries at current model version
-    const docIds = (docs || []).map((d: any) => d.id);
+    for (let i = 0; i < docTypes.length; i++) {
+      const limit = perType + (i < remainder ? 1 : 0);
+      const { data: typeDocs } = await supabase
+        .from("documents")
+        .select("id, title, doc_type, doc_number, raw_content")
+        .eq("doc_type", docTypes[i])
+        .not("raw_content", "is", null)
+        .not("raw_content", "eq", "")
+        .order("created_at", { ascending: true })
+        .limit(limit);
+
+      if (typeDocs) allDocs = allDocs.concat(typeDocs);
+    }
+
+    // Filter out docs already summarized at current model version
+    const docIds = allDocs.map((d: any) => d.id);
     const { data: existingSummaries } = await supabase
       .from("document_summaries")
       .select("document_id")
@@ -187,7 +378,7 @@ Deno.serve(async (req) => {
       .eq("model_version", MODEL_VERSION);
 
     const existingIds = new Set((existingSummaries || []).map((s: any) => s.document_id));
-    const toProcess = (docs || []).filter((d: any) => !existingIds.has(d.id));
+    const toProcess = allDocs.filter((d: any) => !existingIds.has(d.id));
 
     if (toProcess.length === 0) {
       return new Response(
@@ -196,39 +387,34 @@ Deno.serve(async (req) => {
       );
     }
 
-    const results: { id: string; status: string; error?: string }[] = [];
+    const results: { id: string; doc_number: string; doc_type: string; status: string; strategy?: string; error?: string }[] = [];
 
     for (const doc of toProcess) {
       try {
         if (!doc.raw_content) {
-          results.push({ id: doc.id, status: "skipped", error: "no content" });
+          results.push({ id: doc.id, doc_number: doc.doc_number, doc_type: doc.doc_type, status: "skipped", error: "no content" });
           continue;
         }
 
         const summary = await summarizeDocument(doc.raw_content, doc.title, doc.doc_type, doc.doc_number, openaiKey);
 
-        const { error: upsertErr } = await supabase.from("document_summaries").upsert(
-          {
-            document_id: doc.id,
-            summary_text: summary.summary_text,
-            policy_aim: summary.policy_aim,
-            core_recommendations: summary.core_recommendations,
-            key_actors: summary.key_actors,
-            policy_domains: summary.policy_domains,
-            keywords: summary.keywords,
-            outcome_status: summary.outcome_status,
-            model_version: MODEL_VERSION,
-          },
-          { onConflict: "document_id" }
-        );
+        const { error: upsertErr } = await supabase
+          .from("document_summaries")
+          .upsert(buildUpsertRow(doc.id, summary), { onConflict: "document_id" });
 
         if (upsertErr) {
-          results.push({ id: doc.id, status: "error", error: upsertErr.message });
+          results.push({ id: doc.id, doc_number: doc.doc_number, doc_type: doc.doc_type, status: "error", error: upsertErr.message });
         } else {
-          results.push({ id: doc.id, status: "success" });
+          results.push({ id: doc.id, doc_number: doc.doc_number, doc_type: doc.doc_type, status: "success", strategy: summary.extraction_strategy });
         }
       } catch (err) {
-        results.push({ id: doc.id, status: "error", error: err instanceof Error ? err.message : String(err) });
+        results.push({
+          id: doc.id,
+          doc_number: doc.doc_number,
+          doc_type: doc.doc_type,
+          status: "error",
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
