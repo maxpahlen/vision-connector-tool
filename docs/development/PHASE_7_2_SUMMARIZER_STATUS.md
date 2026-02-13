@@ -96,17 +96,18 @@ Side-by-side test on one document of each type:
 | Semantic correctness | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
 | Cost (full corpus) | ~$220 | ~$22 (10x cheaper) |
 
-### Decision: Hybrid Model Strategy (v3-hybrid)
+### Decision: Hybrid Model Strategy (v3-hybrid) — Revised
 
-- **Directives + Committee Reports** → `gpt-4o-2024-08-06` (completeness matters)
-- **SOUs, Propositions, Laws** → `gpt-4o-mini` (cost-effective, sufficient quality)
-- Estimated cost: **~$50–60 for full corpus** (vs $220 all-4o or $22 all-mini)
-- `MODEL_VERSION` bumped to `gpt-4o-v3-hybrid`
+- **Directives only** → `gpt-4o-2024-08-06` (completeness for mandate tasks)
+- **SOUs, Propositions, Committee Reports, Laws** → `gpt-4o-mini` (cost-effective, per-type prompts compensate)
+- `MODEL_VERSION` = `gpt-4o-v3-hybrid`
 
-## Cost Estimate (Hybrid)
-- gpt-4o-mini: ~3,800 docs (SOU + proposition + law) × ~7.5K tokens ≈ $15
-- gpt-4o: ~1,700 docs (directive + committee_report) × ~7.5K tokens ≈ $40
-- **Total: ~$55**
+**Rationale for removing committee_report from gpt-4o**: The per-type prompt captures reservationer and tillkännagivanden well enough with mini. The 2,591 committee reports at gpt-4o prices would add ~$250 for marginal quality gain.
+
+## Cost Estimate (Revised Hybrid)
+- gpt-4o (directives): ~1,393 docs × ~5K tokens → ~$20 input + ~$15 output = **~$35**
+- gpt-4o-mini (rest): ~4,848 docs × ~10K avg tokens → ~$5 input + ~$3 output = **~$8**
+- **Total: ~$43**
 
 ## Files Modified
 - `supabase/functions/generate-document-summary/index.ts` — hybrid model routing via `selectModel()`
