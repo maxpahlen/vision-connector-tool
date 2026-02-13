@@ -5,10 +5,19 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SUMMARY_MODEL = "gpt-4o-mini";
-const MODEL_VERSION = "gpt-4o-v3";
+const SUMMARY_MODEL_DEFAULT = "gpt-4o-mini";
+const SUMMARY_MODEL_COMPLEX = "gpt-4o-2024-08-06";
+const COMPLEX_DOC_TYPES = new Set(["directive", "committee_report"]);
+const MODEL_VERSION = "gpt-4o-v3-hybrid";
 const BATCH_SIZE = 10;
 const MAX_INPUT_CHARS = 80000;
+
+/** Select model based on document type — complex types get gpt-4o for completeness */
+function selectModel(docType: string, override?: string): string {
+  if (override) return override;
+  const canonical = normalizeDocType(docType);
+  return COMPLEX_DOC_TYPES.has(canonical) ? SUMMARY_MODEL_COMPLEX : SUMMARY_MODEL_DEFAULT;
+}
 
 // ---------- Types ----------
 
@@ -299,7 +308,7 @@ async function summarizeDocument(
   options: { modelOverride?: string; twoPass?: boolean } = {}
 ): Promise<SummaryResult & { extraction_strategy: string; model_used: string; input_chars: number }> {
   const { text: extractedText, strategy } = extractKeyContent(rawContent, docType);
-  const modelToUse = options.modelOverride || SUMMARY_MODEL;
+  const modelToUse = selectModel(docType, options.modelOverride);
   const systemPrompt = buildSystemPrompt(docType);
 
   let finalPromptText = extractedText;

@@ -55,24 +55,65 @@ Refactored from a single SOU-optimized prompt to `BASE_PROMPT` + `DOC_TYPE_INSTR
 ## Root Cause Found & Fixed (v1→v2)
 The extraction was picking up a "Sammanfattning" heading in the **appendix (Bilaga)** instead of the actual executive summary. Fixed by iterating all matches and selecting the one with the longest body text, while skipping matches after 80% of the document.
 
-## Model Comparison (SOU 2025:51)
+## GPT-4o vs GPT-4o-mini Comparison (v3 per-type prompts)
 
-| Model | proposal_count | core_recs | proposals_not_adopted | Quality |
-|-------|---------------|-----------|----------------------|---------|
-| gpt-4o-mini (v1 prompt) | 11 | 12 proposals | 3 items | 85-90% coverage |
-| gpt-4o-mini (v2 prompt) | 11 | 13 proposals ✅ | 2 items ✅ | ~95% coverage |
-| gpt-4o-2024-08-06 | 11 | 15 proposals | 3 items | Excellent |
+Side-by-side test on one document of each type:
 
-## Cost Estimate
-- gpt-4o-mini pricing: ~$0.15/1M input + $0.60/1M output
-- 100 docs × ~7.5K tokens input = 750K tokens ≈ $0.11 input + ~$0.30 output = **~$0.41 total**
-- Full corpus (5,490 docs): ~$22 total
+### Law (2024:1373 — 357 chars)
+| Field | gpt-4o | gpt-4o-mini |
+|-------|--------|-------------|
+| core_recs | 1 provision | 1 provision |
+| outcome_status | enacted ✅ | enacted ✅ |
+| **Verdict** | **Identical** | **Identical** |
+
+### Committee Report (HC01SkU18 — 20K chars)
+| Field | gpt-4o | gpt-4o-mini |
+|-------|--------|-------------|
+| core_recs | 3 items | 3 items ✅ |
+| proposals_not_adopted | Centerpartiet yttrande captured ✅ | **Empty [] ⚠️** — missed |
+| **Verdict** | **Better** — structured reservationer | **Acceptable** — info in summary_text only |
+
+### Proposition (Prop. 2025/26:73 — 15K chars)
+| Field | gpt-4o | gpt-4o-mini |
+|-------|--------|-------------|
+| core_recs | 2 items | 3 items (more granular) |
+| proposal_count | 2 ✅ | 2 ✅ |
+| **Verdict** | **Comparable** | **Comparable** |
+
+### Directive (Dir. 2025:103 — 32K chars)
+| Field | gpt-4o | gpt-4o-mini |
+|-------|--------|-------------|
+| core_recs | **7 mandate tasks** | **4 mandate tasks ⚠️** |
+| Deadline | ✅ captured | ✅ captured |
+| **Verdict** | **Better** — 7/7 tasks | **Acceptable** — 4/7 tasks |
+
+### Conclusion
+
+| Dimension | gpt-4o | gpt-4o-mini |
+|-----------|--------|-------------|
+| Structural accuracy | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+| Completeness (large docs) | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ (misses ~30% items) |
+| Semantic correctness | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| Cost (full corpus) | ~$220 | ~$22 (10x cheaper) |
+
+### Decision: Hybrid Model Strategy (v3-hybrid)
+
+- **Directives + Committee Reports** → `gpt-4o-2024-08-06` (completeness matters)
+- **SOUs, Propositions, Laws** → `gpt-4o-mini` (cost-effective, sufficient quality)
+- Estimated cost: **~$50–60 for full corpus** (vs $220 all-4o or $22 all-mini)
+- `MODEL_VERSION` bumped to `gpt-4o-v3-hybrid`
+
+## Cost Estimate (Hybrid)
+- gpt-4o-mini: ~3,800 docs (SOU + proposition + law) × ~7.5K tokens ≈ $15
+- gpt-4o: ~1,700 docs (directive + committee_report) × ~7.5K tokens ≈ $40
+- **Total: ~$55**
 
 ## Files Modified
-- `supabase/functions/generate-document-summary/index.ts` — per-type prompt system (BASE_PROMPT + DOC_TYPE_INSTRUCTIONS)
+- `supabase/functions/generate-document-summary/index.ts` — hybrid model routing via `selectModel()`
 - `docs/development/PHASE_7_2_SUMMARIZER_STATUS.md` — this file
 
 ## Next Steps
 1. ~~Validate on all doc types~~ ✅ Done (v3 per-type prompts)
-2. Run pilot batch of 100 docs (balanced across types)
-3. Generate embeddings after DeepInfra balance is topped up
+2. ~~Model comparison~~ ✅ Done — hybrid strategy adopted
+3. Run pilot batch of 100 docs (balanced across types)
+4. Generate embeddings after DeepInfra balance is topped up
