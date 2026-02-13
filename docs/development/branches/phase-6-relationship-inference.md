@@ -1,6 +1,6 @@
 # Phase 6: Relationship Inference & Case Reconstruction
 
-**Status:** IN PROGRESS — Slice 6A.4b Complete  
+**Status:** IN PROGRESS — Phase 6A Complete, 6B.1 Next  
 **Branch:** `phase-6-relationship-inference`  
 **Dependencies:** Phase 6.1 (Riksdagen API Migration — corpus backfill)  
 **Last Updated:** 2026-02-13
@@ -23,8 +23,8 @@
 |-------|-------------|--------|-------|
 | 6A.1 | Reference resolution: Bet. pattern, HTML decode, full pass | ✅ DONE | 84 → 2,157 resolved (31.7%) |
 | 6A.2 | Corpus backfill: Bet. H5–H7+HD sessions → re-resolve refs | ✅ DONE | +1,292 docs, 2,181 → 2,807 resolved (37.1%) |
-| 6A.3 | Process linkage: cluster orphan documents into processes | 🔲 TODO | ~5,200 orphan docs |
-| 6A.4 | `document_relationships` M2M schema + migration | ✅ DONE | Enum-constrained types, canonical symmetric dedup, provenance FKs |
+| 6A.3 | Process linkage: cluster orphan documents into processes | ✅ DONE | 6,654 → 3,908 orphans (41.3% reduction), 1,287 auto-processes |
+| 6A.4 | `document_relationships` M2M schema + backfill + hotfix | ✅ DONE | 2,152 rows, 58 legitimate references, reverse rules fixed |
 
 ### Phase 6B: AI Inference (Gaps Only)
 
@@ -177,10 +177,12 @@ Populated `document_relationships` from 2,807 resolved `document_references`:
 |---|---|---|
 | `committee_report_to_proposition` | 1,496 | high (0.95) |
 | `proposition_to_committee_report` | 525 | high (0.95) |
-| `references` (symmetric) | 112 | medium (0.80) |
+| `references` (symmetric) | 58 | medium (0.80) |
+| `directive_to_sou` | 55 | high (0.90) |
 | `remiss_to_sou` | 15 | high (0.85) |
-| `directive_to_sou` | 2 | high (0.90) |
-| `sou_to_proposition` | 2 | high (0.90) |
+| `sou_to_proposition` | 3 | high (0.90) |
+
+**6A.4b Hotfix (2026-02-13):** Added reverse classification rules (`sou|directive` → `directive_to_sou`, `proposition|sou` → `sou_to_proposition`). Re-ran backfill idempotently, reclassifying 54 rows from `references` catch-all to correct directed types. Remaining 58 `references` rows are legitimate same-type cross-refs (54 directive↔directive, 2 sou↔sou, 2 edge cases).
 
 **Verification:**
 - ✅ 2,152/2,152 have `source_reference_id` (provenance integrity)
@@ -188,6 +190,7 @@ Populated `document_relationships` from 2,807 resolved `document_references`:
 - ✅ 0 duplicate rows
 - ✅ All `derived_by = 'resolver'`
 - ✅ Symmetric dedup verified (reverse insert rejected by `uq_symmetric_references`)
+- ✅ 58 remaining `references` rows verified as legitimate (no missing rules)
 
 **Rollback:** `DELETE FROM document_relationships WHERE derived_by = 'resolver';`
 
