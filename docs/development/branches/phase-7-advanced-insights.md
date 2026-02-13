@@ -534,3 +534,31 @@ REFRESH MATERIALIZED VIEW mv_top_influencers;
 - Anomaly detection (unusual patterns in legislative activity)
 - Recommendation engine (suggest related cases to users)
 - "Find similar" functionality from any document
+
+---
+
+## Phase 8 Alignment: Grounded Conversational Intelligence
+
+> **Full spec:** `docs/development/PRODUCT_ROADMAP.md` → Phase 8
+
+Phase 7's semantic linking infrastructure (embeddings, vector index, summarizer agent) is a **prerequisite** for Phase 8's grounded chat capability. The relationship is:
+
+| Phase 7 Delivers | Phase 8 Consumes |
+|---|---|
+| Document embeddings (pgvector) | Vector retrieval leg of hybrid search |
+| Structured summaries | Pre-computed context for generation |
+| Semantic links with scores | Graph-aware answer generation |
+| Entity co-occurrence network | Entity-grounded query understanding |
+
+### Key Architectural Constraint
+
+Phase 8 is explicitly **retrieval-first, evidence-first, and verifier-gated**:
+
+1. Deterministic reference/process lookup executes before any LLM call
+2. Hybrid retrieval (BM25 + vector ANN) with reranking
+3. Evidence extraction produces (claim, quote, citation) triples
+4. Generation synthesizes from extracted evidence only
+5. Verifier gate removes unsupported statements
+6. Explicit refusal when evidence is insufficient
+
+This ensures the chat capability inherits Phase 7's explainability-first principle and extends it to natural language interaction.

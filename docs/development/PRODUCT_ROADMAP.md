@@ -554,76 +554,23 @@ CREATE TABLE case_documents (
 
 **What:** Visualization showing how each organization's stance distribution varies across subjects/themes.
 
-**Why Valuable:**
-- Quickly identify which organizations are generally supportive vs oppositional
-- Discover thematic patterns in stakeholder positions
-- Support strategic stakeholder engagement
-
 **Prerequisites:**
 - [x] Phase 5.6.4 stance classification complete
-- [ ] Theme/subject categorization of SOUs (main risk/dependency)
-
-**Implementation Notes:**
-- Heat map using subject categories derived from SOU titles or ministry
-- Color coding: green (support), red (oppose), yellow (conditional)
-- Filterable by ministry, time period, organization type
-- May require time window filters (e.g., "last 2 years")
-- Category normalization (ministries vs. subject taxonomy) TBD
+- [ ] Theme/subject categorization of SOUs
 
 **Status:** Roadmap item; prioritize only after taxonomy/theme tagging infrastructure is available.
 
 ### 7.2 Stakeholder Influence Mapping
-- Which organizations appear most frequently across cases
-- Which organizations submit remissvar most often
-- Which organizations' recommendations are adopted
-
 ### 7.3 Entity Co-Occurrence Networks
-- Visualize which entities work together
-- Identify clusters of frequent collaborators
-- Detect new vs recurring relationships
-
 ### 7.4 Change Tracking
-- Track amendments to directives over time
-- Identify patterns in SOU recommendations that lead to legislation
-- Measure time between directive → SOU → proposition → law
-
 ### 7.5 Predicted Impact Monitoring
-- Which sectors are most affected by pending legislation
-- Which ministries are most active in which policy areas
-- Forecasting: when will [Case] reach [Stage]
+### 7.6 Parliamentary Motions Ingestion
 
-### New Database Tables (Tentative)
-```sql
-CREATE TABLE entity_cooccurrence (
-  id UUID PRIMARY KEY,
-  entity_a_id UUID REFERENCES entities(id),
-  entity_b_id UUID REFERENCES entities(id),
-  cooccurrence_count INTEGER,
-  shared_documents UUID[], -- Array of document IDs
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+**What:** Ingest ~60,000+ motions (`doktyp=mot`) from Riksdagen API to resolve 2,820 deferred references.
 
-CREATE TABLE case_predictions (
-  id UUID PRIMARY KEY,
-  case_id UUID REFERENCES legislative_cases(id),
-  predicted_stage TEXT,
-  predicted_date DATE,
-  confidence_score NUMERIC(3,2),
-  rationale TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE entity_stance_themes (
-  id UUID PRIMARY KEY,
-  entity_id UUID REFERENCES entities(id),
-  theme TEXT, -- e.g., 'miljö', 'skatter', 'utbildning'
-  support_count INTEGER DEFAULT 0,
-  oppose_count INTEGER DEFAULT 0,
-  conditional_count INTEGER DEFAULT 0,
-  neutral_count INTEGER DEFAULT 0,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
+**Prerequisites:**
+- [ ] Clear product demand for motion-level tracking
+- [ ] Scoped ingestion plan with success criteria
 
 ### Success Criteria
 - [ ] Entity stance heat map visualized (Phase 7.1)
@@ -631,6 +578,104 @@ CREATE TABLE entity_stance_themes (
 - [ ] Entity co-occurrence network visualized (Phase 7.3)
 - [ ] Change tracking dashboard operational (Phase 7.4)
 - [ ] Prediction model validated against historical data (Phase 7.5)
+
+---
+
+## Phase 8: Grounded Conversational Intelligence 📋 FUTURE
+
+**Goal:** Enable citation-bound Q&A and chat over the full legislative corpus (1M+ documents at scale).
+
+**Status:** Accepted as future roadmap scope. No implementation, schema, or edge-function work planned.
+
+**Decision:** 2026-02-13 — Approved as roadmap item (see DECISION_LOG)
+
+### Purpose
+
+Allow users to ask natural-language questions about the legislative corpus and receive answers that are:
+- Grounded in actual documents with verifiable citations
+- Bounded by what the corpus contains (explicit refusal when evidence is insufficient)
+- Traceable from claim → quote → source document
+
+### Design Principles
+
+1. **Deterministic legal/reference matching before LLM retrieval** — Exact doc_number lookups, reference resolution, and process membership queries execute first; LLM retrieval only fills remaining gaps.
+2. **Hybrid retrieval funnel (BM25 + semantic ANN)** — Full-text search (existing `search_vector` tsvector) combined with vector similarity search for conceptual matching.
+3. **Reranker before generation** — Retrieved candidates are reranked by relevance before being passed to the generation model, reducing noise and improving answer quality.
+4. **Evidence extraction (claim → quote → citation) before synthesis** — The system extracts supporting quotes from retrieved documents first, then synthesizes an answer from those quotes only.
+5. **Verifier gate that removes unsupported statements** — A post-generation verification pass checks each claim against the extracted evidence; unsupported statements are removed or flagged.
+6. **Explicit refusal behavior when evidence is insufficient** — If the corpus does not contain enough evidence to answer a question, the system says so rather than hallucinating.
+
+### Scope
+
+**In Scope:**
+- Natural-language Q&A over legislative documents
+- Multi-turn conversational context
+- Citation-bound answers with source document links
+- Query understanding (intent classification, entity extraction)
+- Retrieval pipeline: deterministic → BM25 → vector → rerank → generate → verify
+
+**Out of Scope (for this phase):**
+- Real-time document monitoring / alerts
+- Autonomous agent actions (e.g., triggering scrapers)
+- Multi-language support beyond Swedish
+- Voice interface
+- Public API access
+
+### Prerequisites
+
+- [ ] Phase 6 complete (document relationships populated)
+- [ ] Phase 7 semantic linking complete (embeddings + vector index)
+- [ ] pgvector extension enabled with document embeddings
+- [ ] Summarizer agent operational (structured summaries for embedding)
+- [ ] Sufficient corpus size (target: 10,000+ documents with text content)
+
+### Phased Rollout
+
+**MVP (8.1):**
+- Single-turn Q&A with citation-bound answers
+- BM25 retrieval only (existing tsvector infrastructure)
+- Top-5 document retrieval → evidence extraction → answer generation
+- Verifier pass on output
+- Admin-only access for validation
+
+**Hardened (8.2):**
+- Multi-turn conversation with context window management
+- Hybrid retrieval (BM25 + vector ANN)
+- Cross-lingual reranker
+- Confidence scoring per claim
+- User-facing deployment with feedback loop
+
+**Advanced (8.3):**
+- Follow-up question suggestions
+- Comparative analysis ("How does SOU X differ from SOU Y on topic Z?")
+- Process-aware answers (leveraging `document_relationships` graph)
+- Streaming responses
+
+### Risk Notes
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Hallucination | Users act on false information | Verifier gate, citation requirement, explicit refusal |
+| Latency | Poor UX for complex queries | Caching, streaming, pre-computed summaries |
+| Cost | High per-query LLM costs at scale | Tiered retrieval (cheap first), caching, model selection |
+| Swedish language quality | Poor retrieval/generation in Swedish | Multilingual embeddings, Swedish-tuned reranker |
+| Corpus coverage gaps | Misleading "no answer" vs "not in corpus" | Transparent coverage metrics, gap reporting |
+
+### Success Criteria
+
+- [ ] Single-turn Q&A with >90% citation accuracy (no unsupported claims)
+- [ ] Explicit refusal rate <5% on answerable questions
+- [ ] P95 response latency <5s for single-turn queries
+- [ ] User satisfaction >4/5 on answer quality (admin validation)
+- [ ] Zero hallucinated document references
+
+### No Current Commitments
+
+- ❌ No model vendor commitment
+- ❌ No schema migrations
+- ❌ No edge-function implementation
+- ❌ No embedding infrastructure work
+- ❌ No timeline or sprint allocation
 
 ---
 

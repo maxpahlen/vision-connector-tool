@@ -1,9 +1,9 @@
 # Phase 6: Relationship Inference & Case Reconstruction
 
-**Status:** IN PROGRESS — Slice 6A.2 Complete  
+**Status:** IN PROGRESS — Slice 6A.4b Complete  
 **Branch:** `phase-6-relationship-inference`  
 **Dependencies:** Phase 6.1 (Riksdagen API Migration — corpus backfill)  
-**Last Updated:** 2026-02-12
+**Last Updated:** 2026-02-13
 
 ---
 
@@ -131,6 +131,65 @@ Note: 720 newly resolved but total only increased by 626 from pre-6A.2 baseline 
 | Bet. not in corpus | 1 | Likely edge case |
 
 **Key insight:** The remaining 4,163 "extraction failed" references are overwhelmingly parliamentary motions (Mot.) and free-text titles without extractable doc number patterns — aligned with the Phase 7 deferral decision.
+
+---
+
+## Slice 6A.3 Results (2026-02-13)
+
+- **Orphan reduction:** 6,654 → 3,908 (41.3%)
+- **New processes created:** 1,287 (keys: `auto-{anchor_doc_number}-{hash}`)
+- **Adoptions into existing processes:** 92
+- **Total documents linked:** 2,654
+- **Skipped — ambiguous (multi-process):** 5 documents
+- **Skipped — oversized (budget omnibus):** 6 clusters
+- **Duplicate memberships:** 0 (verified)
+- **Idempotency:** Confirmed (re-run = 0 changes)
+
+---
+
+## Slice 6A.4 Results (2026-02-13)
+
+### Schema: `document_relationships` M2M Table
+
+Created with full constraint tightening:
+- **ENUM types:** `relationship_type`, `confidence_class`, `derived_by_source`
+- **Numeric scoring:** `confidence_score NUMERIC(4,3)` with CHECK [0,1]
+- **Symmetric dedup:** Generated `canonical_source_id`/`canonical_target_id` columns + partial unique index on `references` type
+- **Provenance:** `source_reference_id` FK → `document_references`, `source_process_id` FK → `processes`
+- **Self-reference guard:** CHECK constraint
+- **Directed uniqueness:** UNIQUE on `(source_document_id, target_document_id, relationship_type)`
+- **RLS:** Admin write, authenticated read
+
+### 6A.4b: Deterministic Backfill from Resolved References
+
+Populated `document_relationships` from 2,807 resolved `document_references`:
+
+| Metric | Value |
+|---|---|
+| Resolved references processed | 2,807 |
+| In-memory duplicates removed | 655 |
+| **Rows inserted** | **2,152** |
+| Conflict skipped | 0 |
+
+**Breakdown by relationship_type:**
+
+| Type | Count | Confidence |
+|---|---|---|
+| `committee_report_to_proposition` | 1,496 | high (0.95) |
+| `proposition_to_committee_report` | 525 | high (0.95) |
+| `references` (symmetric) | 112 | medium (0.80) |
+| `remiss_to_sou` | 15 | high (0.85) |
+| `directive_to_sou` | 2 | high (0.90) |
+| `sou_to_proposition` | 2 | high (0.90) |
+
+**Verification:**
+- ✅ 2,152/2,152 have `source_reference_id` (provenance integrity)
+- ✅ 0 orphan provenance IDs
+- ✅ 0 duplicate rows
+- ✅ All `derived_by = 'resolver'`
+- ✅ Symmetric dedup verified (reverse insert rejected by `uq_symmetric_references`)
+
+**Rollback:** `DELETE FROM document_relationships WHERE derived_by = 'resolver';`
 
 ---
 

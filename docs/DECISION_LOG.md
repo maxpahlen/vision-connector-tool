@@ -22,6 +22,10 @@ Running log of approved decisions for the Legislative Intelligence Platform.
 
 | Date | Change Title | PR/Issue | Data Risk | Max | Lovable | Codex |
 |------|--------------|----------|-----------|-----|---------|-------|
+| 2026-02-13 | Phase 8: Grounded Conversational Intelligence accepted as future roadmap | N/A | NONE | AGREE | AGREE | PENDING |
+| 2026-02-13 | Slice 6A.4b: document_relationships backfill from resolved references | N/A | NONE | AGREE | AGREE | PENDING |
+| 2026-02-13 | Slice 6A.4: document_relationships M2M schema migration | N/A | NONE | AGREE | AGREE | PENDING |
+| 2026-02-13 | Slice 6A.3: Process linkage write-mode execution | N/A | DESTRUCTIVE | AGREE | AGREE | PENDING |
 | 2026-02-12 | Phase 6A.2 scope: Motions deferred, H5–H7+HD backfill approved | N/A | NONE | AGREE | AGREE | AGREE |
 | 2026-02-11 | Phase 6A.1: Deterministic reference resolution pass | N/A | NONE | AGREE | AGREE | AGREE |
 | 2026-01-20 | Phase 5.6 Concept Brief created | N/A | NONE | AGREE | AGREE | AGREE |
@@ -38,6 +42,74 @@ Running log of approved decisions for the Legislative Intelligence Platform.
 ---
 
 ## Decision Details
+
+### 2026-02-13 — Phase 8: Grounded Conversational Intelligence Accepted as Future Roadmap
+
+**Description:** Accepted "Grounded Conversational Intelligence / Chat over Corpus" as a future phase (Phase 8) in the product roadmap. This is a documentation-only decision — no implementation, schema migrations, or edge-function work is committed.
+
+**Key design principles documented:**
+1. Deterministic legal/reference matching before LLM retrieval
+2. Hybrid retrieval funnel (BM25 + semantic ANN)
+3. Reranker before generation
+4. Evidence extraction (claim → quote → citation) before synthesis
+5. Verifier gate that removes unsupported statements
+6. Explicit refusal when evidence is insufficient
+
+**Prerequisites:** Phase 6 (relationships), Phase 7 (semantic linking, embeddings, pgvector)
+
+**Data Risk:** NONE — Documentation only
+
+**Approvals:**
+- AGREE – Max ✓
+- AGREE – Lovable ✓
+- PENDING – Codex
+
+---
+
+### 2026-02-13 — Slice 6A.4b: document_relationships Backfill
+
+**Description:** Populated `document_relationships` from 2,807 resolved `document_references` using deterministic classification rules. 2,152 rows inserted (655 in-memory duplicates removed). All rows have `derived_by = 'resolver'` and valid `source_reference_id` provenance.
+
+**Breakdown:** 1,496 committee_report_to_proposition, 525 proposition_to_committee_report, 112 references (symmetric), 15 remiss_to_sou, 2 directive_to_sou, 2 sou_to_proposition.
+
+**Rollback:** `DELETE FROM document_relationships WHERE derived_by = 'resolver';`
+
+**Data Risk:** NONE — Additive inserts only, idempotent via ON CONFLICT DO NOTHING.
+
+**Approvals:**
+- AGREE – Max ✓
+- AGREE – Lovable ✓
+- PENDING – Codex
+
+---
+
+### 2026-02-13 — Slice 6A.4: document_relationships M2M Schema Migration
+
+**Description:** Created `document_relationships` table with enum-constrained `relationship_type`, `confidence_class`, `derived_by_source` types. Numeric `confidence_score NUMERIC(4,3)`. Generated canonical columns for symmetric dedup. Provenance FKs to `document_references` and `processes`. Full RLS (admin write, authenticated read).
+
+**Data Risk:** NONE — Additive schema only.
+
+**Approvals:**
+- AGREE – Max ✓
+- AGREE – Lovable ✓
+- PENDING – Codex
+
+---
+
+### 2026-02-13 — Slice 6A.3: Process Linkage Write-Mode Execution
+
+**Description:** Executed deterministic union-find process linkage. Created 1,287 new processes (keys: `auto-{anchor_doc_number}-{hash}`), adopted 92 orphans into existing processes. Reduced orphan documents from 6,654 to 3,908 (41.3%). Skipped 5 ambiguous + 6 oversized clusters. Verified: 0 duplicate memberships, idempotent on re-run.
+
+**Rollback:** `DELETE FROM process_documents WHERE process_id IN (SELECT id FROM processes WHERE process_key LIKE 'auto-%'); DELETE FROM processes WHERE process_key LIKE 'auto-%';`
+
+**Data Risk:** DESTRUCTIVE — Creates new processes and process_documents rows. Rollback via auto-% key filter.
+
+**Approvals:**
+- AGREE – Max ✓
+- AGREE – Lovable ✓
+- PENDING – Codex
+
+---
 
 ### 2026-02-12 — Phase 6A.2 Scope: Motions Deferred, Backfill Range Approved
 
