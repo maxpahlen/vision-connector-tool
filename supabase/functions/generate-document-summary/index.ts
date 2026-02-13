@@ -7,7 +7,7 @@ const corsHeaders = {
 
 const SUMMARY_MODEL_DEFAULT = "gpt-4o-mini";
 const SUMMARY_MODEL_COMPLEX = "gpt-4o-2024-08-06";
-const COMPLEX_DOC_TYPES = new Set(["directive", "committee_report"]);
+const COMPLEX_DOC_TYPES = new Set(["directive"]);
 const MODEL_VERSION = "gpt-4o-v3-hybrid";
 const BATCH_SIZE = 10;
 const MAX_INPUT_CHARS = 80000;
@@ -522,6 +522,13 @@ Deno.serve(async (req) => {
     }
 
     // ---------- Batch mode ----------
+    // First, get all already-summarized document IDs for this model version
+    const { data: allExisting } = await supabase
+      .from("document_summaries")
+      .select("document_id")
+      .eq("model_version", MODEL_VERSION);
+    const existingIds = new Set((allExisting || []).map((s: any) => s.document_id));
+
     const docTypes = ["sou", "proposition", "committee_report", "directive", "law"];
     const perType = Math.max(Math.floor(batchSize / docTypes.length), 1);
     const remainder = batchSize - perType * docTypes.length;
@@ -529,33 +536,42 @@ Deno.serve(async (req) => {
     let allDocs: any[] = [];
 
     for (let i = 0; i < docTypes.length; i++) {
-      const limit = perType + (i < remainder ? 1 : 0);
-      const { data: typeDocs } = await supabase
-        .from("documents")
-        .select("id, title, doc_type, doc_number, raw_content")
-        .eq("doc_type", docTypes[i])
-        .not("raw_content", "is", null)
-        .not("raw_content", "eq", "")
-        .order("created_at", { ascending: true })
-        .limit(limit);
+      const needed = perType + (i < remainder ? 1 : 0);
+      // Paginate to find enough unsummarized docs
+      let collected: any[] = [];
+      let offset = 0;
+      const PAGE_SIZE = 50;
 
-      if (typeDocs) allDocs = allDocs.concat(typeDocs);
+      while (collected.length < needed && offset < 5000) {
+        const { data: typeDocs } = await supabase
+          .from("documents")
+          .select("id, title, doc_type, doc_number, raw_content")
+          .eq("doc_type", docTypes[i])
+          .not("raw_content", "is", null)
+          .not("raw_content", "eq", "")
+          .order("created_at", { ascending: true })
+          .range(offset, offset + PAGE_SIZE - 1);
+
+        if (!typeDocs || typeDocs.length === 0) break;
+
+        for (const doc of typeDocs) {
+          if (!existingIds.has(doc.id)) {
+            collected.push(doc);
+            if (collected.length >= needed) break;
+          }
+        }
+        offset += PAGE_SIZE;
+      }
+
+      allDocs = allDocs.concat(collected);
     }
 
-    // Filter out docs already summarized at current model version
-    const docIds = allDocs.map((d: any) => d.id);
-    const { data: existingSummaries } = await supabase
-      .from("document_summaries")
-      .select("document_id")
-      .in("document_id", docIds)
-      .eq("model_version", MODEL_VERSION);
-
-    const existingIds = new Set((existingSummaries || []).map((s: any) => s.document_id));
-    const toProcess = allDocs.filter((d: any) => !existingIds.has(d.id));
+    const toProcess = allDocs;
+    const skippedCount = existingIds.size;
 
     if (toProcess.length === 0) {
       return new Response(
-        JSON.stringify({ success: true, message: "No documents to summarize", processed: 0, skipped: docIds.length }),
+        JSON.stringify({ success: true, message: "No documents to summarize", processed: 0, skipped: skippedCount }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -600,7 +616,7 @@ Deno.serve(async (req) => {
         processed: toProcess.length,
         succeeded: successCount,
         errors: errorCount,
-        skipped: docIds.length - toProcess.length,
+        skipped: skippedCount,
         results,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
