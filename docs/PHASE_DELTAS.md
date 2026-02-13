@@ -1,5 +1,39 @@
 # Phase Deltas
 
+## 2026-02-13: Phase 6A COMPLETE — Deterministic Graph Closed
+
+**Status:** ✅ COMPLETE — All 6A slices done, 6B.1 next
+
+### 6A.4b Hotfix: Reverse Classification Rules
+
+**Problem:** 54 of 112 `references` fallback rows were misclassified due to missing reverse lookup rules (`sou|directive`, `proposition|sou`).
+
+**Fix:** Added reverse rules to `backfill-document-relationships/index.ts`, re-ran idempotently, deleted 54 stale `references` duplicates.
+
+**Final `document_relationships` breakdown (2,152 rows):**
+
+| Type | Count | Confidence |
+|---|---|---|
+| `committee_report_to_proposition` | 1,496 | 0.95 |
+| `proposition_to_committee_report` | 525 | 0.95 |
+| `references` (legitimate same-type) | 58 | 0.80 |
+| `directive_to_sou` | 55 | 0.90 |
+| `remiss_to_sou` | 15 | 0.85 |
+| `sou_to_proposition` | 3 | 0.90 |
+
+**Remaining 58 `references`:** 54 directive↔directive (tilläggsdirektiv), 2 sou↔sou, 2 edge cases. All verified legitimate — no missing rules.
+
+**Decision:** `directive_to_directive` enum deferred (no schema churn without downstream need).
+
+### Files Changed
+
+- `supabase/functions/backfill-document-relationships/index.ts` — Added reverse rules
+- `docs/development/branches/phase-6-relationship-inference.md` — 6A status → COMPLETE
+- `docs/DECISION_LOG.md` — 6A.4b entry updated with hotfix
+- `docs/PHASE_DELTAS.md` — This entry
+
+---
+
 ## 2026-02-12: Slice 6A.2 Corpus Backfill — COMPLETE
 
 **Status:** ✅ COMPLETE — 1,292 committee reports backfilled, resolver converged at 37.1%

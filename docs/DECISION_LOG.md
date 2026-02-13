@@ -66,11 +66,11 @@ Running log of approved decisions for the Legislative Intelligence Platform.
 
 ---
 
-### 2026-02-13 — Slice 6A.4b: document_relationships Backfill
+### 2026-02-13 — Slice 6A.4b: document_relationships Backfill + Hotfix
 
 **Description:** Populated `document_relationships` from 2,807 resolved `document_references` using deterministic classification rules. 2,152 rows inserted (655 in-memory duplicates removed). All rows have `derived_by = 'resolver'` and valid `source_reference_id` provenance.
 
-**Breakdown:** 1,496 committee_report_to_proposition, 525 proposition_to_committee_report, 112 references (symmetric), 15 remiss_to_sou, 2 directive_to_sou, 2 sou_to_proposition.
+**Hotfix (same day):** Added missing reverse classification rules (`sou|directive` → `directive_to_sou`, `proposition|sou` → `sou_to_proposition`). Re-ran backfill idempotently, reclassifying 54 rows from `references` to correct directed types. Final breakdown: 1,496 committee_report_to_proposition, 525 proposition_to_committee_report, 58 references (legitimate same-type), 55 directive_to_sou, 15 remiss_to_sou, 3 sou_to_proposition.
 
 **Rollback:** `DELETE FROM document_relationships WHERE derived_by = 'resolver';`
 
