@@ -753,6 +753,53 @@ export type Database = {
           },
         ]
       }
+      stakeholder_influence: {
+        Row: {
+          calculation_date: string
+          case_count: number | null
+          created_at: string | null
+          entity_id: string
+          evidence: Json | null
+          id: string
+          influence_score: number
+          influence_type: string
+          total_submissions: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          calculation_date: string
+          case_count?: number | null
+          created_at?: string | null
+          entity_id: string
+          evidence?: Json | null
+          id?: string
+          influence_score: number
+          influence_type: string
+          total_submissions?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          calculation_date?: string
+          case_count?: number | null
+          created_at?: string | null
+          entity_id?: string
+          evidence?: Json | null
+          id?: string
+          influence_score?: number
+          influence_type?: string
+          total_submissions?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stakeholder_influence_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stance_keyword_suggestions: {
         Row: {
           category: string
@@ -887,7 +934,27 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      mv_top_influencers: {
+        Row: {
+          calculation_date: string | null
+          case_count: number | null
+          entity_id: string | null
+          entity_name: string | null
+          entity_type: string | null
+          influence_score: number | null
+          influence_type: string | null
+          total_submissions: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stakeholder_influence_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       has_role: {

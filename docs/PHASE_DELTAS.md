@@ -1,5 +1,32 @@
 # Phase Deltas
 
+## 2026-02-13: Phase 7 Kickoff — Slice 7.1 Stakeholder Influence Analytics
+
+**Status:** 🔄 IN PROGRESS
+
+### Changes
+- Phase 6 archived as COMPLETE, Phase 7 approved
+- Archived `phase-6-advanced-analysis.md` → `docs/archive/branches/` (superseded by Phase 7)
+- Updated `PRODUCT_ROADMAP.md` — Phase 6 ✅, Phase 7 🔄, metrics refreshed
+- Updated `CONTEXT_PRIORITY.md` — Active slice → 7.1, priority docs reordered
+- Updated `phase-7-advanced-insights.md` — Full roadmap with slice details, schemas, execution plan
+
+### Slice 7.1 Implementation
+- Created `stakeholder_influence` table with RLS policies
+- Created `mv_top_influencers` materialized view
+- Created `get-stakeholder-influence` edge function (compute + read modes)
+- Influence types: remissvar_frequency, invitation_rate, stance_consistency, cross_case_breadth
+
+### Files Created/Modified
+- `supabase/functions/get-stakeholder-influence/index.ts` — NEW
+- `docs/development/branches/phase-7-advanced-insights.md` — Full roadmap
+- `docs/development/PRODUCT_ROADMAP.md` — Phase 6/7 status updates
+- `docs/CONTEXT_PRIORITY.md` — Phase 7 context
+- `docs/PHASE_DELTAS.md` — This entry
+- `docs/archive/branches/phase-6-advanced-analysis.md` — Archived
+
+---
+
 ## 2026-02-13: Phase 6 Final Cleanup & Closure
 
 **Status:** ✅ DONE — Phase 6 fully closed
