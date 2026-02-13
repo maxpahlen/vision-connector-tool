@@ -96,19 +96,19 @@ function extractDocNumber(urlOrText: string): { docNumber: string; evidenceType:
     }
   }
 
-  // Try SOU pattern
+  // Try SOU pattern (also matches title-embedded: "Some title, SOU 2025:72")
   const souMatch = text.match(/\bSOU\s*(\d{4})\s*[:\-]\s*(\d+)/i);
   if (souMatch) {
     return { docNumber: `SOU ${souMatch[1]}:${souMatch[2]}`, evidenceType: 'sou_pattern' };
   }
 
-  // Try Directive pattern
+  // Try Directive pattern (also matches title-embedded)
   const dirMatch = text.match(/\bDir\.?\s*(\d{4})\s*[:\-]\s*(\d+)/i);
   if (dirMatch) {
     return { docNumber: `Dir. ${dirMatch[1]}:${dirMatch[2]}`, evidenceType: 'dir_pattern' };
   }
 
-  // Try Proposition pattern
+  // Try Proposition pattern (also matches title-embedded)
   const propMatch = text.match(/\bProp\.?\s*(\d{4})\s*[\/\-]\s*(\d{2})\s*[:\-]\s*(\d+)/i);
   if (propMatch) {
     return { docNumber: `Prop. ${propMatch[1]}/${propMatch[2]}:${propMatch[3]}`, evidenceType: 'prop_pattern' };
@@ -249,6 +249,24 @@ serve(async (req) => {
     for (const ref of toProcess) {
       results.processed++;
       const sourceText = ref.target_doc_number || ref.target_url || '';
+
+      // --- Phase 6A.5: Direct corpus match FIRST ---
+      // Try the raw target_doc_number directly against the lookup (catches Riksdagen codes like H501JuU27)
+      if (ref.target_doc_number) {
+        const directNorm = normalizeDocNumber(ref.target_doc_number);
+        const directMatch = docLookup.get(directNorm);
+        if (directMatch) {
+          results.resolved++;
+          incrementMap(results.resolvedByEvidence, 'direct_match');
+          resolvedUpdates.push({ id: ref.id, docNumber: ref.target_doc_number, targetDocId: directMatch });
+          if (results.sampleUpdates.length < 20) {
+            results.sampleUpdates.push({ id: ref.id, oldDocNumber: ref.target_doc_number, newDocNumber: ref.target_doc_number, targetDocumentId: directMatch, evidenceType: 'direct_match' });
+          }
+          continue;
+        }
+      }
+
+      // --- Pattern extraction (existing + title-embedded) ---
       const extracted = extractDocNumber(sourceText);
 
       if (!extracted) {
