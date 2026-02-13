@@ -1,5 +1,41 @@
 # Phase Deltas
 
+## 2026-02-13: Phase 6 Final Cleanup & Closure
+
+**Status:** ✅ DONE — Phase 6 fully closed
+
+### Cleanup Actions
+- Deleted 17 false-positive `document_references` (generic headings: "Om lagstiftningen i Sverige", "Kommittédirektiv", HTML-encoded remiss, "Uppdrag" refs)
+- Deleted ~48 duplicate title-embedded refs (e.g., "Title, SOU 2025:72" where clean "SOU 2025:72" already resolved)
+- Fixed `resolve-document-references` to handle unique constraint violations gracefully (was silently failing on all 47 updates)
+- Root cause: `document_references_source_target_unique` constraint on `(source_document_id, target_doc_number)` prevented shortening title-embedded doc numbers
+
+### Final System Health Metrics
+
+| Metric | Value |
+|--------|-------|
+| Total documents | 6,790 |
+| Documents in processes | 3,151 (46.4%) |
+| Orphan documents | 3,639 (53.6%) |
+| Total processes | 4,456 |
+| Auto-created processes | 1,385 |
+| Total references | 7,441 |
+| Resolved references | 3,460 (46.5%) |
+| Unresolved references | 3,981 |
+| Document relationships | 2,791 |
+
+### Unresolved Refs Breakdown (3,981)
+- Corpus-gap refs (SOUs/Dirs/Props not in DB): ~3,400
+- Riksdagen codes not in corpus (H3xx-H5xx): ~549
+- Motions (Mot.): deferred to Phase 7
+- Pure-text remainders: <10
+
+### Files Modified
+- `supabase/functions/resolve-document-references/index.ts` — Added error handling for unique constraint violations
+- `docs/PHASE_DELTAS.md` — This entry
+
+---
+
 ## 2026-02-13: Slice 6B.1 — Title-Match via Trigram Similarity (Phase 6B CLOSED)
 
 **Status:** ✅ DONE — Phase 6 complete, ready for Phase 7
