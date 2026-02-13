@@ -1,128 +1,155 @@
+# Slice 6B.1 — Finalized Execution Plan
+
+## Original Prompt (verbatim)
+
+> Prepare and forward the finalized 6B.1 execution plan to Codex with updated scope, thresholds, and candidate filtering strategy
+
+---
+
+## Critical Scope Correction
+
+**The previously estimated "586 AI-addressable refs" is wrong.** Deep investigation reveals:
 
 
-# Phase 6.1 Execution Plan: Riksdagen API Historical Backfill
+| Category                                        | Count   | Resolution Path                                          |
+| ----------------------------------------------- | ------- | -------------------------------------------------------- |
+| Riksdagen codes NOT in corpus (H3xx, H4xx etc.) | 509     | Self-resolve with corpus expansion (Phase 6.1 follow-up) |
+| Title-text references (true AI candidates)      | 34      | AI matching OR additional deterministic regex            |
+| Protocol references (PROT)                      | 15      | Not a tracked doc type                                   |
+| Riksrevisionen reports (RIR)                    | 12      | Not a tracked doc type                                   |
+| Ministry dossiers                               | 11      | Not tracked (already decided)                            |
+| Short codes (FPM, generic headings)             | 5       | 2 FPM (not tracked), 3 generic headings (not real refs)  |
+| **True AI scope**                               | **~34** | See below                                                |
 
-## Executive Summary
 
-Complete the `phase-6-riksdagen-api-migration` branch by executing historical backfill for propositions and directives, then batch committee report text extraction. This is the DATA FOUNDATION step — without it, the relationship inference agent (next branch) has too little data to build meaningful legislative cases.
+Of those 34 title-text refs, 2 contain extractable doc numbers that a minor regex fix could catch:
 
-## Completion Criteria for `phase-6-riksdagen-api-migration`
+- `"Dir 2024:109 Tillaggsdirektiv till..."` -- missing dot in `Dir` (current regex requires `Dir.`)
+- `"Tillaggsdirektiv till Miljostraffsrattsutredningen (M 2022:04)"` -- committee dossier in parentheses
 
-To mark this branch as COMPLETE, all 5 remaining items must be addressed:
+The remaining ~32 are free-text Swedish titles like:
 
-| Item | Action | Priority |
-|------|--------|----------|
-| Proposition backfill (recent) | Sessions 2020/21 through 2024/25 | P0 |
-| Directive backfill (recent) | Sessions 2010 through 2025 | P0 |
-| Committee report text extraction | 330 remaining PDFs | P1 |
-| Deep historical backfill | Pre-2010 props, pre-2010 dirs | P2 (defer or scope-reduce) |
-| Freshness integration | 7-day dual-source check | P2 (defer to operational phase) |
+- `"Remiss av promemorian Sekretess for nya uppgifter i Schengens informationssystem"`
+- `"Om lagstiftningen i Sverige"` (a generic section heading, likely not a real document ref)
+- `"Tillganglighetskrav for vissa medier"`
 
-### Recommended Scope Decision
+---
 
-**Mark branch COMPLETE after P0 + P1.** Deep historical (pre-2010) and freshness integration are operational enhancements, not foundational. They can be tracked as follow-up tasks without blocking Phase 6.2 (relationship inference).
+## Recommendation: Downscope 6B.1
 
-## Backfill Execution Plan
+Building a full AI inference pipeline (candidate builder, classifier, gating, review queue) for **~32 title refs** is over-engineered. The cost/benefit ratio is unfavorable.
 
-### Propositions (P0)
+### Proposed Revised Approach
 
-**Target sessions:** 2020/21 through 2024/25 (5 recent sessions)
+#### Step 1: Quick Deterministic Fix (6A.5b micro-hotfix)
 
-- Expected volume: ~1,000-1,200 documents (roughly 200-240 per session)
-- Already ingested: 126 (mostly 2024/25)
-- Batch size per edge function call: 20 documents (with 500ms inter-request delay)
-- Pages per session: ~12 pages at sz=20
-- Estimated API calls per session: ~12 list + ~240 detail = ~252
-- Rate limiting: 500ms delay = ~2 minutes per page of 20
+Expand regex in `resolve-document-references` to also match `Dir` without the trailing dot (`Dir\s+\d{4}:\d+`). This catches 2 more refs deterministically.
 
-**Execution approach:**
-- Run session-by-session via Admin UI (`PropositionRiksdagenScraperTest`)
-- Start with 2023/24 (most recent not yet backfilled)
-- Work backwards: 2022/23, 2021/22, 2020/21
-- Dedup handles overlap with existing 126 docs automatically
+#### Step 2: Title-Match Function (lightweight, no AI)
 
-### Directives (P0)
+For the remaining ~32 title refs:
 
-**Target sessions:** 2015 through 2025 (10 recent years)
+1. Decode HTML entities in `target_doc_number`
+2. Normalize the decoded Swedish title
+3. Use `pg_trgm` similarity (`similarity()` function, already installed) to match against `documents.title`
+4. Accept matches above a similarity threshold (e.g., 0.4 for Swedish titles with HTML entity noise)
+5. Write to `document_relationships` with `derived_by = 'system'` and `confidence_class = 'medium'`
 
-- Expected volume: ~800-1,000 documents
-- Already ingested: 183
-- Same batch pattern as propositions
-- Smaller per-session counts (~80-130 per year)
+This is fully deterministic (trigram similarity is a mathematical function, not AI), cheap, and testable.
 
-**Execution approach:**
-- Run year-by-year via Admin UI (`DirectiveRiksdagenScraperTest`)
-- Start with 2023, work backwards
-- Dedup handles overlap automatically
+#### Step 3: Manual Review of Remainder
 
-### Committee Report Text Extraction (P1)
+Any title refs that fail trigram matching at threshold go into a simple report. Given the expected count (likely under 15), manual resolution by Max is faster than building an AI pipeline.
 
-- 330 PDFs remaining (3 pilot complete)
-- Uses existing `process-committee-report-pdf` edge function
-- Batch via Admin UI (`CommitteeReportTextExtractor`)
-- Rate: ~10-20 per batch (PDF extraction is slower)
+#### Step 4: Re-evaluate AI Need
 
-## What Lovable Should Execute
+If after Steps 1-3 the remaining unresolved non-motion, non-missing-corpus count exceeds 50, THEN build the AI agent. Otherwise, close 6B and move to Phase 7.
 
-1. **No new edge functions needed** — scrapers already exist and are pilot-validated
-2. **No schema changes** — existing tables handle all data
-3. **Admin UI already supports batch execution** — no UI changes needed
-4. **Documentation updates only:**
-   - Update `phase-6-riksdagen-api-migration.md` status and metrics after each batch
-   - Update `PRODUCT_ROADMAP.md` counts after backfill complete
+---
 
-## Sequencing After This Branch
+## Alternative: If Max Prefers Full AI Pipeline Anyway
 
-```text
-phase-6-riksdagen-api-migration (NOW)
-  |  Complete backfill, mark COMPLETE
-  v
-phase-6-relationship-inference (NEXT)
-  |  Case reconstruction agent, legislative_cases table
-  |  Needs: large corpus of props + dirs + committee reports
-  v
-phase-6-advanced-analysis (LATER)
-  |  Sentiment, impact, trends
-  |  Needs: cases + relationships to analyze
-```
+If the decision is to build the AI pipeline regardless (for future scalability when corpus grows), here is the refined Codex plan with corrections:
 
-`phase-6-advanced-analysis` is NOT the logical next step after migration. `phase-6-relationship-inference` is, because:
-- It builds on the data foundation (more docs = better case matching)
-- It creates the `legislative_cases` structure that advanced analysis operates on
-- It is the roadmap-defined Phase 6 goal (blackboard agent, case reconstruction)
+### 6B.1A — Candidate Set Builder
 
-## Risk Assessment
+- Pull the ~32 unresolved title-text refs (exclude motions, Riksdagen codes not in corpus, PROT, RIR, dossiers)
+- For each, fetch candidate target docs via:
+  - `pg_trgm` title similarity (top 20 by `similarity()`)
+  - Same ministry filter
+  - Overlapping year range (+/- 2 years)
+- Output: candidate manifest JSON
 
-| Risk | Mitigation |
-|------|------------|
-| Edge function timeouts on large batches | Keep batch size at 20; paginate manually |
-| API rate limiting during sustained backfill | 500ms delay already validated; monitor for 429s |
-| Duplicate documents | Dedup by doc_number already implemented |
-| Committee report PDF extraction failures | Track error rate; accept same 1.6% OCR limit |
+### 6B.1B — AI Inference Classifier
+
+- Use existing `openai-client.ts` wrapper (OPENAI_API_KEY is configured)
+- Model: `gpt-4o` (via existing `callOpenAI`)
+- Prompt: Given source document title/metadata and candidate list, return best match with confidence
+- Output fields: `predicted_target_id`, `confidence_score`, `evidence_summary`, `decision` (accept/review/reject)
+- Write results to a staging array (not production table)
+
+### 6B.1C — Deterministic Gating
+
+- Auto-accept: `confidence >= 0.90` AND no conflict with existing deterministic links
+- Manual review: `0.70 - 0.89`
+- Auto-reject: `< 0.70`
+- Never overwrite `derived_by = 'resolver'` links
+
+### 6B.1D — Persist
+
+- Insert accepted links into `document_relationships` with:
+  - `derived_by = 'agent'` (enum value already exists)
+  - `confidence_class` based on score
+  - `evidence_details` containing AI reasoning and `run_id`
+- Rollback: `DELETE FROM document_relationships WHERE derived_by = 'agent'`
+
+### Success Criteria
+
+- False-positive rate < 10% on manual audit
+- 100% provenance on AI-created links
+- Zero deterministic link regressions
+- Idempotent reruns
+
+---
 
 ## Decision Required from Max
 
-1. **Agree with P0+P1 scope** (recent sessions + committee extraction) as completion criteria, deferring deep historical and freshness to follow-up tasks?
-2. **Agree with sequencing**: migration -> relationship inference -> advanced analysis?
-3. **Should Lovable begin the backfill execution now**, or should we first create a formal branch plan update and get triple sign-off?
+Given the true scope is **~32 refs** (not 586):
+
+**Option A (Recommended):** Skip AI. Do 6A.5b regex fix + pg_trgm title match + manual remainder. Close Phase 6B. Move to Phase 7.
+
+**Option B:** Build AI pipeline anyway for future scalability. Execute Codex's plan with corrected scope.
+
+---
 
 ## Technical Details
 
-### Existing Edge Functions (no changes needed)
+### Files to Create/Modify
 
-- `scrape-propositions-riksdagen` — paginated ingestion, dedup, cross-refs
-- `scrape-directives-riksdagen` — paginated ingestion, dedup, kommittebeteckning
-- `process-committee-report-pdf` — PDF extraction via Vercel service
+**Option A (lightweight):**
 
-### Admin UI Components (no changes needed)
+- `supabase/functions/resolve-document-references/index.ts` — Add `Dir` (no dot) regex variant
+- New function or extension: `match-title-references` — pg_trgm similarity matching
+- `docs/development/branches/phase-6-relationship-inference.md` — Update with 6B.1 closure
 
-- `PropositionRiksdagenScraperTest.tsx` — session selector, page/limit controls
-- `DirectiveRiksdagenScraperTest.tsx` — same pattern
-- `CommitteeReportTextExtractor.tsx` — batch extraction controls
+**Option B (full AI):**
 
-### Monitoring
+- New: `supabase/functions/infer-document-links/index.ts` — Combined candidate builder + AI classifier
+- Modify: `supabase/functions/backfill-document-relationships/index.ts` — Accept `derived_by = 'agent'` rows
+- `docs/development/branches/phase-6-relationship-inference.md` — Full 6B.1 slice documentation
 
-- Track ingestion counts after each session batch
-- Compare against expected API totals
-- Monitor for error rate spikes
+### Infrastructure Already in Place
+
+- `pg_trgm` extension: installed
+- `OPENAI_API_KEY` secret: configured
+- `openai-client.ts` shared module: ready with retry logic
+- `document_relationships` table: has `derived_by = 'agent'` enum value
+- `performance-tracker.ts`: ready for metrics
+
+#   
+NOTE FROM MAX: 
+
+I agree with Lovable that building a full AI inference pipeline (candidate builder, classifier, gating, review queue) for **~32 title refs** is over-engineered. The cost/benefit ratio is unfavorable.   
+  
+Let's proceed with **Option A (Recommended):** Skip AI. Do 6A.5b regex fix + pg_trgm title match + manual remainder. Close Phase 6B. Move to Phase 7.
 
