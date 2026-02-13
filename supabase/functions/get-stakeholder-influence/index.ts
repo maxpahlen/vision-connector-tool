@@ -6,21 +6,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-interface InfluenceResult {
-  entity_id: string;
-  entity_name: string;
-  entity_type: string;
-  remissvar_frequency: number;
-  invitation_rate: number;
-  stance_consistency: number;
-  cross_case_breadth: number;
-  composite_score: number;
-  total_submissions: number;
-  total_invitations: number;
-  case_count: number;
-}
-
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -32,242 +18,153 @@ Deno.serve(async (req) => {
     );
 
     const url = new URL(req.url);
-    const mode = url.searchParams.get("mode") || "read"; // 'read' | 'compute'
-    const entityType = url.searchParams.get("entity_type"); // optional filter
-    const limit = Math.min(parseInt(url.searchParams.get("limit") || "50"), 200);
+    const mode = url.searchParams.get("mode") || "read";
 
     if (mode === "compute") {
-      // ── COMPUTE MODE: Calculate and store influence scores ──
       const calculationDate = new Date().toISOString().split("T")[0];
 
-      // 1. Remissvar frequency: how many remissvar each org submitted
-      const { data: submissionCounts, error: subErr } = await supabase
-        .from("remiss_responses")
-        .select("entity_id")
-        .not("entity_id", "is", null);
+      // Paginated fetch helper
+      const fetchAll = async (table: string, selectCols: string, notNullCols: string[]) => {
+        const all: Record<string, unknown>[] = [];
+        let offset = 0;
+        const pageSize = 1000;
+        while (true) {
+          let q = supabase.from(table).select(selectCols).range(offset, offset + pageSize - 1);
+          for (const col of notNullCols) {
+            q = q.not(col, "is", null);
+          }
+          const { data, error } = await q;
+          if (error) throw new Error(table + " at " + offset + ": " + error.message);
+          const rows = data || [];
+          all.push(...rows);
+          if (rows.length < pageSize) break;
+          offset += pageSize;
+        }
+        return all;
+      };
 
-      if (subErr) throw new Error(`Submissions query: ${subErr.message}`);
-
-      const submissionMap = new Map<string, number>();
-      for (const row of submissionCounts || []) {
-        submissionMap.set(row.entity_id, (submissionMap.get(row.entity_id) || 0) + 1);
+      // 1. Submissions
+      const subRows = await fetchAll("remiss_responses", "entity_id", ["entity_id"]);
+      const subMap = new Map<string, number>();
+      for (const r of subRows) {
+        const eid = r.entity_id as string;
+        subMap.set(eid, (subMap.get(eid) || 0) + 1);
       }
 
-      // 2. Invitation frequency: how many times each org was invited
-      const { data: invitations, error: invErr } = await supabase
-        .from("remiss_invitees")
-        .select("entity_id")
-        .not("entity_id", "is", null);
-
-      if (invErr) throw new Error(`Invitations query: ${invErr.message}`);
-
-      const invitationMap = new Map<string, number>();
-      for (const row of invitations || []) {
-        invitationMap.set(row.entity_id, (invitationMap.get(row.entity_id) || 0) + 1);
+      // 2. Invitations
+      const invRows = await fetchAll("remiss_invitees", "entity_id", ["entity_id"]);
+      const invMap = new Map<string, number>();
+      for (const r of invRows) {
+        const eid = r.entity_id as string;
+        invMap.set(eid, (invMap.get(eid) || 0) + 1);
       }
 
-      // 3. Stance consistency: how consistent are stances across submissions
-      const { data: stanceData, error: stanceErr } = await supabase
-        .from("remiss_responses")
-        .select("entity_id, stance_summary")
-        .not("entity_id", "is", null)
-        .not("stance_summary", "is", null);
-
-      if (stanceErr) throw new Error(`Stance query: ${stanceErr.message}`);
-
+      // 3. Stances
+      const stanceRows = await fetchAll("remiss_responses", "entity_id, stance_summary", ["entity_id", "stance_summary"]);
       const stanceMap = new Map<string, Map<string, number>>();
-      for (const row of stanceData || []) {
-        if (!stanceMap.has(row.entity_id)) {
-          stanceMap.set(row.entity_id, new Map());
-        }
-        const stances = stanceMap.get(row.entity_id)!;
-        stances.set(row.stance_summary, (stances.get(row.stance_summary) || 0) + 1);
+      for (const r of stanceRows) {
+        const eid = r.entity_id as string;
+        const stance = r.stance_summary as string;
+        if (!stanceMap.has(eid)) stanceMap.set(eid, new Map());
+        const m = stanceMap.get(eid)!;
+        m.set(stance, (m.get(stance) || 0) + 1);
       }
 
-      // 4. Cross-case breadth: how many distinct remiss processes
-      const { data: caseData, error: caseErr } = await supabase
-        .from("remiss_responses")
-        .select("entity_id, remiss_id")
-        .not("entity_id", "is", null);
-
-      if (caseErr) throw new Error(`Case query: ${caseErr.message}`);
-
+      // 4. Cases
+      const caseRows = await fetchAll("remiss_responses", "entity_id, remiss_id", ["entity_id"]);
       const caseMap = new Map<string, Set<string>>();
-      for (const row of caseData || []) {
-        if (!caseMap.has(row.entity_id)) {
-          caseMap.set(row.entity_id, new Set());
-        }
-        caseMap.get(row.entity_id)!.add(row.remiss_id);
+      for (const r of caseRows) {
+        const eid = r.entity_id as string;
+        if (!caseMap.has(eid)) caseMap.set(eid, new Set());
+        caseMap.get(eid)!.add(r.remiss_id as string);
       }
 
-      // Collect all unique entity IDs
-      const allEntityIds = new Set<string>([
-        ...submissionMap.keys(),
-        ...invitationMap.keys(),
-      ]);
+      const allIds = new Set<string>([...subMap.keys(), ...invMap.keys()]);
+      const maxSub = Math.max(1, ...subMap.values());
+      const maxInv = Math.max(1, ...invMap.values());
+      const maxCase = Math.max(1, ...[...caseMap.values()].map(s => s.size));
 
-      // Calculate max values for normalization
-      const maxSubmissions = Math.max(1, ...submissionMap.values());
-      const maxInvitations = Math.max(1, ...invitationMap.values());
-      const maxCases = Math.max(1, ...[...caseMap.values()].map((s) => s.size));
+      const records: Record<string, unknown>[] = [];
 
-      // Build influence records
-      const records: Array<{
-        entity_id: string;
-        influence_type: string;
-        influence_score: number;
-        total_submissions: number | null;
-        case_count: number | null;
-        calculation_date: string;
-        evidence: Record<string, unknown>;
-      }> = [];
-
-      for (const entityId of allEntityIds) {
-        const submissions = submissionMap.get(entityId) || 0;
-        const invitations_count = invitationMap.get(entityId) || 0;
-        const cases = caseMap.get(entityId)?.size || 0;
-
-        // Stance consistency: % of submissions with the dominant stance
-        let stanceConsistency = 0;
-        const stances = stanceMap.get(entityId);
-        if (stances && stances.size > 0) {
-          const totalStanced = [...stances.values()].reduce((a, b) => a + b, 0);
-          const maxStance = Math.max(...stances.values());
-          stanceConsistency = totalStanced > 0 ? (maxStance / totalStanced) * 100 : 0;
+      for (const eid of allIds) {
+        const subs = subMap.get(eid) || 0;
+        const invs = invMap.get(eid) || 0;
+        const cases = caseMap.get(eid)?.size || 0;
+        let stanceCon = 0;
+        const st = stanceMap.get(eid);
+        if (st && st.size > 0) {
+          const tot = [...st.values()].reduce((a, b) => a + b, 0);
+          const mx = Math.max(...st.values());
+          stanceCon = tot > 0 ? (mx / tot) * 100 : 0;
         }
 
-        // Normalized scores (0-100)
-        const freqScore = (submissions / maxSubmissions) * 100;
-        const invScore = (invitations_count / maxInvitations) * 100;
-        const caseScore = (cases / maxCases) * 100;
-
         records.push({
-          entity_id: entityId,
-          influence_type: "remissvar_frequency",
-          influence_score: Math.round(freqScore * 100) / 100,
-          total_submissions: submissions,
-          case_count: null,
-          calculation_date: calculationDate,
-          evidence: { raw_count: submissions, max_in_corpus: maxSubmissions },
+          entity_id: eid, influence_type: "remissvar_frequency",
+          influence_score: Math.round((subs / maxSub) * 10000) / 100,
+          total_submissions: subs, case_count: null, calculation_date: calculationDate,
+          evidence: { raw_count: subs, max_in_corpus: maxSub },
         });
-
         records.push({
-          entity_id: entityId,
-          influence_type: "invitation_rate",
-          influence_score: Math.round(invScore * 100) / 100,
-          total_submissions: null,
-          case_count: null,
-          calculation_date: calculationDate,
-          evidence: { raw_count: invitations_count, max_in_corpus: maxInvitations },
+          entity_id: eid, influence_type: "invitation_rate",
+          influence_score: Math.round((invs / maxInv) * 10000) / 100,
+          total_submissions: null, case_count: null, calculation_date: calculationDate,
+          evidence: { raw_count: invs, max_in_corpus: maxInv },
         });
-
         records.push({
-          entity_id: entityId,
-          influence_type: "stance_consistency",
-          influence_score: Math.round(stanceConsistency * 100) / 100,
-          total_submissions: submissions,
-          case_count: null,
-          calculation_date: calculationDate,
-          evidence: { stance_distribution: stances ? Object.fromEntries(stances) : {} },
+          entity_id: eid, influence_type: "stance_consistency",
+          influence_score: Math.round(stanceCon * 100) / 100,
+          total_submissions: subs, case_count: null, calculation_date: calculationDate,
+          evidence: { stance_distribution: st ? Object.fromEntries(st) : {} },
         });
-
         records.push({
-          entity_id: entityId,
-          influence_type: "cross_case_breadth",
-          influence_score: Math.round(caseScore * 100) / 100,
-          total_submissions: null,
-          case_count: cases,
-          calculation_date: calculationDate,
-          evidence: { distinct_remiss_processes: cases, max_in_corpus: maxCases },
+          entity_id: eid, influence_type: "cross_case_breadth",
+          influence_score: Math.round((cases / maxCase) * 10000) / 100,
+          total_submissions: null, case_count: cases, calculation_date: calculationDate,
+          evidence: { distinct_remiss_processes: cases, max_in_corpus: maxCase },
         });
       }
 
-      // Upsert in batches of 200
-      const BATCH_SIZE = 200;
       let upserted = 0;
       let errors = 0;
-      for (let i = 0; i < records.length; i += BATCH_SIZE) {
-        const batch = records.slice(i, i + BATCH_SIZE);
+      for (let i = 0; i < records.length; i += 200) {
+        const batch = records.slice(i, i + 200);
         const { error } = await supabase
           .from("stakeholder_influence")
           .upsert(batch, { onConflict: "entity_id,influence_type,calculation_date" });
-        if (error) {
-          console.error(`Batch ${i / BATCH_SIZE} error:`, error.message);
-          errors += batch.length;
-        } else {
-          upserted += batch.length;
-        }
+        if (error) { console.error("Batch error:", error.message); errors += batch.length; }
+        else { upserted += batch.length; }
       }
 
-      // Refresh materialized view
-      // Note: Direct SQL not available via client, so we skip MV refresh here.
-      // It can be refreshed via a scheduled SQL job or manually.
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          mode: "compute",
-          calculation_date: calculationDate,
-          entities_processed: allEntityIds.size,
-          records_upserted: upserted,
-          errors,
-          metrics: {
-            max_submissions: maxSubmissions,
-            max_invitations: maxInvitations,
-            max_cases: maxCases,
-          },
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({
+        success: true, mode: "compute", calculation_date: calculationDate,
+        entities_processed: allIds.size, records_upserted: upserted, errors,
+        metrics: {
+          total_submissions_fetched: subRows.length, total_invitations_fetched: invRows.length,
+          total_stance_rows_fetched: stanceRows.length, total_case_rows_fetched: caseRows.length,
+          max_submissions: maxSub, max_invitations: maxInv, max_cases: maxCase,
+        },
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // ── READ MODE: Return stored influence scores ──
-    let query = supabase
+    // READ MODE
+    const limit = Math.min(parseInt(url.searchParams.get("limit") || "50"), 200);
+    const { data, error } = await supabase
       .from("stakeholder_influence")
-      .select(`
-        id,
-        entity_id,
-        influence_type,
-        influence_score,
-        total_submissions,
-        case_count,
-        calculation_date,
-        evidence,
-        entities!inner(name, entity_type)
-      `)
+      .select("*")
       .order("influence_score", { ascending: false })
       .limit(limit);
 
-    if (entityType) {
-      query = query.eq("entities.entity_type", entityType);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      // Fallback without join if FK hint fails
-      const { data: fallbackData, error: fallbackErr } = await supabase
-        .from("stakeholder_influence")
-        .select("*")
-        .order("influence_score", { ascending: false })
-        .limit(limit);
-
-      if (fallbackErr) throw new Error(`Read query: ${fallbackErr.message}`);
-
-      return new Response(
-        JSON.stringify({ success: true, mode: "read", data: fallbackData }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    if (error) throw new Error("Read: " + error.message);
 
     return new Response(
-      JSON.stringify({ success: true, mode: "read", count: data?.length || 0, data }),
+      JSON.stringify({ success: true, mode: "read", count: (data || []).length, data }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (error) {
-    console.error("Error:", error);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error:", msg);
     return new Response(
-      JSON.stringify({ success: false, error: error.message }),
+      JSON.stringify({ success: false, error: msg }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

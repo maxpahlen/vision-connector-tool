@@ -29,29 +29,47 @@ export interface AggregatedInfluence {
 }
 
 async function fetchInfluenceData(): Promise<AggregatedInfluence[]> {
-  // Fetch all influence records for the latest calculation date
-  const { data, error } = await supabase
-    .from("stakeholder_influence")
-    .select("*")
-    .order("influence_score", { ascending: false });
+  // Paginated fetch to bypass 1000-row Supabase default limit
+  const PAGE_SIZE = 1000;
+  // deno-lint-ignore no-explicit-any
+  const allRecords: any[] = [];
+  let offset = 0;
 
-  if (error) throw new Error(error.message);
-  if (!data || data.length === 0) return [];
+  while (true) {
+    const { data, error } = await supabase
+      .from("stakeholder_influence")
+      .select("*")
+      .order("influence_score", { ascending: false })
+      .range(offset, offset + PAGE_SIZE - 1);
+
+    if (error) throw new Error(error.message);
+    const rows = data || [];
+    allRecords.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+
+  if (allRecords.length === 0) return [];
 
   // Cast to working type
-  const records = data as unknown as InfluenceRecord[];
+  const records = allRecords as unknown as InfluenceRecord[];
 
-  // Fetch entity names
+  // Fetch entity names in batches (Supabase limits IN queries)
   const entityIds = [...new Set(records.map((r) => r.entity_id))];
-  const { data: entities, error: entErr } = await supabase
-    .from("entities")
-    .select("id, name, entity_type")
-    .in("id", entityIds);
-
-  if (entErr) throw new Error(entErr.message);
+  const BATCH = 500;
+  const allEntities: Array<{ id: string; name: string; entity_type: string }> = [];
+  for (let i = 0; i < entityIds.length; i += BATCH) {
+    const batch = entityIds.slice(i, i + BATCH);
+    const { data: entities, error: entErr } = await supabase
+      .from("entities")
+      .select("id, name, entity_type")
+      .in("id", batch);
+    if (entErr) throw new Error(entErr.message);
+    allEntities.push(...(entities || []));
+  }
 
   const entityMap = new Map(
-    (entities || []).map((e: { id: string; name: string; entity_type: string }) => [e.id, e])
+    allEntities.map((e) => [e.id, e])
   );
 
   // Aggregate by entity
