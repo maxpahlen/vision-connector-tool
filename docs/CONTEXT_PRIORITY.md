@@ -1,8 +1,8 @@
 # Context Priority
 
-**Last Updated:** 2026-02-12  
-**Current Phase:** 6A — Relationship Inference (Deterministic Graph)
-**Active Slice:** 6A.4b Complete — Backfill relationships from resolved references
+**Last Updated:** 2026-02-13  
+**Current Phase:** 7 — Advanced Insights & Semantic Intelligence
+**Active Slice:** 7.1 Stakeholder Influence Analytics (Wave 1)
 
 ---
 
@@ -20,64 +20,47 @@ Maintained by: **Lovable (Architectural Authority)**
 |---|------|-------------------|
 | 1 | `docs/WORKFLOW.md` | Operating agreement: roles, phases, message discipline |
 | 2 | `docs/PHASE_DELTAS.md` | Most recent changes since last sync |
-| 3 | `docs/development/branches/phase-6-relationship-inference.md` | **ACTIVE** - Deterministic graph building, reference resolution |
-| 4 | `docs/development/branches/phase-6-riksdagen-api-migration.md` | Corpus backfill context (propositions, directives, committee reports) |
-| 4 | `docs/development/RIKSDAGEN_API_RESEARCH.md` | API patterns, field mappings, rate limiting guidance |
-| 5 | `docs/development/SCRAPER_KNOWN_ISSUES.md` | Connection reset handling, retry strategies |
-| 6 | `docs/archive/branches/phase-5.6-content-insights.md` | **COMPLETE** - Remissvar content extraction + stance detection (archived) |
-| 7 | `docs/CHECKLISTS.md` | Verification requirements before sign-off |
-| 8 | `docs/DECISION_LOG.md` | Approved decisions with triple sign-off |
-| 9 | `docs/development/PRODUCT_ROADMAP.md` | Overall progress and metrics |
+| 3 | `docs/development/branches/phase-7-advanced-insights.md` | **ACTIVE** - Slice details, schemas, execution plan |
+| 4 | `docs/development/branches/phase-6-relationship-inference.md` | **COMPLETE** - Deterministic graph, reference resolution |
+| 5 | `docs/development/PRODUCT_ROADMAP.md` | Overall progress and metrics |
+| 6 | `docs/CHECKLISTS.md` | Verification requirements before sign-off |
+| 7 | `docs/DECISION_LOG.md` | Approved decisions with triple sign-off |
+| 8 | `docs/development/SCRAPER_KNOWN_ISSUES.md` | Connection reset handling, retry strategies |
 
 ---
 
 ## Recent Changes (2026-02-13)
 
-- **COMPLETE:** Slice 6A.4b — Backfill: 2,152 document_relationships from resolved references
-- **COMPLETE:** Slice 6A.4 — `document_relationships` M2M schema (enum types, symmetric dedup, provenance FKs)
-- **COMPLETE:** Slice 6A.3 — Process linkage: 6,654 → 3,908 orphans (41.3% reduction), 1,287 new processes
-- **COMPLETE:** Slice 6A.2 — Corpus backfill: +1,292 committee reports, 37.1% resolution
-- **COMPLETE:** Slice 6A.1 — Deterministic reference resolution (84 → 2,157 resolved, 31.7%)
-- **APPROVED:** Phase 8: Grounded Conversational Intelligence (future roadmap, no implementation)
-- **NEXT:** Slice 6B.1 — AI inference for remaining ambiguous links
+- **COMPLETE:** Phase 6 — All slices closed (6A.1–6A.5, 6B.1)
+- **APPROVED:** Phase 7 roadmap — 7 slices, 3 waves
+- **ACTIVE:** Slice 7.1 — Stakeholder Influence Analytics (DB schema + edge function)
+- **ARCHIVED:** `phase-6-advanced-analysis.md` → superseded by Phase 7 plan
 
 ---
 
-## Phase 6 Status
+## Phase 7 Status
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| 6A.1 Reference Resolution | ✅ COMPLETE | 2,157/6,801 resolved (31.7%) |
-| 6A.2 Corpus Backfill | ✅ COMPLETE | +1,292 docs, 2,807/7,566 resolved (37.1%) |
-| 6A.3 Process Linkage | ✅ COMPLETE | 6,654 → 3,908 orphans, 1,287 new processes |
-| 6A.4 M2M Schema | ✅ COMPLETE | Enum types, symmetric dedup, provenance FKs |
-| 6A.4b Backfill | ✅ COMPLETE | 2,152 relationships from resolved references |
-| 6B.1 AI Inference | 🔲 PENDING | Only for unresolvable-by-rules links |
-| Motions (Mot.) | ⏸️ DEFERRED | Phase 7 — 2,820 refs, ~60k docs in API |
+| Slice | Status | Notes |
+|-------|--------|-------|
+| 7.1 Stakeholder Influence | 🔄 IN PROGRESS | DB schema + edge function |
+| 7.2 Summarizer + Embeddings | 🔲 PENDING | Blocked on embedding model decision |
+| 7.3 Semantic Link Engine | 🔲 PENDING | Depends on 7.2 |
+| 7.4 Entity Co-Occurrence | 🔲 PENDING | Wave 1 (parallel with 7.1) |
+| 7.5 Legislative Trends | 🔲 PENDING | Wave 2 |
+| 7.6 Motions Ingestion | ⏸️ GATED | Requires product decision |
+| 7.7 Prediction Engine | ⏸️ GATED | After 7.1 + 7.5 |
 
-### Current Database Metrics (verified 2026-02-12)
+### Current Database Metrics (verified 2026-02-13)
 
 | Metric | Count |
 |--------|-------|
-| Propositions | 2,029 |
-| Directives | 1,397 |
-| Committee Reports | 3,143 |
-| Laws | 161 |
-| SOUs | 60 |
 | Total documents | 6,790 |
-| Total references | 7,566 |
-| Resolved references | 2,807 (37.1%) |
-
----
-
-## Phase 5.6 Status (COMPLETE)
-
-| Component | Status | Notes |
-|-----------|--------|-------|
-| 5.6.1 Schema | ✅ COMPLETE | extraction_status, raw_content, extracted_at |
-| 5.6.2 Extraction Pipeline | ✅ COMPLETE | 3,366 ok, 55 errors (scanned PDFs) |
-| 5.6.3 Stance Detection | ✅ COMPLETE | 3,363 analyzed (keyword-based) |
-| 5.6.4 AI Classification | ✅ COMPLETE | Medium auto-approved + no_position flagging |
+| Documents in processes | 3,151 (46.4%) |
+| Total processes | 4,456 |
+| Document relationships | 2,791 |
+| Resolved references | 3,460 / 7,441 (46.5%) |
+| Entities | 1,780 |
+| Remissvar | 3,421 |
 
 ---
 
@@ -98,16 +81,17 @@ Maintained by: **Lovable (Architectural Authority)**
 
 ## Next Steps
 
-1. **6B.1:** AI inference for remaining ambiguous links
-2. **Phase 7:** Advanced insights + motions ingestion (future)
-3. **Phase 8:** Grounded Conversational Intelligence (future roadmap, no implementation)
+1. **7.1:** Stakeholder Influence Analytics — DB schema + edge function + dashboard
+2. **7.2:** Summarizer Agent + Embeddings (after embedding model decision)
+3. **7.4:** Entity Co-Occurrence Networks (Wave 1, parallel)
+4. **Phase 8:** Grounded Conversational Intelligence (future, after Phase 7)
 
 ---
 
 ## Secondary Context (If Needed)
 
-- `docs/archive/branches/phase-5.4-committee-reports-laws.md` — Committee Reports + Laws (archived, research complete)
-- `docs/development/branches/phase-6-advanced-analysis.md` — Future analytics planning
+- `docs/development/branches/phase-6-riksdagen-api-migration.md` — Corpus backfill context
+- `docs/development/SEMANTIC_LINK_AGENT_PLAN.md` — Detailed plan for Slice 7.3
 - `docs/testing/README.md` — Test philosophy and patterns
 - `docs/operations/AGENT_RUNBOOK.md` — Agent operational procedures
 
