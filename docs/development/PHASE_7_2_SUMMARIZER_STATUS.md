@@ -20,7 +20,7 @@ The extraction was picking up a "Sammanfattning" heading in the **appendix (Bila
 
 | Doc Type | Document | Size | Strategy | Result |
 |----------|----------|------|----------|--------|
-| SOU | SOU 2025:51 (1.4M chars) | 18K extracted | sammanfattning_with_toc | ✅ 11 proposals, negations correct |
+| SOU | SOU 2025:51 (1.4M chars) | 18K extracted | sammanfattning_with_toc | ✅ 13 proposals, negations correct |
 | Directive | Dir. 2025:103 (32K chars) | 32K full text | full_text | ✅ 8 proposals, correct actors |
 | Proposition | Prop. 2025/26:77 (397K chars) | 80K fallback | fallback_first_80k | ✅ 5 proposals, 2 proposals_not_adopted |
 | Committee report | HC01FiU20 (239K chars) | 80K first | first_80k | ✅ 11 proposals, correct policy domains |
@@ -29,15 +29,19 @@ The extraction was picking up a "Sammanfattning" heading in the **appendix (Bila
 
 | Model | proposal_count | core_recs | proposals_not_adopted | Quality |
 |-------|---------------|-----------|----------------------|---------|
-| gpt-4o-mini | 11 ✅ | 12 specific proposals ✅ | 3 items ✅ | Excellent |
-| gpt-4o-2024-08-06 | 11 ✅ | 15 specific proposals ✅ | 3 items ✅ | Excellent |
+| gpt-4o-mini (v1 prompt) | 11 | 12 proposals | 3 items | 85-90% coverage |
+| gpt-4o-mini (v2 prompt) | 11 | 13 proposals ✅ | 2 items ✅ | ~95% coverage |
+| gpt-4o-2024-08-06 | 11 | 15 proposals | 3 items | Excellent |
 
-Both models correctly:
-- Set proposal_count to 11 (matches "Vi lämnar elva förslag")
-- Listed strandskydd, ledningsrätt, VA-huvudman, medfinansiering, bygglov, markreservat
-- Put "samordningsansvar" under proposals_not_adopted
-- Put "nationella riktlinjer" under proposals_not_adopted
-- Zero mandate tasks in core_recommendations
+### ChatGPT Critique Results
+
+**v1 prompt (85-90%)** — missing: strandskyddsdispens, VA-huvudman info duty, dagvatten dimensionering.
+**v2 prompt (~95%)** — all 3 gaps closed:
+- ✅ Strandskyddsdispens as separate proposal
+- ✅ VA-huvudman info duty separated from byggnadsnämnd info duty
+- ✅ proposal_count uses null when not stated explicitly (safety fix)
+
+Prompt change: added EXHAUSTIVE EXTRACTION checklist covering dispensregler, informationsskyldigheter, dimensioneringskrav, lagändringar, nya lagar, myndighetsuppdrag.
 
 **Default model set to gpt-4o-mini** (10x cheaper, comparable quality).
 
@@ -53,5 +57,5 @@ Both models correctly:
 ## Next Steps
 1. ~~Validate on 2-3 more documents from different types~~ ✅ Done
 2. Run pilot batch of 100 docs (balanced across types)
-3. Re-run ChatGPT critique on the new SOU 2025:51 summary
+3. ~~Re-run ChatGPT critique on the new SOU 2025:51 summary~~ ✅ ~95% coverage
 4. Generate embeddings after DeepInfra balance is topped up
