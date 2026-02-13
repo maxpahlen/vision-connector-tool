@@ -1,114 +1,100 @@
-# Phase 7: Advanced Insights & Predictions
+# Phase 7: Advanced Insights & Semantic Intelligence
 
-**Status:** Planned (not started)  
+**Status:** Approved (planning complete)  
 **Branch:** `phase-7-advanced-insights`  
-**Dependencies:** Phase 6 (Relationship Inference & Case Reconstruction)
+**Dependencies:** Phase 6 (Relationship Inference — ✅ DONE)
 
 ---
 
 ## Goal
 
-Provide intelligence layer for strategic decision-making by analyzing patterns across the entire legislative corpus. Move beyond descriptive analytics to **predictive and prescriptive insights**.
+Transform the legislative corpus from a **navigable graph** into an **intelligence platform** with three pillars:
+1. **Stakeholder analytics** — who influences what
+2. **Semantic discovery** — find non-obvious connections
+3. **Trend and prediction insights**
 
 **Key Principle:** All insights must be **evidence-backed** with explainable reasoning, not black-box predictions.
 
 ---
 
-## Scope
+## Current System Health (verified 2026-02-13)
 
-### In Scope
-
-#### 1. Stakeholder Influence Mapping
-- **Organization influence scores:** Which organizations' remissvar recommendations are most often adopted?
-- **Frequency analysis:** Which organizations submit remissvar most often?
-- **Network analysis:** Which organizations collaborate or coordinate responses?
-
-#### 2. Entity Co-Occurrence Networks
-- **Collaboration patterns:** Which entities work together frequently?
-- **Committee composition:** How do committee memberships evolve?
-- **Ministry-entity connections:** Which lead investigators work with which ministries?
-
-#### 3. Change Tracking & Evolution
-- **Directive amendments:** Track how directives are modified over time
-- **SOU recommendation adoption:** Measure which SOU recommendations become law
-- **Legislative velocity:** Time between directive → SOU → proposition → law
-
-#### 4. Predicted Impact Monitoring
-- **Sector impact:** Which sectors are most affected by pending legislation?
-- **Ministry activity:** Which ministries are most active in which policy areas?
-- **Timeline forecasting:** Predict when cases will reach next stage
-
-#### 5. Trend Analysis
-- **Topic trends:** What topics are increasing/decreasing in legislative activity?
-- **Entity prominence:** Which entities are becoming more/less active?
-- **Policy cycles:** Identify recurring patterns in legislative timing
-
-#### 6. Semantic Linking Across Policy Documents
-- **Deep conceptual similarity:** Surface non-obvious connections across SOU, Dir., Prop., Remissvar
-- **Cross-temporal discovery:** Find related proposals across different years
-- **Outcome-agnostic matching:** Connect rejected SOUs with revived propositions
-- **Policy memory:** Enable questions like "Has this idea been attempted before?"
-
-### Out of Scope
-
-- ❌ User behavior tracking (privacy concerns)
-- ❌ Real-time monitoring (batch processing acceptable)
-- ❌ External data sources (focus on internal corpus)
-- ❌ Public-facing insights API (internal use only)
+| Metric | Value |
+|--------|-------|
+| Total documents | 6,790 |
+| Documents with text | 5,490 (80.9%) |
+| Documents in processes | 3,151 (46.4%) |
+| Orphan documents | 3,639 (53.6%) |
+| Total processes | 4,456 |
+| Document relationships | 2,791 |
+| Resolved references | 3,460 / 7,441 (46.5%) |
+| Entities | 1,780 (1,473 orgs, 188 persons, 119 committees) |
+| Relations | 295 |
+| Remissvar | 3,421 (3,366 with extracted text) |
 
 ---
 
-## Success Criteria
+## Slice Sequencing
 
-- [ ] Stakeholder influence scores calculated with explainable methodology
-- [ ] Entity co-occurrence network visualized and explorable
-- [ ] Change tracking dashboard operational
-- [ ] Prediction model validated against historical data (>75% accuracy)
-- [ ] Semantic links discoverable in Document Detail UI with >80% precision
-- [ ] All insights cite evidence (no black-box predictions)
+```text
+Phase     Slice   Description                      Priority   Parallel?
+-------   -----   ----------------------------     --------   ---------
+Wave 1    7.1     Stakeholder Influence             P0         Yes (independent)
+Wave 1    7.2     Summarizer Agent + Embeddings     P0         Yes (independent)
+Wave 1    7.4     Entity Co-Occurrence              P1         Yes (independent)
 
----
+Wave 2    7.3     Semantic Link Engine              P1         After 7.2
+Wave 2    7.5     Legislative Trends                P2         Anytime (independent)
 
-## Technical Approach
-
-### Database Schema Extensions
-
-#### New Tables
-
-**1. Entity Co-Occurrence**
-```sql
-CREATE TABLE entity_cooccurrence (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  entity_a_id UUID NOT NULL REFERENCES entities(id),
-  entity_b_id UUID NOT NULL REFERENCES entities(id),
-  cooccurrence_count INTEGER NOT NULL DEFAULT 0,
-  shared_documents UUID[] NOT NULL, -- Array of document IDs
-  first_cooccurrence_date DATE,
-  last_cooccurrence_date DATE,
-  relationship_strength NUMERIC(3,2), -- 0.00 to 1.00
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  CHECK (entity_a_id < entity_b_id), -- Prevent duplicates
-  UNIQUE(entity_a_id, entity_b_id)
-);
-
-CREATE INDEX idx_cooccurrence_entity_a ON entity_cooccurrence(entity_a_id);
-CREATE INDEX idx_cooccurrence_entity_b ON entity_cooccurrence(entity_b_id);
-CREATE INDEX idx_cooccurrence_strength ON entity_cooccurrence(relationship_strength DESC);
+Wave 3    7.6     Parliamentary Motions Ingestion   P2         After product decision
+Wave 3    7.7     Prediction Engine                 P3         After 7.1 + 7.5
 ```
 
-**2. Stakeholder Influence**
+---
+
+## Slice 7.1: Stakeholder Influence Analytics
+
+**Priority:** P0 (data already exists, highest user value)  
+**Dependencies:** Phase 5.6 stance data, entity pipeline  
+**Estimated effort:** Medium
+
+### What
+
+Calculate per-organization influence metrics from existing data: remissvar frequency, invitation frequency, stance distribution, and cross-case involvement.
+
+### Why First
+
+- All required data already exists (3,421 remissvar, 4,321 invitees, 1,473 org entities)
+- Extends existing Participation Dashboard (already at `/insights/participation`)
+- No new AI infrastructure needed — pure SQL aggregation
+
+### Deliverables
+
+**Database:**
+- New table: `stakeholder_influence` (entity_id, influence_type, score, evidence JSONB, calculation_date)
+- Materialized view: `mv_top_influencers` for dashboard performance
+
+**Edge function:** `get-stakeholder-influence`
+- Calculates: submission frequency, invitation rate, stance consistency, cross-case breadth
+- Evidence field traces every score to specific remissvar/cases
+
+**Frontend:** Enhanced Participation Dashboard
+- Influence ranking table (sortable by score type)
+- Organization detail modal with submission history
+- Filter by org type, policy area
+
+### Database Schema
+
 ```sql
 CREATE TABLE stakeholder_influence (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   entity_id UUID NOT NULL REFERENCES entities(id),
-  influence_type TEXT NOT NULL, -- 'remissvar_frequency', 'recommendation_adoption', 'case_involvement'
+  influence_type TEXT NOT NULL, -- 'remissvar_frequency', 'invitation_rate', 'stance_consistency', 'cross_case_breadth'
   influence_score NUMERIC(5,2) NOT NULL, -- 0.00 to 100.00
   total_submissions INTEGER,
-  adopted_recommendations INTEGER,
   case_count INTEGER,
   calculation_date DATE NOT NULL,
-  evidence JSONB, -- { "cases": [...], "recommendations": [...] }
+  evidence JSONB, -- { "cases": [...], "remissvar_ids": [...] }
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(entity_id, influence_type, calculation_date)
 );
@@ -118,264 +104,103 @@ CREATE INDEX idx_influence_score ON stakeholder_influence(influence_score DESC);
 CREATE INDEX idx_influence_date ON stakeholder_influence(calculation_date DESC);
 ```
 
-**3. Case Predictions**
+### Success Criteria
+
+- [ ] Influence scores for all 1,473 organizations
+- [ ] Every score cites evidence (no black-box metrics)
+- [ ] Dashboard loads in under 500ms
+
+---
+
+## Slice 7.2: Semantic Summarizer Agent
+
+**Priority:** P0 (prerequisite for 7.3 and Phase 8)  
+**Dependencies:** Documents with text content (5,490 available)  
+**Estimated effort:** Large
+
+### What
+
+Generate structured policy summaries for each document (200-500 words) containing: policy aim, core recommendations, key actors, policy domains, keywords, outcome status.
+
+### Why P0
+
+- Required foundation for semantic linking (7.3) and conversational intelligence (Phase 8)
+- Generates embeddings needed for vector search
+- Produces structured metadata (keywords, domains) that enriches every downstream feature
+
+### Deliverables
+
+**Database:**
+- Enable `pgvector` extension
+- New table: `document_summaries` with `embedding vector(1024)` column
+- IVFFlat index on embedding column
+- GIN indexes on keywords and policy_domains arrays
+
+**Edge function:** `generate-document-summary`
+- Uses Lovable AI (google/gemini-2.5-flash) for summarization
+- Batch processing (10-20 docs per invocation)
+- Stores structured summary + raw text for embedding
+- Idempotent: skips documents with existing summaries at same version
+
+**Edge function:** `generate-embeddings`
+- Calls embedding model on summary text
+- Stores 1024-dim vector in `document_summaries.embedding`
+- Model: Evaluate `intfloat/multilingual-e5-large` via Hugging Face Inference API vs OpenAI `text-embedding-3-large`
+
+**Admin UI:** Batch summarization controls
+- Progress tracking (X / 5,490 summarized)
+- Sample review panel
+
+### Database Schema
+
 ```sql
-CREATE TABLE case_predictions (
+CREATE TABLE document_summaries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  case_id UUID NOT NULL REFERENCES legislative_cases(id),
-  predicted_stage TEXT NOT NULL, -- 'proposition', 'enacted', etc.
-  predicted_date DATE NOT NULL,
-  confidence_score NUMERIC(3,2) NOT NULL, -- 0.00 to 1.00
-  model_version TEXT NOT NULL, -- e.g., 'v1.0'
-  rationale TEXT NOT NULL, -- Human-readable explanation
-  features JSONB, -- { "avg_time_to_stage": 180, "ministry": "...", "complexity": "high" }
+  document_id UUID NOT NULL REFERENCES documents(id) UNIQUE,
+  summary_text TEXT NOT NULL,
+  policy_aim TEXT,
+  core_recommendations JSONB DEFAULT '[]',
+  key_actors JSONB DEFAULT '[]',
+  policy_domains TEXT[] DEFAULT '{}',
+  keywords TEXT[] DEFAULT '{}',
+  outcome_status TEXT, -- 'enacted', 'rejected', 'pending', 'superseded', 'unknown'
+  embedding vector(1024),
+  model_version TEXT NOT NULL, -- e.g., 'gemini-2.5-flash-v1'
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  actual_stage TEXT, -- Filled in when prediction is validated
-  actual_date DATE, -- Filled in when prediction is validated
-  accuracy_score NUMERIC(3,2) -- Calculated after validation
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_predictions_case ON case_predictions(case_id);
-CREATE INDEX idx_predictions_date ON case_predictions(predicted_date);
-CREATE INDEX idx_predictions_confidence ON case_predictions(confidence_score DESC);
+CREATE INDEX idx_summaries_document ON document_summaries(document_id);
+CREATE INDEX idx_summaries_embedding ON document_summaries USING ivfflat (embedding vector_cosine_ops);
+CREATE INDEX idx_summaries_keywords ON document_summaries USING GIN (keywords);
+CREATE INDEX idx_summaries_domains ON document_summaries USING GIN (policy_domains);
 ```
 
-**4. Legislative Trends**
-```sql
-CREATE TABLE legislative_trends (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  trend_type TEXT NOT NULL, -- 'topic', 'entity', 'ministry', 'policy_area'
-  trend_key TEXT NOT NULL, -- e.g., topic name, entity ID, ministry name
-  time_period DATE NOT NULL, -- Year-month (YYYY-MM-01)
-  document_count INTEGER NOT NULL,
-  case_count INTEGER,
-  trend_direction TEXT, -- 'increasing', 'decreasing', 'stable'
-  change_percentage NUMERIC(5,2), -- % change from previous period
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(trend_type, trend_key, time_period)
-);
+### Success Criteria
 
-CREATE INDEX idx_trends_type ON legislative_trends(trend_type);
-CREATE INDEX idx_trends_period ON legislative_trends(time_period DESC);
-CREATE INDEX idx_trends_direction ON legislative_trends(trend_direction);
-```
+- [ ] 5,490+ documents summarized
+- [ ] All summaries include keywords and policy_domains
+- [ ] Embeddings indexed and queryable via cosine similarity
 
-### Analytics Agents
+### Open Decision
 
-#### 1. Influence Analysis Agent
+- **Embedding model choice:** `intfloat/multilingual-e5-large` (self-hosted, excellent Swedish) vs OpenAI `text-embedding-3-large` (API, cost scales). Must be resolved before execution.
 
-**Purpose:** Calculate stakeholder influence scores
+---
 
-**Processing:**
-1. **Remissvar frequency:**
-   ```sql
-   SELECT entity_id, COUNT(*) as submission_count
-   FROM relations
-   WHERE relation_type = 'submitted_remissvar'
-   GROUP BY entity_id;
-   ```
+## Slice 7.3: Semantic Link Engine
 
-2. **Recommendation adoption:**
-   - Analyze which remissvar recommendations appear in final propositions
-   - Track language similarity between remissvar and proposition text
-   - Calculate adoption rate per organization
-
-3. **Case involvement:**
-   ```sql
-   SELECT e.id, COUNT(DISTINCT cd.case_id) as case_count
-   FROM entities e
-   JOIN relations r ON e.id = r.target_id
-   JOIN documents d ON r.source_document_id = d.id
-   JOIN case_documents cd ON d.id = cd.document_id
-   GROUP BY e.id;
-   ```
-
-**Output:** Populates `stakeholder_influence` table
-
-#### 2. Co-Occurrence Analysis Agent
-
-**Purpose:** Build entity co-occurrence networks
-
-**Processing:**
-1. **Find entity pairs in same documents:**
-   ```sql
-   SELECT 
-     r1.target_id as entity_a,
-     r2.target_id as entity_b,
-     r1.source_document_id,
-     COUNT(*) as cooccurrence_count
-   FROM relations r1
-   JOIN relations r2 ON r1.source_document_id = r2.source_document_id
-   WHERE r1.target_id < r2.target_id
-   GROUP BY r1.target_id, r2.target_id, r1.source_document_id;
-   ```
-
-2. **Calculate relationship strength:**
-   - Frequency of co-occurrence
-   - Recency of co-occurrence
-   - Role similarity (both lead investigators, etc.)
-
-**Output:** Populates `entity_cooccurrence` table
-
-#### 3. Prediction Agent
-
-**Purpose:** Forecast case progression
-
-**Features for prediction:**
-- Average time from directive → SOU for this ministry
-- Average time from SOU → proposition for this topic
-- Complexity indicators (document length, entity count)
-- Remiss period length
-- Ministry workload (how many active cases)
-
-**Model:**
-```typescript
-interface PredictionModel {
-  predictStageDate(case_id: string, target_stage: string): {
-    predicted_date: Date;
-    confidence: number;
-    rationale: string;
-    features: Record<string, any>;
-  };
-}
-```
-
-**Example prediction:**
-```
-Case: Dir. 2024:122 → SOU 2025:32
-Predicted: Proposition by 2026-03-15 (confidence 0.78)
-Rationale: 
-- Average time directive → SOU for this ministry: 12 months
-- Average time SOU → proposition for climate topics: 8 months
-- Document complexity: medium (based on length, entity count)
-- Similar cases took 20 months on average
-```
-
-**Output:** Populates `case_predictions` table
-
-#### 4. Trend Analysis Agent
-
-**Purpose:** Identify patterns over time
-
-**Processing:**
-1. **Monthly aggregations:**
-   ```sql
-   SELECT 
-     DATE_TRUNC('month', publication_date) as time_period,
-     doc_type,
-     ministry,
-     COUNT(*) as doc_count
-   FROM documents
-   GROUP BY time_period, doc_type, ministry
-   ORDER BY time_period DESC;
-   ```
-
-2. **Trend direction calculation:**
-   - Compare current period to previous period
-   - Calculate % change
-   - Classify as increasing/decreasing/stable
-
-**Output:** Populates `legislative_trends` table
-
-### Frontend Dashboards
-
-#### 1. Influence Dashboard (`/insights/influence`)
-
-**Components:**
-- **Top organizations ranking table** (by influence score)
-- **Organization detail modal** (submission history, adoption rate)
-- **Timeline chart** (influence score over time)
-
-**Filters:**
-- By organization type (private company, NGO, government agency)
-- By policy area
-- By time period
-
-#### 2. Network Visualization (`/insights/network`)
-
-**Components:**
-- **Force-directed graph** (D3.js)
-  - Nodes: Entities
-  - Edges: Co-occurrence relationships (thickness = strength)
-  - Colors: Entity type
-- **Entity detail panel** (connections, documents)
-
-**Interactions:**
-- Hover node: Highlight connections
-- Click node: Show entity details
-- Filter by entity type, relationship strength
-
-#### 3. Predictions Dashboard (`/insights/predictions`)
-
-**Components:**
-- **Upcoming stages table** (cases with predicted dates)
-- **Accuracy metrics** (past predictions vs actuals)
-- **Confidence distribution chart**
-
-**Features:**
-- Sort by predicted date
-- Filter by ministry, confidence score
-- Export predictions to CSV
-
-#### 4. Trends Dashboard (`/insights/trends`)
-
-**Components:**
-- **Topic trends chart** (line chart over time)
-- **Ministry activity heatmap** (ministry × policy area)
-- **Seasonal patterns** (monthly aggregations)
-
-**Filters:**
-- Time range selector
-- Ministry filter
-- Trend direction filter
-
-### New Edge Functions
-
-**1. `get-stakeholder-influence`**
-- Returns influence scores for all organizations
-- Supports filtering by type, policy area
-
-**2. `get-entity-network`**
-- Returns co-occurrence data for network visualization
-- Supports depth parameter (1-hop, 2-hop connections)
-
-**3. `get-case-predictions`**
-- Returns predictions for all active cases
-- Supports filtering by ministry, confidence
-
-**4. `get-legislative-trends`**
-- Returns trend data for charting
-- Supports time range, aggregation level (monthly, yearly)
-
-**5. `get-semantic-links`**
-- Returns semantically similar documents for a given document
-- Includes match scores, explanations, and shared evidence
-
-**6. `generate-document-summary`**
-- Generates structured summaries for embedding
-- Extracts policy aims, actors, keywords, ideological framing
-
-### Semantic Linking Module
+**Priority:** P1 (depends on 7.2 embeddings)  
+**Dependencies:** Slice 7.2 complete  
+**Estimated effort:** Large
 
 > **Detailed Plan:** See [SEMANTIC_LINK_AGENT_PLAN.md](../SEMANTIC_LINK_AGENT_PLAN.md)
 
-#### Purpose
-Surface non-obvious, high-value connections across policy documents based on deep conceptual similarity rather than explicit references.
+### What
 
-#### Components
+Discover non-obvious conceptual connections between documents using composite scoring: embedding similarity (50%), shared actors, keywords, domains, temporal distance.
 
-**A. Summarizer Agent**
-- Generates 200-500 word structured summaries per document
-- Extracts: policy aim, core recommendations, key actors, policy domains, keywords
-- Flags outcome status (enacted, rejected, pending, superseded)
-
-**B. Embedding + Indexing**
-- **Recommended model:** `intfloat/multilingual-e5-large` (1024 dims, excellent Swedish support)
-- **Vector store:** pgvector (native PostgreSQL, no extra infrastructure)
-- Index all summaries for scalable similarity search
-
-**C. Matching Engine**
-Composite scoring algorithm:
+### Composite Scoring Algorithm
 
 | Signal | Weight | Max Contribution |
 |--------|--------|------------------|
@@ -386,7 +211,26 @@ Composite scoring algorithm:
 | Shared remissinstans | +0.05 each | 0.15 |
 | Temporal distance | -0.01/year | -0.20 |
 
-**D. Link Storage**
+### Deliverables
+
+**Database:**
+- New table: `semantic_links` (source_document_id, target_document_id, score, confidence, explanation, score_breakdown JSONB, status)
+- DB function: `find_similar_documents(doc_id, threshold, limit)`
+
+**Edge function:** `compute-semantic-links`
+- Batch process: for each document, find top-10 nearest neighbors above threshold 0.6
+- Compute composite score (embedding + metadata signals)
+- Generate human-readable explanation via LLM
+
+**Edge function:** `get-semantic-links`
+- Returns links for a given document with explanation text
+
+**Frontend:** "Semantiskt relaterade dokument" section on Document Detail page
+- Shows top 5 links with confidence badge and explanation
+- Admin can verify/reject links
+
+### Database Schema
+
 ```sql
 CREATE TABLE semantic_links (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -399,48 +243,257 @@ CREATE TABLE semantic_links (
   keywords_overlap JSONB DEFAULT '[]',
   score_breakdown JSONB DEFAULT '{}',
   status TEXT DEFAULT 'auto', -- 'auto', 'verified', 'rejected'
-  created_at TIMESTAMPTZ DEFAULT now(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(source_document_id, target_document_id)
 );
 ```
 
-#### Key Requirements
-- **Precision > Recall:** Only surface confident matches (score > 0.6)
-- **Explainable:** Every link includes human-readable explanation
-- **Auditable:** Admin can verify or reject auto-generated links
+### Success Criteria
+
+- [ ] Semantic links generated for all summarized documents
+- [ ] Precision >80% on manual review of top-100 highest-scored links
+- [ ] Every link includes human-readable Swedish explanation
+- [ ] Admin verification workflow operational
 
 ---
 
-## Testing Strategy
+## Slice 7.4: Entity Co-Occurrence Networks
 
-### Model Validation
+**Priority:** P1 (standalone, no dependency on 7.2/7.3)  
+**Dependencies:** Existing entity and relations data  
+**Estimated effort:** Medium
 
-**Historical backtesting:**
-- Train prediction model on pre-2023 data
-- Test predictions on 2023-2024 data
-- Target: >75% accuracy within 30 days
+### What
 
-**A/B testing:**
-- Compare multiple prediction models
-- Select best performing model for production
+Build entity co-occurrence graph from shared document appearances. Identify collaboration patterns, committee clusters, and ministry-entity connections.
 
-### Influence Score Validation
+### Deliverables
 
-**Manual validation:**
-- Expert review of top 20 organizations
-- Validate that high-influence orgs are known to be influential
-- Check for false positives (low-influence orgs ranked too high)
+**Database:**
+- New table: `entity_cooccurrence` (entity_a_id, entity_b_id, cooccurrence_count, shared_documents, relationship_strength)
+- CHECK constraint: entity_a_id < entity_b_id (prevent duplicates)
 
-**Correlation analysis:**
-- Influence score vs actual policy outcomes
-- Influence score vs media mentions (external validation)
+**Edge function:** `compute-entity-cooccurrence`
+- SQL aggregation of entities appearing in same documents
+- Strength weighted by frequency and recency
 
-### Network Analysis Validation
+**Edge function:** `get-entity-network`
+- Returns co-occurrence data for network visualization
+- Supports depth parameter (1-hop, 2-hop)
 
-**Sanity checks:**
-- No isolated nodes (all entities connected to at least one other)
-- Strongest connections align with known collaborations
-- Network density reasonable (not too sparse or too dense)
+**Frontend:** Network visualization page (`/insights/network`)
+- Force-directed graph (lightweight canvas renderer)
+- Nodes = entities, edges = co-occurrence strength
+- Click node to see entity detail
+- Filter by entity type, minimum strength
+- Cap at 200 visible nodes for performance
+
+### Database Schema
+
+```sql
+CREATE TABLE entity_cooccurrence (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  entity_a_id UUID NOT NULL REFERENCES entities(id),
+  entity_b_id UUID NOT NULL REFERENCES entities(id),
+  cooccurrence_count INTEGER NOT NULL DEFAULT 0,
+  shared_documents UUID[] NOT NULL,
+  first_cooccurrence_date DATE,
+  last_cooccurrence_date DATE,
+  relationship_strength NUMERIC(3,2), -- 0.00 to 1.00
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CHECK (entity_a_id < entity_b_id),
+  UNIQUE(entity_a_id, entity_b_id)
+);
+
+CREATE INDEX idx_cooccurrence_entity_a ON entity_cooccurrence(entity_a_id);
+CREATE INDEX idx_cooccurrence_entity_b ON entity_cooccurrence(entity_b_id);
+CREATE INDEX idx_cooccurrence_strength ON entity_cooccurrence(relationship_strength DESC);
+```
+
+### Success Criteria
+
+- [ ] Co-occurrence computed for all 1,780 entities
+- [ ] Network visualization renders without performance issues
+- [ ] Strongest connections align with known organizational clusters
+
+---
+
+## Slice 7.5: Legislative Trend Dashboard
+
+**Priority:** P2 (pure aggregation, low risk)  
+**Dependencies:** Existing document corpus  
+**Estimated effort:** Small
+
+### What
+
+Monthly/yearly trend analysis of legislative activity by doc_type, ministry, and policy area.
+
+### Deliverables
+
+**Edge function:** `get-legislative-trends`
+- Aggregates documents by month/year, ministry, doc_type
+- Calculates trend direction (increasing/decreasing/stable)
+
+**Frontend:** Trends page (`/insights/trends`)
+- Line chart: document counts over time by type (recharts)
+- Ministry activity bar chart
+- Period comparison (this year vs last year)
+
+### Database Schema
+
+```sql
+CREATE TABLE legislative_trends (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  trend_type TEXT NOT NULL, -- 'topic', 'entity', 'ministry', 'doc_type'
+  trend_key TEXT NOT NULL,
+  time_period DATE NOT NULL, -- YYYY-MM-01
+  document_count INTEGER NOT NULL,
+  case_count INTEGER,
+  trend_direction TEXT, -- 'increasing', 'decreasing', 'stable'
+  change_percentage NUMERIC(5,2),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(trend_type, trend_key, time_period)
+);
+
+CREATE INDEX idx_trends_type ON legislative_trends(trend_type);
+CREATE INDEX idx_trends_period ON legislative_trends(time_period DESC);
+```
+
+### Success Criteria
+
+- [ ] Trends cover 2015-2025 time range
+- [ ] Dashboard loads under 500ms
+- [ ] Trend direction calculations are verifiable
+
+---
+
+## Slice 7.6: Parliamentary Motions Ingestion
+
+**Priority:** P2 (corpus expansion)  
+**Dependencies:** Clear product demand  
+**Estimated effort:** Large (~60,000 documents)
+
+### What
+
+Ingest motions (`doktyp=mot`) from Riksdagen API to resolve ~2,820 deferred motion references and expand corpus coverage.
+
+### Why P2
+
+- Large volume (~60k docs) with significant infrastructure cost
+- Only valuable if there is clear user demand for motion-level tracking
+- Should be scoped with explicit ingestion window (e.g., 2015-2025 only)
+
+### Deliverables
+
+- Riksdagen API scraper for motions (reuse existing scraper patterns)
+- Reference resolution pass for the 2,820 motion references
+- Updated orphan/process coverage metrics
+
+### Gate
+
+- ⚠️ Requires explicit AGREE from Max before execution
+- Scoped ingestion plan with year range and success criteria
+
+---
+
+## Slice 7.7: Prediction Engine
+
+**Priority:** P3 (future, after validated analytics)  
+**Dependencies:** Slices 7.1-7.5 complete, 3+ years of historical data  
+**Estimated effort:** Large
+
+### What
+
+Forecast case progression timelines based on historical patterns (ministry, topic, complexity).
+
+### Why Last
+
+- Requires validated influence scores and trend data as features
+- Prediction accuracy depends on corpus completeness
+- Highest risk of low accuracy — needs historical backtesting
+
+### Deliverables
+
+**Database:**
+
+```sql
+CREATE TABLE case_predictions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id UUID NOT NULL REFERENCES processes(id),
+  predicted_stage TEXT NOT NULL,
+  predicted_date DATE NOT NULL,
+  confidence_score NUMERIC(3,2) NOT NULL, -- 0.00 to 1.00
+  model_version TEXT NOT NULL,
+  rationale TEXT NOT NULL, -- Human-readable explanation
+  features JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  actual_stage TEXT,
+  actual_date DATE,
+  accuracy_score NUMERIC(3,2)
+);
+```
+
+**Frontend:** Predictions dashboard (`/insights/predictions`)
+
+### Gate
+
+- Only proceed if backtesting achieves >75% accuracy within 30 days
+- Otherwise: downgrade to "descriptive velocity stats" (extend existing Velocity Dashboard)
+
+---
+
+## Execution Order Summary
+
+```text
+Wave 1 (parallel):  7.1 Stakeholder Influence
+                     7.2 Summarizer + Embeddings
+                     7.4 Entity Co-Occurrence
+
+Wave 2 (after 7.2): 7.3 Semantic Link Engine
+                     7.5 Legislative Trends (anytime)
+
+Wave 3 (gated):     7.6 Motions Ingestion (product decision)
+                     7.7 Prediction Engine (after 7.1 + 7.5)
+```
+
+---
+
+## New Database Tables Summary
+
+| Table | Slice | Purpose |
+|-------|-------|---------|
+| `stakeholder_influence` | 7.1 | Per-org influence scores with evidence |
+| `document_summaries` | 7.2 | Structured summaries + vector embeddings |
+| `semantic_links` | 7.3 | Cross-document semantic connections |
+| `entity_cooccurrence` | 7.4 | Entity pair co-occurrence metrics |
+| `legislative_trends` | 7.5 | Aggregated trend data |
+| `case_predictions` | 7.7 | Forecasted case progressions |
+
+## New Edge Functions Summary
+
+| Function | Slice | Type |
+|----------|-------|------|
+| `get-stakeholder-influence` | 7.1 | Read + compute |
+| `generate-document-summary` | 7.2 | AI batch processing |
+| `generate-embeddings` | 7.2 | Embedding pipeline |
+| `compute-semantic-links` | 7.3 | Batch matching |
+| `get-semantic-links` | 7.3 | Read |
+| `compute-entity-cooccurrence` | 7.4 | Batch SQL |
+| `get-entity-network` | 7.4 | Read |
+| `get-legislative-trends` | 7.5 | Read + aggregate |
+
+---
+
+## Risk Register
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Embedding model cost for 5,490 docs | Budget overrun | Batch processing, evaluate cheaper models first |
+| Swedish language embedding quality | Poor semantic matches | Use multilingual-e5-large (trained on Swedish), validate on sample |
+| Network visualization performance | Browser crashes | Cap visible nodes at 200, use filtering |
+| Influence score bias | Misleading rankings | Transparent methodology, evidence-linked scores, expert review |
+| Motions volume (~60k) | Storage/processing time | Scope to 2015-2025, gate on product demand |
 
 ---
 
@@ -448,92 +501,42 @@ CREATE TABLE semantic_links (
 
 ### Batch Processing
 
-**All analytics agents run as batch jobs:**
-- Influence Analysis: Daily at 3 AM
-- Co-Occurrence Analysis: Daily at 4 AM
-- Prediction Agent: Daily at 5 AM
-- Trend Analysis: Daily at 6 AM
-
-**Not real-time:**
+All analytics agents run as batch jobs (not real-time):
 - Acceptable lag: 24 hours
 - Users see yesterday's analytics
 
 ### Query Optimization
 
-**Materialized views for dashboards:**
+Materialized views for dashboards:
 ```sql
 CREATE MATERIALIZED VIEW mv_top_influencers AS
 SELECT * FROM stakeholder_influence
 WHERE influence_score > 50
 ORDER BY influence_score DESC
 LIMIT 100;
-
--- Refresh daily
-REFRESH MATERIALIZED VIEW mv_top_influencers;
 ```
 
 ### Caching Strategy
 
-- Cache dashboard data for 24 hours
-- Cache network graph data for 12 hours
-- Cache prediction lists for 6 hours
+- Dashboard data: 24 hours
+- Network graph data: 12 hours
+- Prediction lists: 6 hours
 
 ---
 
-## Risks & Mitigation
+## Technical Notes
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Prediction accuracy too low | Users don't trust insights | Validate model on historical data, show confidence scores |
-| Bias in influence scoring | Unfair representation | Transparent methodology, manual validation, external expert review |
-| Network visualization too complex | Poor UX | Simplify with filters, limit node count, provide tutorials |
-| Data privacy concerns | Legal issues | Internal use only, no personal data exposed, anonymize if needed |
-
----
-
-## Dependencies
-
-### Before Starting Phase 7
-
-- [ ] Phase 6 complete (cases reconstructed)
-- [ ] Sufficient historical data (3+ years)
-- [ ] At least 500+ cases in database
-- [ ] Entity and relation coverage >90%
-
-### Phase 7 Prerequisites
-
-- [ ] Clear use cases identified (who uses insights, for what decisions?)
-- [ ] Legal review complete (data privacy, influence scoring)
-- [ ] Team capacity for ML model development
+- All new tables will have standard RLS policies (admin write, authenticated read)
+- pgvector extension required for 7.2 (enabled via migration)
+- Lovable AI (google/gemini-2.5-flash) used for summarization; no external API key needed
+- Embedding model requires a decision before 7.2 execution
+- All agents follow existing patterns: edge function + admin UI test component + idempotent batch processing
 
 ---
 
-## Related Documentation
+## Supersedes
 
-- [Phase 6: Relationship Inference](./phase-6-relationship-inference.md)
-- [Product Roadmap](../PRODUCT_ROADMAP.md)
-- [Semantic Link Agent Plan](../SEMANTIC_LINK_AGENT_PLAN.md) — Detailed technical plan for semantic linking
-
----
-
-## Notes
-
-**Why Phase 7 Last?**
-- Requires complete data corpus (all doc types, all relationships)
-- Requires historical data for training/validation
-- Most value when foundation is solid
-
-**Explainability First:**
-- All predictions include rationale
-- All influence scores cite evidence
-- All semantic links include human-readable explanations
-- No black-box models
-
-**Future Extensions:**
-- Natural language queries ("What climate legislation is coming?")
-- Anomaly detection (unusual patterns in legislative activity)
-- Recommendation engine (suggest related cases to users)
-- "Find similar" functionality from any document
+This plan supersedes `docs/development/branches/phase-6-advanced-analysis.md`, which contained rough goals that have been refined and incorporated here. That file should be archived.
 
 ---
 
@@ -541,7 +544,7 @@ REFRESH MATERIALIZED VIEW mv_top_influencers;
 
 > **Full spec:** `docs/development/PRODUCT_ROADMAP.md` → Phase 8
 
-Phase 7's semantic linking infrastructure (embeddings, vector index, summarizer agent) is a **prerequisite** for Phase 8's grounded chat capability. The relationship is:
+Phase 7's semantic linking infrastructure (embeddings, vector index, summarizer agent) is a **prerequisite** for Phase 8's grounded chat capability:
 
 | Phase 7 Delivers | Phase 8 Consumes |
 |---|---|
@@ -561,4 +564,11 @@ Phase 8 is explicitly **retrieval-first, evidence-first, and verifier-gated**:
 5. Verifier gate removes unsupported statements
 6. Explicit refusal when evidence is insufficient
 
-This ensures the chat capability inherits Phase 7's explainability-first principle and extends it to natural language interaction.
+---
+
+## Related Documentation
+
+- [Phase 6: Relationship Inference](./phase-6-relationship-inference.md) — ✅ Complete
+- [Phase 6: Advanced Analysis](./phase-6-advanced-analysis.md) — ⚠️ Superseded by this plan
+- [Product Roadmap](../PRODUCT_ROADMAP.md)
+- [Semantic Link Agent Plan](../SEMANTIC_LINK_AGENT_PLAN.md) — Detailed technical plan for semantic linking
