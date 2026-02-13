@@ -1,5 +1,38 @@
 # Phase Deltas
 
+## 2026-02-13: Slice 6B.1 — Title-Match via Trigram Similarity (Phase 6B CLOSED)
+
+**Status:** ✅ DONE — Phase 6 complete, ready for Phase 7
+
+### Decision
+
+Built lightweight deterministic title matcher (Option A) instead of full AI pipeline. True scope was only 24 title-only refs (not 586 as previously estimated).
+
+### Implementation
+
+- New edge function: `match-title-references` using client-side trigram similarity
+- ILIKE candidate search with longest significant words
+- HTML entity decoding + remiss prefix stripping for normalization
+- Threshold: 0.35 similarity
+
+### Results
+
+| Metric | Value |
+|--------|-------|
+| Title-only refs | 24 |
+| Matched | 17 (71%) |
+| New relationships | 3 |
+| Unmatched (manual) | 7 |
+
+### Files Created/Modified
+
+- `supabase/functions/match-title-references/index.ts` — NEW
+- `supabase/config.toml` — Added function entry
+- `docs/development/branches/phase-6-relationship-inference.md` — 6B.1 results, status → COMPLETE
+- `docs/PHASE_DELTAS.md` — This entry
+
+---
+
 ## 2026-02-13: Slice 6A.5 — Direct Corpus Match + Title-Embedded Extraction
 
 **Status:** ✅ DONE
