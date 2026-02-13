@@ -1,17 +1,18 @@
 # Product Roadmap — Legislative Intelligence Platform
 
-**Last Updated:** 2026-02-10  
-**Current Phase:** Phase 5.6 ✅ COMPLETE (Remissvar Content Insights)
+**Last Updated:** 2026-02-13  
+**Current Phase:** Phase 7 — Advanced Insights & Semantic Intelligence
 
 ---
 
-## Recent Milestone: Phase 5.6 Complete — Remissvar Extraction + Stance Analysis 🎉
+## Recent Milestone: Phase 6 Complete — Relationship Inference & Case Reconstruction 🎉
 
-**Remissvar text extraction validated (98.4% coverage):**
-- 3,366 remissvar successfully extracted (avg ~9,000 chars)
-- 54 scanned PDFs identified as extraction errors (OCR limitation)
-- Admin UI supports multi-batch execution with pagination
-- Keyword-based stance detection operational
+**Legislative graph baseline established:**
+- 2,791 document relationships (high-confidence deterministic links)
+- 3,460 / 7,441 references resolved (46.5%)
+- 4,456 processes (1,385 auto-created via union-find clustering)
+- 6,790 total documents in corpus
+- Phase 7 approved and in progress
 
 ---
 
@@ -43,8 +44,8 @@
 | **Phase 4.2** | ✅ Complete | Entity Features | Entity autocomplete, entity detail pages, relations FK |
 | **Phase 4.3** | ✅ Complete | Discovery MVP | Enhanced doc detail, process pages, related docs (deterministic) |
 | **Phase 5** | ✅ Complete | Legislative Graph Expansion | New doc types, Timeline Agent v2, Content Insights |
-| **Phase 6** | 📋 Planned | Relationship Inference | Blackboard agent, case reconstruction |
-| **Phase 7** | 📋 Planned | Advanced Insights | Stakeholder mapping, predictions |
+| **Phase 6** | ✅ Complete | Relationship Inference | Deterministic graph, reference resolution, process linkage |
+| **Phase 7** | 🔄 In Progress | Advanced Insights | Stakeholder influence, semantic discovery, trends |
 
 ---
 
@@ -483,101 +484,72 @@ These were **NOT** implemented until MVP is validated:
 
 ---
 
-## Phase 6: Relationship Inference & Case Reconstruction 📋 PLANNED
+## Phase 6: Relationship Inference & Case Reconstruction ✅ COMPLETE
 
-**Goal:** Build blackboard-level agent that reconstructs full legislative cases.
+**Goal:** Build deterministic legislative graph from document references.
 
-### Blackboard-Level Agent
-**Operates across documents, not within a single document:**
+### Delivered
 
-- **Input:** All documents, entities, relations, timeline events in database
-- **Output:** High-level case structures linking directives → SOUs → propositions → laws
+- **Reference resolution:** 3,460 / 7,441 references resolved (46.5%)
+- **Document relationships:** 2,791 high-confidence relationships (M2M schema with ENUMs)
+- **Process linkage:** 1,385 auto-created processes via union-find clustering
+- **Corpus expansion:** +1,292 committee reports via Riksdagen API backfill
+- **Title matching:** 17/24 title-only references matched via trigram similarity
 
-### Case Reconstruction
-- Which directives lead to which SOUs
-- Which SOUs link to which propositions / laws
-- Which remiss responses belong to which proposal
-- Which organizations appear repeatedly across the chain
+### Database Schema Changes
+- `document_relationships` table with ENUM types, confidence scoring, symmetric dedup
+- Generated columns for canonical de-duplication (`LEAST`/`GREATEST` IDs)
+- Relationship types: `directive_to_sou`, `sou_to_proposition`, `proposition_to_committee_report`, etc.
 
-### Document Relationship Discovery
-- Infer implicit relationships based on:
-  - Shared entities
-  - Shared timeline event dates
-  - Directive numbers referenced in SOUs
-  - SOU numbers referenced in propositions
+### Success Criteria Met
+- ✅ Deterministic reference resolution operational
+- ✅ Cases reconstructed via process linkage
+- ✅ High precision (100% verified on auto-created processes)
+- ✅ Evidence-based links with provenance tracking
 
-### New Database Tables (Tentative)
-```sql
-CREATE TABLE legislative_cases (
-  id UUID PRIMARY KEY,
-  title TEXT,
-  directive_id UUID REFERENCES documents(id),
-  sou_id UUID REFERENCES documents(id),
-  proposition_id UUID REFERENCES documents(id),
-  law_id UUID REFERENCES documents(id),
-  stage TEXT, -- 'directive', 'investigation', 'proposition', 'enacted'
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+### Known Gaps (By Design)
+- 2,820 motion references deferred to Phase 7.6
+- ~549 corpus-gap references (pre-2015 documents)
+- 6B AI inference skipped (lightweight title matcher sufficient)
 
-CREATE TABLE case_documents (
-  id UUID PRIMARY KEY,
-  case_id UUID REFERENCES legislative_cases(id),
-  document_id UUID REFERENCES documents(id),
-  role TEXT, -- 'directive', 'sou', 'remissvar', 'proposition', 'law'
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-### Relationship-Based Search
-- "Show all documents in the same legislative case as [SOU]"
-- "Find all cases involving [Ministry]"
-- "Show full timeline for [Case]"
-
-### Success Criteria
-- [ ] Blackboard agent identifies document-to-document relationships
-- [ ] Cases reconstructed with evidence-based links
-- [ ] Relationship-based search working
-- [ ] Case timelines visualized end-to-end
-
-### Out of Scope
-- Predictive analytics (Phase 7)
-- Stakeholder influence scoring (Phase 7)
-- Change tracking (Phase 7)
+**Documentation:** `docs/development/branches/phase-6-relationship-inference.md`
 
 ---
 
-## Phase 7: Advanced Insights & Predictions 📋 PLANNED
+## Phase 7: Advanced Insights & Semantic Intelligence 🔄 IN PROGRESS
 
-**Goal:** Provide intelligence layer for strategic decision-making.
+**Goal:** Transform the legislative corpus into an intelligence platform with stakeholder analytics, semantic discovery, and trend insights.
 
-### 7.1 Entity Stance Heat Map 🆕
+**Active Slice:** 7.1 Stakeholder Influence Analytics
 
-**What:** Visualization showing how each organization's stance distribution varies across subjects/themes.
+### Slice Overview
 
-**Prerequisites:**
-- [x] Phase 5.6.4 stance classification complete
-- [ ] Theme/subject categorization of SOUs
+| Slice | Priority | Status | Description |
+|-------|----------|--------|-------------|
+| 7.1 | P0 | 🔄 IN PROGRESS | Stakeholder Influence Analytics |
+| 7.2 | P0 | 🔲 PENDING | Semantic Summarizer Agent + Embeddings |
+| 7.3 | P1 | 🔲 PENDING | Semantic Link Engine (depends on 7.2) |
+| 7.4 | P1 | 🔲 PENDING | Entity Co-Occurrence Networks |
+| 7.5 | P2 | 🔲 PENDING | Legislative Trend Dashboard |
+| 7.6 | P2 | ⏸️ GATED | Parliamentary Motions Ingestion (~60k docs) |
+| 7.7 | P3 | ⏸️ GATED | Prediction Engine |
 
-**Status:** Roadmap item; prioritize only after taxonomy/theme tagging infrastructure is available.
-
-### 7.2 Stakeholder Influence Mapping
-### 7.3 Entity Co-Occurrence Networks
-### 7.4 Change Tracking
-### 7.5 Predicted Impact Monitoring
-### 7.6 Parliamentary Motions Ingestion
-
-**What:** Ingest ~60,000+ motions (`doktyp=mot`) from Riksdagen API to resolve 2,820 deferred references.
-
-**Prerequisites:**
-- [ ] Clear product demand for motion-level tracking
-- [ ] Scoped ingestion plan with success criteria
+### New Database Tables
+- `stakeholder_influence` — Per-org influence scores with evidence
+- `document_summaries` — Structured summaries + vector embeddings (pgvector)
+- `semantic_links` — Cross-document semantic connections
+- `entity_cooccurrence` — Entity pair co-occurrence metrics
+- `legislative_trends` — Aggregated trend data
+- `case_predictions` — Forecasted case progressions
 
 ### Success Criteria
-- [ ] Entity stance heat map visualized (Phase 7.1)
-- [ ] Stakeholder influence scores calculated (Phase 7.2)
-- [ ] Entity co-occurrence network visualized (Phase 7.3)
-- [ ] Change tracking dashboard operational (Phase 7.4)
-- [ ] Prediction model validated against historical data (Phase 7.5)
+- [ ] Influence scores for all 1,473 organizations with evidence (7.1)
+- [ ] 5,490+ documents summarized with embeddings (7.2)
+- [ ] Semantic links with >80% precision (7.3)
+- [ ] Entity co-occurrence network visualized (7.4)
+- [ ] Trend dashboard operational (7.5)
+
+**Documentation:** `docs/development/branches/phase-7-advanced-insights.md`
 
 ---
 
@@ -757,15 +729,15 @@ Allow users to ask natural-language questions about the legislative corpus and r
 **Enhanced Agents:** Timeline Agent v2, Metadata Agent v2  
 **New Scrapers:** Propositions, Directives, Committee Reports, Laws (Riksdagen API), Remiss Index, Remiss Pages
 
-### Phase 6 📋 (Planned)
-**New Tables:** `legislative_cases`, `case_documents`  
-**New Agents:** Case Reconstruction Agent (blackboard-level)  
-**Enhancements:** Relationship-based search, case timeline visualization
+### Phase 6 ✅ (Complete)
+**New Tables:** `document_relationships` (M2M with ENUMs, symmetric dedup)
+**New Functions:** `resolve-document-references`, `backfill-document-relationships`, `match-title-references`, `link-orphan-processes`
+**Enhancements:** Reference resolution, process linkage, corpus backfill
 
-### Phase 7 📋 (Planned)
-**New Tables:** `entity_cooccurrence`, `case_predictions`, `stakeholder_influence`  
-**New Agents:** Influence Mapping Agent, Prediction Agent  
-**Enhancements:** Advanced analytics dashboards, forecasting
+### Phase 7 🔄 (In Progress)
+**New Tables:** `stakeholder_influence`, `document_summaries`, `semantic_links`, `entity_cooccurrence`, `legislative_trends`, `case_predictions`
+**New Agents:** Summarizer Agent, Semantic Link Engine, Influence Calculator
+**Enhancements:** Advanced analytics dashboards, vector search, network visualization
 
 ---
 
@@ -800,12 +772,13 @@ This roadmap reflects the **refined product vision** while maintaining strict de
 - **Phase 3:** Walking skeleton complete (SOUs + Directives only)
 - **Phase 4:** Search & discovery (current focus, walking skeleton approach)
 - **Phase 5:** Legislative graph expansion (new doc types, Timeline v2, Genvägar)
-- **Phase 6:** Relationship inference (blackboard agent, case reconstruction)
-- **Phase 7:** Advanced insights (stakeholder mapping, predictions)
+- **Phase 6:** Relationship inference ✅ COMPLETE
+- **Phase 7:** Advanced insights (stakeholder analytics, semantic discovery, trends) 🔄 IN PROGRESS
+- **Phase 8:** Grounded conversational intelligence (future)
 
-**Current Status:** Phase 5 COMPLETE. Operational closure in progress. Phase 6 GO pending readiness gate approval.
+**Current Status:** Phase 7 IN PROGRESS. Slice 7.1 (Stakeholder Influence Analytics) active.
 
 **Next Immediate Steps:**
-1. Complete operational closure (SOU lifecycle backfill, Admin UI cleanup, roadmap reconciliation)
-2. Phase 6 readiness gate approval
-3. Phase 6.1: Riksdagen API historical backfill for propositions and directives
+1. Implement Slice 7.1 database schema and edge function
+2. Decide embedding model for Slice 7.2
+3. Begin Wave 1 parallel execution (7.1 + 7.2 + 7.4)
