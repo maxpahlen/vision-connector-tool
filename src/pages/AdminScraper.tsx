@@ -25,6 +25,7 @@ import { RemissEntityLinkerTest } from '@/components/admin/RemissEntityLinkerTes
 import { RemissvarStanceAnalyzerTest } from '@/components/admin/RemissvarStanceAnalyzerTest';
 import { EntityMatchApprovalQueue } from '@/components/admin/EntityMatchApprovalQueue';
 import { ValidationDashboard } from '@/components/admin/ValidationDashboard';
+import { DocumentSummaryRunner } from '@/components/admin/DocumentSummaryRunner';
 import {
   BarChart3,
   Download,
@@ -180,6 +181,7 @@ export default function AdminScraper() {
             <MetadataAgentTest />
             <PropositionAgentTest />
             <RemissEntityLinkerTest />
+            <DocumentSummaryRunner />
             <RemissvarStanceAnalyzerTest />
             <EntityMatchApprovalQueue />
           </div>
