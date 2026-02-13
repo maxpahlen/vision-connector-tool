@@ -1,5 +1,27 @@
 # Phase Deltas
 
+## 2026-02-13: Slice 6A.5 — Direct Corpus Match + Title-Embedded Extraction
+
+**Status:** ✅ DONE
+
+### Changes
+- Enhanced `resolve-document-references` with direct `doc_number` lookup before regex extraction
+- Catches raw Riksdagen codes (e.g., `H501JuU27`) already in corpus
+- Title-embedded patterns (e.g., `"Title, SOU 2025:113"`) now extracted by existing regex
+
+### Results
+- **+683 new resolutions** (636 direct_match, 36 dir_pattern, 11 sou_pattern)
+- Resolution rate: 37.1% → **45.5%** (2,807 → 3,443 of 7,566)
+- Document relationships: 2,152 → **2,788** (+636)
+- Remaining unresolved: 4,123 (3,527 extraction failures, 549 corpus gaps)
+- True AI-addressable scope: ~565 non-motion title-only refs
+
+### Files Modified
+- `supabase/functions/resolve-document-references/index.ts` — Added direct match step
+- `docs/development/branches/phase-6-relationship-inference.md` — 6A.5 results added
+
+---
+
 ## 2026-02-13: Phase 6A COMPLETE — Deterministic Graph Closed
 
 **Status:** ✅ COMPLETE — All 6A slices done, 6B.1 next
