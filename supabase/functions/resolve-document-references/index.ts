@@ -303,23 +303,35 @@ serve(async (req) => {
     }
 
     // Execute DB updates in batches of 50 (parallel within batch)
+    // Uses individual error handling to skip unique constraint violations
+    // (e.g., when shortening "Dir. 2024:72 Title..." to "Dir. 2024:72" 
+    //  but that (source_document_id, target_doc_number) pair already exists)
+    const dbErrors: Array<{ id: string; error: string }> = [];
     if (!dryRun) {
       const DB_BATCH = 50;
       for (let i = 0; i < resolvedUpdates.length; i += DB_BATCH) {
         const batch = resolvedUpdates.slice(i, i + DB_BATCH);
-        await Promise.all(batch.map(u =>
-          supabase.from('document_references')
+        const batchResults = await Promise.all(batch.map(async u => {
+          const { error } = await supabase.from('document_references')
             .update({ target_doc_number: u.docNumber, target_document_id: u.targetDocId })
-            .eq('id', u.id)
-        ));
+            .eq('id', u.id);
+          if (error) {
+            dbErrors.push({ id: u.id, error: error.message });
+            return false;
+          }
+          return true;
+        }));
+        // Count actual successful writes
+        results.resolved = results.resolved - batchResults.filter(r => !r).length;
       }
       for (let i = 0; i < cleanupUpdates.length; i += DB_BATCH) {
         const batch = cleanupUpdates.slice(i, i + DB_BATCH);
-        await Promise.all(batch.map(u =>
-          supabase.from('document_references')
+        await Promise.all(batch.map(async u => {
+          const { error } = await supabase.from('document_references')
             .update({ target_doc_number: u.docNumber })
-            .eq('id', u.id)
-        ));
+            .eq('id', u.id);
+          if (error) dbErrors.push({ id: u.id, error: error.message });
+        }));
       }
     }
 
@@ -336,6 +348,7 @@ serve(async (req) => {
       failureReasons: results.failureReasons,
       sampleUpdates: results.sampleUpdates,
       sampleFailures: results.sampleFailures,
+      dbErrors: dbErrors.length > 0 ? { count: dbErrors.length, samples: dbErrors.slice(0, 10) } : undefined,
     });
 
   } catch (error) {
