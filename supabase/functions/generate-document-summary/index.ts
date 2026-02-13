@@ -44,12 +44,12 @@ function extractKeyContent(rawContent: string, docType: string): { text: string;
   }
 
   // For directives and laws, always try full text (they should be small)
-  if (docType === "dir" || docType === "law") {
+  if (docType === "directive" || docType === "dir" || docType === "law") {
     return { text: rawContent.slice(0, MAX_INPUT_CHARS), strategy: "full_text_truncated" };
   }
 
   // For committee reports, take first 80K
-  if (docType === "bet") {
+  if (docType === "committee_report" || docType === "bet") {
     return { text: rawContent.slice(0, MAX_INPUT_CHARS), strategy: "first_80k" };
   }
 
@@ -424,7 +424,7 @@ Deno.serve(async (req) => {
 
     // ---------- Batch mode ----------
     // Build a balanced sample across doc types (Max's requirement: good mix)
-    const docTypes = ["sou", "prop", "bet", "dir", "law"];
+    const docTypes = ["sou", "proposition", "committee_report", "directive", "law"];
     const perType = Math.max(Math.floor(batchSize / docTypes.length), 1);
     const remainder = batchSize - perType * docTypes.length;
 
