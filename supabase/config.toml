@@ -101,3 +101,6 @@ verify_jwt = false
 
 [functions.link-orphan-processes]
 verify_jwt = false
+
+[functions.backfill-document-relationships]
+verify_jwt = false
