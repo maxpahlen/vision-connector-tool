@@ -623,7 +623,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        processed: toProcess.length,
+        processed: candidateIds.length,
         succeeded: successCount,
         errors: errorCount,
         skipped: skippedCount,
