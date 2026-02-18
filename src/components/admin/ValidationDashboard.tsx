@@ -53,25 +53,23 @@ export function ValidationDashboard() {
   const { data: docStats, refetch: refetchDocs, isLoading: loadingDocs } = useQuery({
     queryKey: ["validation-doc-stats"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("documents")
-        .select("doc_type, raw_content, url, pdf_url");
-      
-      if (error) throw error;
+      const types = ['sou', 'proposition', 'committee_report', 'directive', 'law'];
+      const queries = types.flatMap(type => [
+        supabase.from('documents').select('*', { count: 'exact', head: true }).eq('doc_type', type),
+        supabase.from('documents').select('*', { count: 'exact', head: true }).eq('doc_type', type).not('raw_content', 'is', null).neq('raw_content', ''),
+        supabase.from('documents').select('*', { count: 'exact', head: true }).eq('doc_type', type).not('url', 'is', null),
+        supabase.from('documents').select('*', { count: 'exact', head: true }).eq('doc_type', type).not('pdf_url', 'is', null),
+      ]);
 
-      const stats: Record<string, DocTypeStats> = {};
-      
-      for (const doc of data || []) {
-        if (!stats[doc.doc_type]) {
-          stats[doc.doc_type] = { doc_type: doc.doc_type, total: 0, with_text: 0, with_url: 0, with_pdf: 0 };
-        }
-        stats[doc.doc_type].total++;
-        if (doc.raw_content) stats[doc.doc_type].with_text++;
-        if (doc.url) stats[doc.doc_type].with_url++;
-        if (doc.pdf_url) stats[doc.doc_type].with_pdf++;
-      }
+      const results = await Promise.all(queries);
 
-      return Object.values(stats).sort((a, b) => a.doc_type.localeCompare(b.doc_type));
+      return types.map((type, i): DocTypeStats => ({
+        doc_type: type,
+        total: results[i * 4].count ?? 0,
+        with_text: results[i * 4 + 1].count ?? 0,
+        with_url: results[i * 4 + 2].count ?? 0,
+        with_pdf: results[i * 4 + 3].count ?? 0,
+      })).sort((a, b) => a.doc_type.localeCompare(b.doc_type));
     },
   });
 
