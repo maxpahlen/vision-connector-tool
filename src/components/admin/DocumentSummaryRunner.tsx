@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Brain, Play, Loader2, CheckCircle2, XCircle, RefreshCw } from 'lucide-react';
+import { Brain, Play, Loader2, CheckCircle2, XCircle, RefreshCw, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface BatchResult {
@@ -65,12 +65,53 @@ export function DocumentSummaryRunner() {
   const [currentBatch, setCurrentBatch] = useState(0);
   const [results, setResults] = useState<BatchResult[]>([]);
   const [lastResponse, setLastResponse] = useState<Record<string, unknown> | null>(null);
+  const [isEmbedding, setIsEmbedding] = useState(false);
+  const [embeddingResult, setEmbeddingResult] = useState<Record<string, unknown> | null>(null);
 
   const { data: corpusStats = [], refetch: refetchStats } = useCorpusStats();
+
+  const { data: embeddingStats } = useQuery({
+    queryKey: ['embedding-stats'],
+    queryFn: async () => {
+      const [totalRes, embeddedRes] = await Promise.all([
+        supabase.from('document_summaries').select('*', { count: 'exact', head: true }).not('summary_text', 'is', null),
+        supabase.from('document_summaries').select('*', { count: 'exact', head: true }).not('embedding', 'is', null),
+      ]);
+      return { total: totalRes.count ?? 0, embedded: embeddedRes.count ?? 0 };
+    },
+    refetchInterval: 15000,
+  });
 
   const totalDocs = corpusStats.reduce((sum, s) => sum + s.has_content, 0);
   const totalSummarized = corpusStats.reduce((sum, s) => sum + s.summarized, 0);
   const progress = totalDocs > 0 ? Math.round((totalSummarized / totalDocs) * 100) : 0;
+
+  const runEmbeddings = async () => {
+    setIsEmbedding(true);
+    setEmbeddingResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-embeddings', {
+        body: { batch_size: 20 },
+      });
+      if (error) {
+        toast.error(`Embedding error: ${error.message}`);
+        setEmbeddingResult({ error: error.message });
+      } else {
+        setEmbeddingResult(data);
+        if (data.processed === 0) {
+          toast.success('All summaries already have embeddings');
+        } else {
+          toast.success(`Embedded ${data.succeeded}/${data.processed} summaries`);
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(msg);
+      setEmbeddingResult({ error: msg });
+    } finally {
+      setIsEmbedding(false);
+    }
+  };
 
   const runSummary = async () => {
     setIsRunning(true);
@@ -97,7 +138,6 @@ export function DocumentSummaryRunner() {
           refetchStats();
         }
       } else {
-        // Multi-batch loop
         const allResults: BatchResult[] = [];
         for (let i = 0; i < batchCount; i++) {
           setCurrentBatch(i + 1);
@@ -176,6 +216,33 @@ export function DocumentSummaryRunner() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Embedding Controls */}
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4" />
+              <span className="font-medium">Embeddings</span>
+              {embeddingStats && (
+                <Badge variant={embeddingStats.embedded === embeddingStats.total ? 'default' : 'secondary'}>
+                  {embeddingStats.embedded}/{embeddingStats.total} embedded
+                </Badge>
+              )}
+            </div>
+            <Button onClick={runEmbeddings} disabled={isEmbedding} size="sm" variant="outline">
+              {isEmbedding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {isEmbedding ? 'Embedding…' : 'Generate Embeddings'}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Generates 1024-dim vectors (multilingual-e5-large) for summaries missing embeddings. Batch of 20 per click.
+          </p>
+          {embeddingResult && (
+            <pre className="rounded bg-muted p-2 text-xs overflow-auto max-h-32">
+              {JSON.stringify(embeddingResult, null, 2)}
+            </pre>
+          )}
         </div>
 
         {/* Controls */}
