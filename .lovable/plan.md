@@ -1,126 +1,59 @@
 
 
-# Phase 7.2b: Doc-Type-Specific Summarization Prompts
+## Fix: Document Count Discrepancy (1000-Row Limit Bug)
 
-## Problem
+### Problem
+Both the Document Summary Runner and Validation Dashboard fetch all documents in a single query without pagination, hitting the Supabase default 1,000-row limit. This causes severe undercounting: SOUs show 24/60, committee reports show 356/3,143, etc.
 
-The current single system prompt is optimized for SOUs. It produces incorrect or misleading output for other document types:
+### Solution: Server-Side Counting
 
-- **Directives**: Mandate tasks are listed as "proposals" (they are not)
-- **Committee reports**: Miss reservationer, tillkannagivanden, and the committee's stance on the proposition
-- **Laws**: "proposals" framing is nonsensical for enacted legislation
-- **Propositions**: Work reasonably well but could be tighter
+Replace client-side counting (fetching all rows and counting in JS) with server-side `COUNT` queries grouped by doc_type. This eliminates the 1,000-row limit problem AND avoids transferring large `raw_content` blobs to the browser.
 
-## Design: Per-Type Prompt Sections
+### Changes
 
-Rather than 5 completely separate prompts (expensive to maintain, duplicates shared rules), use a **base prompt + doc-type-specific instruction block** pattern.
+#### 1. `src/components/admin/DocumentSummaryRunner.tsx` -- useCorpusStats rewrite
 
-### Shared Base (all types)
-
-- Output format (JSON schema)
-- Language rules (Swedish, factual, no filler)
-- Field definitions for universal fields: `summary_text`, `policy_aim`, `policy_domains`, `keywords`, `outcome_status`, `key_actors`
-
-### Per-Type Instruction Blocks
-
-#### SOU / Proposition (current prompt works well)
-
-- `core_recommendations`: Formal legislative proposals (forslag)
-- `proposals_not_adopted`: Considered but rejected items
-- `proposal_count`: Explicit count if stated
-- Instructions: Skip mandate preamble, look for "Vi foreslagar", exhaustive extraction checklist
-
-#### Directive
-
-- `core_recommendations` repurposed as: **Key mandate questions/tasks** the inquiry must address
-- `proposals_not_adopted` repurposed as: **Explicit scope limitations** (what is outside the mandate)
-- `proposal_count`: Always `null` (directives don't contain proposals)
-- Additional instructions:
-  - "A directive (kommittedirektiv) instructs an inquiry -- it does NOT contain legislative proposals"
-  - "List the specific questions the inquiry must answer under core_recommendations"
-  - "List explicit scope limitations under proposals_not_adopted"
-  - "Capture the deadline (redovisningsdatum) in summary_text"
-  - outcome_status should always be "pending"
-
-#### Committee Report (betankande)
-
-- `core_recommendations`: The committee's formal positions (ställningstaganden) and any tillkannagivanden
-- `proposals_not_adopted`: Reservationer (dissenting opinions with party attribution)
-- `proposal_count`: Number of tillkannagivanden if any
-- Additional instructions:
-  - "A committee report (betankande) evaluates a government proposition. Focus on whether the committee SUPPORTS or REJECTS each proposal."
-  - "List reservationer under proposals_not_adopted with party names"
-  - "List tillkannagivanden (parliamentary directives to the government) under core_recommendations"
-  - "Note the vote outcome if stated"
-
-#### Law
-
-- `core_recommendations`: Key provisions/obligations the law establishes
-- `proposals_not_adopted`: Empty (not applicable)
-- `proposal_count`: `null`
-- Additional instructions:
-  - "A law (lag/forordning) is enacted legislation. Summarize what it regulates, key obligations, scope, and affected parties."
-  - "outcome_status must be 'enacted'"
-  - "Capture the effective date (ikraftträdande) in summary_text"
-  - "Do NOT describe the law as 'proposing' anything -- it IS the law"
-
-## Implementation
-
-### File: `supabase/functions/generate-document-summary/index.ts`
-
-1. Split `SYSTEM_PROMPT` into `BASE_PROMPT` + `DOC_TYPE_INSTRUCTIONS` map
-2. New function `buildSystemPrompt(docType: string): string` that concatenates base + type-specific block
-3. Pass `docType` into `summarizeDocument` to select the right prompt
-4. No schema changes needed -- the existing JSONB fields are flexible enough to hold different semantic content per type
-
-### Prompt Structure (pseudocode)
+Replace the current approach (3 separate queries fetching full rows) with server-side count queries:
 
 ```text
-BASE_PROMPT = """
-You are a Swedish legislative policy analyst...
-[shared output format, language rules, universal field definitions]
-"""
+Current (broken):
+  supabase.from('documents').select('doc_type, raw_content')  -- returns max 1000 rows
+  supabase.from('document_summaries').select('document_id')    -- also limited
 
-DOC_TYPE_INSTRUCTIONS = {
-  "sou": "... [current SOU-specific rules] ...",
-  "proposition": "... [proposition-specific rules] ...",
-  "directive": "... [directive-specific rules] ...",
-  "committee_report": "... [committee report-specific rules] ...",
-  "law": "... [law-specific rules] ..."
-}
-
-systemPrompt = BASE_PROMPT + DOC_TYPE_INSTRUCTIONS[docType]
+Fix:
+  For each doc_type in ['sou','proposition','committee_report','directive','law']:
+    1. supabase.from('documents').select('*', { count: 'exact', head: true }).eq('doc_type', type)
+    2. supabase.from('documents').select('*', { count: 'exact', head: true }).eq('doc_type', type).not('raw_content', 'is', null).not('raw_content', 'eq', '')
+    3. supabase.from('document_summaries').select('*, documents!inner(doc_type)', { count: 'exact', head: true }).eq('documents.doc_type', type)
 ```
 
-### No Database Migration Needed
+All 15 queries (5 types x 3 counts) run in parallel via `Promise.all`. Each returns only a count number, zero data transfer.
 
-The existing `document_summaries` schema uses JSONB for `core_recommendations` and `proposals_not_adopted`, which can hold different semantic content per document type. The field names remain the same; only the interpretation changes per type. This avoids schema bloat and keeps the table clean.
+#### 2. `src/components/admin/ValidationDashboard.tsx` -- same pattern
 
-### Documentation Update
+Apply the same server-side counting fix to:
+- Line 57: document coverage stats (doc_type, raw_content, url, pdf_url counts)
+- Lines 82-84 and 132-134: process linkage and timeline coverage queries
 
-Update `docs/development/PHASE_7_2_SUMMARIZER_STATUS.md` with:
-- Per-type prompt strategy
-- Semantic meaning of fields per doc type
-- Test results for each type
+Each will use `{ count: 'exact', head: true }` with appropriate filters instead of fetching all rows.
 
-## Verification
+#### 3. Documentation update
 
-1. Re-run one document of each type with the new prompts
-2. Check:
-   - Directive: mandate tasks listed (not "proposals"), scope limitations captured, deadline in summary
-   - Committee report: stance on proposition stated, reservationer listed, tillkannagivanden captured
-   - Law: provisions described as enacted rules, effective date captured, outcome_status = "enacted"
-   - SOU/Proposition: no regression from current quality
-3. Compare before/after for the 4 existing test documents
+Update `docs/development/PHASE_7_2_SUMMARIZER_STATUS.md` with corrected corpus counts.
 
-## Cost Impact
+### Technical Details
 
-None -- same model, same token budget. Prompt is ~200 tokens longer per type-specific block, negligible.
+- The `{ count: 'exact', head: true }` option tells PostgREST to return only the count header, no row data
+- This bypasses the 1,000-row default limit entirely
+- Queries are parallelized per type to keep latency low (~200ms total vs current ~2s for transferring raw_content)
+- The `document_summaries` join uses `!inner` to enforce the foreign key relationship
 
-## Sequencing
+### Expected Result
 
-1. Refactor prompt into base + type-specific blocks
-2. Test one document per type
-3. Validate quality
-4. Run pilot batch of 100 documents (balanced mix)
+After the fix, the UI will show the correct counts:
+- SOU: 60 (was 24)
+- Committee Report: 3,143 / 2,967 with content (was 356/349)
+- Proposition: 2,029 / 2,028 with content (was 275)
+- Directive: 1,397 (was 184)
+- Law: 161 (unchanged, under 1000 threshold)
 
