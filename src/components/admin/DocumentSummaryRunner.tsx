@@ -33,40 +33,20 @@ function useCorpusStats() {
   return useQuery({
     queryKey: ['corpus-summary-stats'],
     queryFn: async () => {
-      // Get document counts by type
-      const { data: docs } = await supabase
-        .from('documents')
-        .select('doc_type, raw_content');
+      const queries = DOC_TYPES.flatMap(type => [
+        supabase.from('documents').select('*', { count: 'exact', head: true }).eq('doc_type', type),
+        supabase.from('documents').select('*', { count: 'exact', head: true }).eq('doc_type', type).not('raw_content', 'is', null).neq('raw_content', ''),
+        supabase.from('document_summaries').select('*, documents!inner(doc_type)', { count: 'exact', head: true }).eq('documents.doc_type', type),
+      ]);
 
-      const { data: summaries } = await supabase
-        .from('document_summaries')
-        .select('document_id');
+      const results = await Promise.all(queries);
 
-      const summarizedIds = new Set((summaries ?? []).map(s => s.document_id));
-
-      const stats: Record<string, CorpusStats> = {};
-      for (const doc of docs ?? []) {
-        if (!stats[doc.doc_type]) {
-          stats[doc.doc_type] = { doc_type: doc.doc_type, total: 0, has_content: 0, summarized: 0 };
-        }
-        stats[doc.doc_type].total++;
-        if (doc.raw_content) stats[doc.doc_type].has_content++;
-      }
-
-      // Count summarized per type - need to join
-      const { data: sumWithType } = await supabase
-        .from('document_summaries')
-        .select('document_id, documents(doc_type)')
-        .limit(1000);
-
-      for (const s of sumWithType ?? []) {
-        const docType = (s as any).documents?.doc_type;
-        if (docType && stats[docType]) {
-          stats[docType].summarized++;
-        }
-      }
-
-      return Object.values(stats).sort((a, b) => b.total - a.total);
+      return DOC_TYPES.map((type, i) => ({
+        doc_type: type,
+        total: results[i * 3].count ?? 0,
+        has_content: results[i * 3 + 1].count ?? 0,
+        summarized: results[i * 3 + 2].count ?? 0,
+      })).sort((a, b) => b.total - a.total);
     },
     refetchInterval: 15000,
   });

@@ -113,6 +113,16 @@ Side-by-side test on one document of each type:
 - `supabase/functions/generate-document-summary/index.ts` — hybrid model routing via `selectModel()`
 - `docs/development/PHASE_7_2_SUMMARIZER_STATUS.md` — this file
 
+## Corpus Counts (verified 2026-02-18)
+- SOU: 60 total, 60 with content
+- Proposition: 2,029 total, 2,028 with content
+- Committee Report: 3,143 total, 2,967 with content
+- Directive: 1,397 total, 1,397 with content
+- Law: 161 total, 161 with content
+- **Total: 6,790 documents, 6,613 with content**
+
+Note: Previous UI showed ~993 docs due to Supabase 1000-row default limit bug. Fixed 2026-02-18 with server-side `COUNT` queries.
+
 ## Next Steps
 1. ~~Validate on all doc types~~ ✅ Done (v3 per-type prompts)
 2. ~~Model comparison~~ ✅ Done — hybrid strategy adopted
