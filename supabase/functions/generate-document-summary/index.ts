@@ -535,19 +535,19 @@ Deno.serve(async (req) => {
     const perType = Math.max(Math.floor(batchSize / docTypes.length), 1);
     const remainder = batchSize - perType * docTypes.length;
 
-    let allDocs: any[] = [];
+    // Collect candidate IDs only (no raw_content) to avoid memory blow-up
+    let candidateIds: { id: string; doc_number: string; doc_type: string; title: string }[] = [];
 
     for (let i = 0; i < docTypes.length; i++) {
       const needed = perType + (i < remainder ? 1 : 0);
-      // Paginate to find enough unsummarized docs
-      let collected: any[] = [];
+      let collected: typeof candidateIds = [];
       let offset = 0;
-      const PAGE_SIZE = 50;
+      const PAGE_SIZE = 100;
 
       while (collected.length < needed && offset < 5000) {
         const { data: typeDocs } = await supabase
           .from("documents")
-          .select("id, title, doc_type, doc_number, raw_content")
+          .select("id, title, doc_type, doc_number")
           .eq("doc_type", docTypes[i])
           .not("raw_content", "is", null)
           .not("raw_content", "eq", "")
@@ -565,13 +565,12 @@ Deno.serve(async (req) => {
         offset += PAGE_SIZE;
       }
 
-      allDocs = allDocs.concat(collected);
+      candidateIds = candidateIds.concat(collected);
     }
 
-    const toProcess = allDocs;
     const skippedCount = existingIds.size;
 
-    if (toProcess.length === 0) {
+    if (candidateIds.length === 0) {
       return new Response(
         JSON.stringify({ success: true, message: "No documents to summarize", processed: 0, skipped: skippedCount }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -580,29 +579,38 @@ Deno.serve(async (req) => {
 
     const results: { id: string; doc_number: string; doc_type: string; status: string; strategy?: string; error?: string }[] = [];
 
-    for (const doc of toProcess) {
+    // Process one at a time — fetch raw_content only when needed to stay within memory
+    for (const candidate of candidateIds) {
       try {
-        if (!doc.raw_content) {
-          results.push({ id: doc.id, doc_number: doc.doc_number, doc_type: doc.doc_type, status: "skipped", error: "no content" });
+        const { data: fullDoc, error: fetchErr } = await supabase
+          .from("documents")
+          .select("raw_content")
+          .eq("id", candidate.id)
+          .single();
+
+        if (fetchErr || !fullDoc?.raw_content) {
+          results.push({ id: candidate.id, doc_number: candidate.doc_number, doc_type: candidate.doc_type, status: "skipped", error: "no content" });
           continue;
         }
 
-        const summary = await summarizeDocument(doc.raw_content, doc.title, doc.doc_type, doc.doc_number, openaiKey);
+        const summary = await summarizeDocument(fullDoc.raw_content, candidate.title, candidate.doc_type, candidate.doc_number, openaiKey);
+        // Release raw_content reference immediately
+        (fullDoc as any).raw_content = null;
 
         const { error: upsertErr } = await supabase
           .from("document_summaries")
-          .upsert(buildUpsertRow(doc.id, summary), { onConflict: "document_id" });
+          .upsert(buildUpsertRow(candidate.id, summary), { onConflict: "document_id" });
 
         if (upsertErr) {
-          results.push({ id: doc.id, doc_number: doc.doc_number, doc_type: doc.doc_type, status: "error", error: upsertErr.message });
+          results.push({ id: candidate.id, doc_number: candidate.doc_number, doc_type: candidate.doc_type, status: "error", error: upsertErr.message });
         } else {
-          results.push({ id: doc.id, doc_number: doc.doc_number, doc_type: doc.doc_type, status: "success", strategy: summary.extraction_strategy });
+          results.push({ id: candidate.id, doc_number: candidate.doc_number, doc_type: candidate.doc_type, status: "success", strategy: summary.extraction_strategy });
         }
       } catch (err) {
         results.push({
-          id: doc.id,
-          doc_number: doc.doc_number,
-          doc_type: doc.doc_type,
+          id: candidate.id,
+          doc_number: candidate.doc_number,
+          doc_type: candidate.doc_type,
           status: "error",
           error: err instanceof Error ? err.message : String(err),
         });
