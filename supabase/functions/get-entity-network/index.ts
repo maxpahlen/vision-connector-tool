@@ -59,20 +59,20 @@ Deno.serve(async (req) => {
       .order("relationship_strength", { ascending: false });
 
     if (entityId) {
-      // 1-hop neighbors: edges where entity_id is on either side
       query = query.or(
         `entity_a_id.eq.${entityId},entity_b_id.eq.${entityId}`
       );
     }
 
-    // Fetch more edges than limit to allow node-level filtering
     const { data: edges, error: edgeErr } = await query.limit(limit * 3);
 
     if (edgeErr) throw new Error(`Edge query: ${edgeErr.message}`);
 
     if (!edges || edges.length === 0) {
+      // Still compute type_counts from the full dataset (ignoring filters)
+      const typeCounts = await computeTypeCounts(supabase);
       return new Response(
-        JSON.stringify({ nodes: [], edges: [] }),
+        JSON.stringify({ nodes: [], edges: [], type_counts: typeCounts }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
@@ -86,9 +86,8 @@ Deno.serve(async (req) => {
       entityIds.add(e.entity_b_id);
     }
 
-    // Fetch entity details
+    // Fetch entity details in batches of 100
     const idArray = Array.from(entityIds);
-    // Batch fetch in chunks of 100
     const entities = new Map<
       string,
       { id: string; name: string; entity_type: string }
@@ -104,6 +103,12 @@ Deno.serve(async (req) => {
       for (const e of entityData || []) {
         entities.set(e.id, e);
       }
+    }
+
+    // Compute type_counts from ALL entities involved in co-occurrence (before type filter)
+    const typeCounts: Record<string, number> = {};
+    for (const [, entity] of entities) {
+      typeCounts[entity.entity_type] = (typeCounts[entity.entity_type] ?? 0) + 1;
     }
 
     // Filter by entity types if specified
@@ -173,7 +178,7 @@ Deno.serve(async (req) => {
       });
 
     return new Response(
-      JSON.stringify({ nodes, edges: finalEdges }),
+      JSON.stringify({ nodes, edges: finalEdges, type_counts: typeCounts }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
@@ -191,3 +196,40 @@ Deno.serve(async (req) => {
     );
   }
 });
+
+/**
+ * Compute entity type counts from all entities that appear in
+ * the co-occurrence table, regardless of current filters.
+ * Label: "Totalt i dataset".
+ */
+async function computeTypeCounts(
+  supabase: ReturnType<typeof createClient>
+): Promise<Record<string, number>> {
+  // Get a sample of entity IDs from co-occurrence
+  const { data: sample } = await supabase
+    .from("entity_cooccurrence")
+    .select("entity_a_id, entity_b_id")
+    .limit(500);
+
+  if (!sample || sample.length === 0) return {};
+
+  const ids = new Set<string>();
+  for (const row of sample) {
+    ids.add(row.entity_a_id);
+    ids.add(row.entity_b_id);
+  }
+
+  const idArray = Array.from(ids);
+  const counts: Record<string, number> = {};
+  for (let i = 0; i < idArray.length; i += 100) {
+    const batch = idArray.slice(i, i + 100);
+    const { data: entities } = await supabase
+      .from("entities")
+      .select("entity_type")
+      .in("id", batch);
+    for (const e of entities || []) {
+      counts[e.entity_type] = (counts[e.entity_type] ?? 0) + 1;
+    }
+  }
+  return counts;
+}
