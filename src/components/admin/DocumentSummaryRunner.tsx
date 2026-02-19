@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Brain, Play, Loader2, CheckCircle2, XCircle, RefreshCw, Sparkles } from 'lucide-react';
+import { Brain, Play, Loader2, CheckCircle2, XCircle, RefreshCw, Sparkles, Network } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface BatchResult {
@@ -67,6 +67,8 @@ export function DocumentSummaryRunner() {
   const [lastResponse, setLastResponse] = useState<Record<string, unknown> | null>(null);
   const [isEmbedding, setIsEmbedding] = useState(false);
   const [embeddingResult, setEmbeddingResult] = useState<Record<string, unknown> | null>(null);
+  const [isComputing, setIsComputing] = useState(false);
+  const [cooccurrenceResult, setCooccurrenceResult] = useState<Record<string, unknown> | null>(null);
 
   const { data: corpusStats = [], refetch: refetchStats } = useCorpusStats();
 
@@ -241,6 +243,54 @@ export function DocumentSummaryRunner() {
           {embeddingResult && (
             <pre className="rounded bg-muted p-2 text-xs overflow-auto max-h-32">
               {JSON.stringify(embeddingResult, null, 2)}
+            </pre>
+          )}
+        </div>
+
+        {/* Co-Occurrence Compute */}
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Network className="h-4 w-4" />
+              <span className="font-medium">Entity Co-Occurrence</span>
+            </div>
+            <Button
+              onClick={async () => {
+                setIsComputing(true);
+                setCooccurrenceResult(null);
+                try {
+                  const { data, error } = await supabase.functions.invoke('compute-entity-cooccurrence', {
+                    body: {},
+                  });
+                  if (error) {
+                    toast.error(`Co-occurrence error: ${error.message}`);
+                    setCooccurrenceResult({ error: error.message });
+                  } else {
+                    setCooccurrenceResult(data);
+                    toast.success(`Computed ${data.inserted ?? data.stats?.total_pairs ?? 0} pairs`);
+                  }
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  toast.error(msg);
+                  setCooccurrenceResult({ error: msg });
+                } finally {
+                  setIsComputing(false);
+                }
+              }}
+              disabled={isComputing}
+              size="sm"
+              variant="outline"
+            >
+              {isComputing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}
+              {isComputing ? 'Computing…' : 'Compute Co-Occurrence'}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Full recompute of entity pair co-occurrence from remiss invitees and responses. Calculates Jaccard scores.
+          </p>
+          {cooccurrenceResult && (
+            <pre className="rounded bg-muted p-2 text-xs overflow-auto max-h-32">
+              {JSON.stringify(cooccurrenceResult, null, 2)}
             </pre>
           )}
         </div>

@@ -125,3 +125,9 @@ verify_jwt = false
 
 [functions.generate-embeddings]
 verify_jwt = false
+
+[functions.compute-entity-cooccurrence]
+verify_jwt = false
+
+[functions.get-entity-network]
+verify_jwt = false

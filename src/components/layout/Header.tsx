@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { User, LogOut, Scale, TestTube, Settings, BarChart3, Users, Clock, TrendingUp, ChevronDown } from "lucide-react";
+import { User, LogOut, Scale, TestTube, Settings, BarChart3, Users, Clock, TrendingUp, ChevronDown, Network } from "lucide-react";
 import { toast } from "sonner";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
@@ -103,6 +103,10 @@ const Header = () => {
                     <DropdownMenuItem onClick={() => navigate("/insights/influence")}>
                       <TrendingUp className="mr-2 h-4 w-4" />
                       Påverkansanalys
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => navigate("/insights/network")}>
+                      <Network className="mr-2 h-4 w-4" />
+                      Entitetsnätverk
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>

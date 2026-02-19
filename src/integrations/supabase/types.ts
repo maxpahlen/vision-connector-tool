@@ -410,6 +410,72 @@ export type Database = {
         }
         Relationships: []
       }
+      entity_cooccurrence: {
+        Row: {
+          cooccurrence_count: number
+          created_at: string
+          entity_a_id: string
+          entity_b_id: string
+          first_cooccurrence_date: string | null
+          id: string
+          invite_cooccurrence_count: number
+          jaccard_score: number | null
+          last_cooccurrence_date: string | null
+          relationship_strength: number | null
+          response_cooccurrence_count: number
+          shared_cases: string[] | null
+          total_shared_case_count: number
+          updated_at: string
+        }
+        Insert: {
+          cooccurrence_count?: number
+          created_at?: string
+          entity_a_id: string
+          entity_b_id: string
+          first_cooccurrence_date?: string | null
+          id?: string
+          invite_cooccurrence_count?: number
+          jaccard_score?: number | null
+          last_cooccurrence_date?: string | null
+          relationship_strength?: number | null
+          response_cooccurrence_count?: number
+          shared_cases?: string[] | null
+          total_shared_case_count?: number
+          updated_at?: string
+        }
+        Update: {
+          cooccurrence_count?: number
+          created_at?: string
+          entity_a_id?: string
+          entity_b_id?: string
+          first_cooccurrence_date?: string | null
+          id?: string
+          invite_cooccurrence_count?: number
+          jaccard_score?: number | null
+          last_cooccurrence_date?: string | null
+          relationship_strength?: number | null
+          response_cooccurrence_count?: number
+          shared_cases?: string[] | null
+          total_shared_case_count?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entity_cooccurrence_entity_a_id_fkey"
+            columns: ["entity_a_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entity_cooccurrence_entity_b_id_fkey"
+            columns: ["entity_b_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       entity_name_rules: {
         Row: {
           created_at: string | null
