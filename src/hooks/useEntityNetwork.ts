@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -22,6 +21,7 @@ export interface NetworkEdge {
 export interface NetworkData {
   nodes: NetworkNode[];
   edges: NetworkEdge[];
+  type_counts: Record<string, number>;
 }
 
 export interface NetworkFilters {
