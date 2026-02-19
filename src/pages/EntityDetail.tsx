@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { User, Building2, Users, FileText, Link2, Calendar, ArrowLeft, Mail, MessageSquare, ChevronDown, Paperclip } from 'lucide-react';
+import EntityNetworkSection from '@/components/entity/EntityNetworkSection';
 import { format } from 'date-fns';
 import { sv } from 'date-fns/locale';
 import { useMemo, useState } from 'react';
@@ -697,6 +698,13 @@ export default function EntityDetail() {
               </CardContent>
             </Card>
           )}
+
+          {/* Co-occurrence Network */}
+          <EntityNetworkSection
+            entityId={entity.id}
+            entityName={entity.name}
+            entityType={entity.entity_type}
+          />
 
           {/* Sidebar */}
           <div className="space-y-6">
