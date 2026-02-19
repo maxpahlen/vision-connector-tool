@@ -15,6 +15,7 @@ import ProcessDetail from "./pages/ProcessDetail";
 import ParticipationDashboard from "./pages/ParticipationDashboard";
 import VelocityDashboard from "./pages/VelocityDashboard";
 import InfluenceDashboard from "./pages/InfluenceDashboard";
+import NetworkDashboard from "./pages/NetworkDashboard";
 import ProtectedRoute from "./components/layout/ProtectedRoute";
 import AdminRoute from "./components/layout/AdminRoute";
 
@@ -71,6 +72,11 @@ const App = () => (
           <Route path="/insights/influence" element={
             <ProtectedRoute>
               <InfluenceDashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/insights/network" element={
+            <ProtectedRoute>
+              <NetworkDashboard />
             </ProtectedRoute>
           } />
           <Route path="/admin/scraper" element={

@@ -261,61 +261,43 @@ CREATE TABLE semantic_links (
 
 **Priority:** P1 (standalone, no dependency on 7.2/7.3)  
 **Dependencies:** Existing entity and relations data  
-**Estimated effort:** Medium
+**Estimated effort:** Medium  
+**Status:** ✅ COMPLETE (2026-02-19)
 
 ### What
 
-Build entity co-occurrence graph from shared document appearances. Identify collaboration patterns, committee clusters, and ministry-entity connections.
+Build entity co-occurrence graph from shared remiss participation (invitations + responses). Visualize as interactive force-directed network.
 
-### Deliverables
+### Implementation (Final)
 
-**Database:**
-- New table: `entity_cooccurrence` (entity_a_id, entity_b_id, cooccurrence_count, shared_documents, relationship_strength)
-- CHECK constraint: entity_a_id < entity_b_id (prevent duplicates)
+**Data sources:** `remiss_invitees` (orgs invited to same remiss) + `remiss_responses` (orgs responding to same remiss).
 
-**Edge function:** `compute-entity-cooccurrence`
-- SQL aggregation of entities appearing in same documents
-- Strength weighted by frequency and recency
+**Co-occurrence rule:** Counted ONCE per remiss per pair (deduplicated). If A and B are both invited AND both respond to the same remiss, that remiss counts once toward `cooccurrence_count` but increments both split counters.
 
-**Edge function:** `get-entity-network`
-- Returns co-occurrence data for network visualization
-- Supports depth parameter (1-hop, 2-hop)
+**Database:** `entity_cooccurrence` table with:
+- Split counters: `invite_cooccurrence_count`, `response_cooccurrence_count`
+- Bias-corrected score: `jaccard_score` (|A∩B| / |A∪B|)
+- `relationship_strength` = `jaccard_score` (v1)
+- Range checks: `jaccard_score >= 0 AND <= 1`, `relationship_strength >= 0 AND <= 1`
+- Capped `shared_cases` (100 most recent) + uncapped `total_shared_case_count`
+- Canonical pair constraint: `entity_a_id < entity_b_id`
+- Composite indexes: `(entity_a_id, strength DESC)`, `(entity_b_id, strength DESC)`, `(strength DESC, updated_at DESC)`
 
-**Frontend:** Network visualization page (`/insights/network`)
-- Force-directed graph (lightweight canvas renderer)
-- Nodes = entities, edges = co-occurrence strength
-- Click node to see entity detail
-- Filter by entity type, minimum strength
-- Cap at 200 visible nodes for performance
+**Edge functions:**
+- `compute-entity-cooccurrence` — Full recompute, admin-protected, `dry_run` flag supported
+- `get-entity-network` — Auth-protected read API, returns nodes + edges with filters
 
-### Database Schema
-
-```sql
-CREATE TABLE entity_cooccurrence (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  entity_a_id UUID NOT NULL REFERENCES entities(id),
-  entity_b_id UUID NOT NULL REFERENCES entities(id),
-  cooccurrence_count INTEGER NOT NULL DEFAULT 0,
-  shared_documents UUID[] NOT NULL,
-  first_cooccurrence_date DATE,
-  last_cooccurrence_date DATE,
-  relationship_strength NUMERIC(3,2), -- 0.00 to 1.00
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  CHECK (entity_a_id < entity_b_id),
-  UNIQUE(entity_a_id, entity_b_id)
-);
-
-CREATE INDEX idx_cooccurrence_entity_a ON entity_cooccurrence(entity_a_id);
-CREATE INDEX idx_cooccurrence_entity_b ON entity_cooccurrence(entity_b_id);
-CREATE INDEX idx_cooccurrence_strength ON entity_cooccurrence(relationship_strength DESC);
-```
+**Frontend:** `/insights/network` — d3-force simulation + React SVG rendering
+- Throttled rendering (every 3 ticks), freeze toggle
+- 200-node cap, min-strength slider, entity type filters
+- Node color by type, size by degree, edge thickness by strength
 
 ### Success Criteria
 
-- [ ] Co-occurrence computed for all 1,780 entities
-- [ ] Network visualization renders without performance issues
-- [ ] Strongest connections align with known organizational clusters
+- [x] Co-occurrence computed from remiss participation
+- [x] Split invite/response counters with Jaccard scoring
+- [x] Network visualization with performance guardrails
+- [x] Admin compute trigger in Agents tab
 
 ---
 

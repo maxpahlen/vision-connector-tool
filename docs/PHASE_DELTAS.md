@@ -1,5 +1,39 @@
 # Phase Deltas
 
+## 2026-02-19: Slice 7.4 — Entity Co-Occurrence Networks — COMPLETE
+
+**Status:** ✅ COMPLETE
+
+### Implementation
+
+Built entity co-occurrence pipeline from remiss participation (invitations + responses).
+
+**Database:** `entity_cooccurrence` table with split invite/response counters, Jaccard score, capped shared_cases (100), canonical pair constraint, composite strength indexes, range checks.
+
+**Edge functions:**
+- `compute-entity-cooccurrence` — Full recompute with `dry_run` flag, admin-protected
+- `get-entity-network` — Auth-protected read API returning nodes + edges
+
+**Frontend:** `/insights/network` — d3-force + React SVG visualization with throttled rendering, freeze toggle, 200-node cap, entity type filters, strength slider.
+
+**Admin UI:** "Compute Co-Occurrence" button added to DocumentSummaryRunner (Agents tab).
+
+### Files Created
+- `supabase/functions/compute-entity-cooccurrence/index.ts`
+- `supabase/functions/get-entity-network/index.ts`
+- `src/pages/NetworkDashboard.tsx`
+- `src/hooks/useEntityNetwork.ts`
+
+### Files Modified
+- `src/App.tsx` — Added `/insights/network` route
+- `src/components/layout/Header.tsx` — Added "Entitetsnätverk" to Insights dropdown
+- `supabase/config.toml` — Added function entries
+- `src/components/admin/DocumentSummaryRunner.tsx` — Added co-occurrence compute trigger
+- `docs/development/branches/phase-7-advanced-insights.md` — Slice 7.4 marked COMPLETE
+- `docs/PHASE_DELTAS.md` — This entry
+
+---
+
 ## 2026-02-13: Phase 7 Kickoff — Slice 7.1 Stakeholder Influence Analytics
 
 **Status:** 🔄 IN PROGRESS
